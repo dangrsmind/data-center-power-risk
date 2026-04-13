@@ -15,13 +15,22 @@ const riskColors: Record<RiskTier, { color: string; bg: string }> = {
 };
 
 const lifecycleColors: Record<LifecycleState, { color: string; bg: string }> = {
-  monitoring_ready: { color: "#60a5fa", bg: "#0d1f3c" },
-  under_review: { color: "#a78bfa", bg: "#1a1040" },
-  active_construction: { color: "#34d399", bg: "#0a2416" },
-  operational: { color: "#22c55e", bg: "#0d2416" },
-  canceled: { color: "#ef4444", bg: "#2d1010" },
-  delayed: { color: "#f97316", bg: "#2a1500" },
-  downsized: { color: "#eab308", bg: "#271e00" },
+  // Real backend states — progressive readiness (blue → green)
+  candidate_unverified:    { color: "#64748b", bg: "#161e2e" },
+  named_verified:          { color: "#94a3b8", bg: "#192130" },
+  location_verified:       { color: "#7dd3fc", bg: "#0c2340" },
+  load_partially_resolved: { color: "#818cf8", bg: "#16184a" },
+  phase_resolved:          { color: "#a78bfa", bg: "#1a1040" },
+  power_path_partial:      { color: "#fb923c", bg: "#2c1400" },
+  monitoring_ready:        { color: "#60a5fa", bg: "#0d1f3c" },
+  production_ready:        { color: "#22c55e", bg: "#0d2416" },
+  // Legacy / mock states
+  under_review:       { color: "#a78bfa", bg: "#1a1040" },
+  active_construction:{ color: "#34d399", bg: "#0a2416" },
+  operational:        { color: "#22c55e", bg: "#0d2416" },
+  canceled:           { color: "#ef4444", bg: "#2d1010" },
+  delayed:            { color: "#f97316", bg: "#2a1500" },
+  downsized:          { color: "#eab308", bg: "#271e00" },
 };
 
 const statusColors: Record<PhaseStatus, { color: string; bg: string }> = {

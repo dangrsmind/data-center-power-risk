@@ -1,5 +1,14 @@
 export type LifecycleState =
+  // Real backend values (from LifecycleState enum)
+  | "candidate_unverified"
+  | "named_verified"
+  | "location_verified"
+  | "load_partially_resolved"
+  | "phase_resolved"
+  | "power_path_partial"
   | "monitoring_ready"
+  | "production_ready"
+  // Legacy / mock values (kept for mock data compatibility)
   | "under_review"
   | "active_construction"
   | "operational"
