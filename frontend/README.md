@@ -36,7 +36,7 @@ As long as `VITE_USE_MOCK` is unset (or anything other than `"false"`), the app 
 
 ```
 VITE_USE_MOCK=false
-VITE_API_BASE_URL=http://localhost:5000
+VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 2. Restart the dev server.
