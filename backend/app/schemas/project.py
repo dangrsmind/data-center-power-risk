@@ -20,6 +20,10 @@ class ProjectListItem(BaseModel):
     latest_update_date: date | None
     modeled_primary_load_mw: int | float | None
     phase_count: int
+    current_hazard: float
+    deadline_probability: float
+    risk_tier: str
+    as_of_quarter: str | None
 
 
 class ProjectDetail(BaseModel):

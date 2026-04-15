@@ -59,6 +59,7 @@ The app creates tables on startup.
 ## Reset and seed demo data
 
 The seed script replaces placeholder records with deterministic, clearly fake demo data.
+It also rebuilds explicit evidence links and stored demo `phase_quarter_scores` used by the analyst endpoints.
 
 SQLite reset + seed:
 
@@ -68,6 +69,8 @@ source .venv/bin/activate
 unset DATABASE_URL
 python scripts/seed_demo_data.py --reset
 ```
+
+This is the exact command to fully rebuild the local demo database.
 
 PostgreSQL reset + seed:
 
@@ -97,6 +100,13 @@ List projects:
 ```bash
 curl http://127.0.0.1:8000/projects
 ```
+
+Each project row keeps the existing summary fields and now also includes:
+
+- `current_hazard`
+- `deadline_probability`
+- `risk_tier`
+- `as_of_quarter`
 
 Project detail:
 
@@ -137,6 +147,19 @@ It combines:
 
 If no snapshot or stress rows exist yet, the service uses stable fallback defaults so the endpoint still returns a consistent response shape.
 
+For `GET /projects`, the dashboard fields use the latest available project score in this order:
+
+- latest stored `phase_quarter_scores` row joined to the project quarter
+- otherwise the same deterministic mock score computation used by `/projects/{id}/score`
+
+`risk_tier` is currently deterministic and based on `deadline_probability`:
+
+- `low` for values below `0.33`
+- `medium` for values from `0.33` up to `0.66`
+- `high` for values at or above `0.66`
+
+`as_of_quarter` is returned as a `YYYY-QN` label such as `2026-Q2`.
+
 ## Demo dataset summary
 
 The seed script creates:
@@ -147,5 +170,7 @@ The seed script creates:
 - one E2 demo example
 - one E3 demo example
 - one E4 demo example
+- explicit evidence links through `claims` and `field_provenance`
+- stored demo `phase_quarter_scores` so history endpoints return non-null score values
 
 These records are intended only for local development and API testing.

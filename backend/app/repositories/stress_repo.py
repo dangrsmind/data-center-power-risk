@@ -6,7 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.enums import StressEntityType
-from app.models.quarterly import StressScore
+from app.models.quarterly import StressObservation, StressScore
 
 
 class StressRepository:
@@ -24,3 +24,25 @@ class StressRepository:
             .limit(1)
         )
         return self.db.execute(stmt).scalar_one_or_none()
+
+    def list_project_scores(self, project_id: uuid.UUID) -> list[StressScore]:
+        stmt = (
+            select(StressScore)
+            .where(
+                StressScore.entity_type == StressEntityType.PROJECT,
+                StressScore.entity_id == project_id,
+            )
+            .order_by(desc(StressScore.quarter), desc(StressScore.created_at))
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def list_project_observations(self, project_id: uuid.UUID) -> list[StressObservation]:
+        stmt = (
+            select(StressObservation)
+            .where(
+                StressObservation.entity_type == StressEntityType.PROJECT,
+                StressObservation.entity_id == project_id,
+            )
+            .order_by(desc(StressObservation.quarter), desc(StressObservation.created_at))
+        )
+        return list(self.db.execute(stmt).scalars().all())

@@ -22,6 +22,10 @@ class PhaseRepository:
     def __init__(self, db: Session):
         self.db = db
 
+    def list_phase_ids_by_project(self, project_id: uuid.UUID) -> list[uuid.UUID]:
+        stmt = select(Phase.id).where(Phase.project_id == project_id)
+        return list(self.db.execute(stmt).scalars().all())
+
     def list_by_project(self, project_id: uuid.UUID) -> list[PhaseSummaryRow]:
         modeled_primary = func.sum(
             case((PhaseLoad.load_kind == LoadKind.MODELED_PRIMARY, PhaseLoad.load_mw), else_=0)

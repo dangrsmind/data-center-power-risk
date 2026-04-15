@@ -31,10 +31,11 @@ from app.core.enums import (
 )
 from app.core.db import SessionLocal, create_db_and_tables, engine
 from app.models import Base
-from app.models.evidence import Evidence
+from app.models.evidence import Claim, Evidence, FieldProvenance
 from app.models.event import Event
 from app.models.project import Phase, PhaseLoad, Project
 from app.models.quarterly import (
+    PhaseQuarterScore,
     ProjectPhaseQuarter,
     QuarterlyLabel,
     QuarterlySnapshot,
@@ -43,6 +44,7 @@ from app.models.quarterly import (
     StressScore,
 )
 from app.models.reference import Region, Utility
+from app.services.mock_scoring_service import MockScoringInputs, MockScoringService
 
 
 def d(value: str | int | float) -> Decimal:
@@ -315,7 +317,10 @@ def clear_existing_data(db: Session) -> None:
     for model in [
         StressObservation,
         StressScore,
+        PhaseQuarterScore,
         ScoreRun,
+        FieldProvenance,
+        Claim,
         QuarterlySnapshot,
         QuarterlyLabel,
         ProjectPhaseQuarter,
@@ -356,9 +361,49 @@ def create_regions_and_utilities(db: Session) -> tuple[dict[str, Region], dict[s
     return regions, utilities
 
 
+def create_evidence_claim(
+    db: Session,
+    *,
+    evidence: Evidence,
+    entity_type: str,
+    entity_id,
+    claim_type: str,
+    claim_value_json: dict,
+    claim_date: date,
+    confidence: str,
+    field_name: str | None = None,
+) -> Claim:
+    db.add(evidence)
+    db.flush()
+    claim = Claim(
+        evidence_id=evidence.id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        claim_type=claim_type,
+        claim_value_json=claim_value_json,
+        claim_date=claim_date,
+        confidence=confidence,
+        is_contradictory=False,
+    )
+    db.add(claim)
+    db.flush()
+    if field_name is not None:
+        db.add(
+            FieldProvenance(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                field_name=field_name,
+                evidence_id=evidence.id,
+                claim_id=claim.id,
+            )
+        )
+    return claim
+
+
 def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, Utility]) -> list[Project]:
     seeded_projects: list[Project] = []
     current_quarter = date(2026, 4, 1)
+    mock_scoring = MockScoringService()
 
     regional_e3_event = Event(
         event_family=EventFamily.E3.value,
@@ -377,6 +422,7 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
         notes="Demo regional stress action representing revised large-load screening criteria.",
     )
     db.add(regional_e3_event)
+    db.flush()
 
     regional_e3_evidence = Evidence(
         source_type=SourceType.UTILITY_STATEMENT.value,
@@ -388,6 +434,30 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
         reviewer_status=ReviewerStatus.REVIEWED.value,
     )
     db.add(regional_e3_evidence)
+    db.flush()
+
+    create_evidence_claim(
+        db,
+        evidence=regional_e3_evidence,
+        entity_type="event",
+        entity_id=regional_e3_event.id,
+        claim_type="event_support",
+        claim_value_json={"event_family": "E3", "reason_class": "large_load_screening_update"},
+        claim_date=date(2026, 3, 11),
+        confidence="high",
+        field_name="event_family",
+    )
+
+    score_run = ScoreRun(
+        run_type=ScoreRunType.MOCK_SCORING.value,
+        snapshot_version="demo_q2_2026_v1",
+        weight_config_version="demo_weights_v1",
+        model_version="mock_v1",
+        scoring_method="deterministic_weighted_stress",
+        notes="Demo score run metadata used for local development.",
+    )
+    db.add(score_run)
+    db.flush()
 
     for spec in PROJECTS:
         project = Project(
@@ -405,8 +475,33 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
         db.add(project)
         db.flush()
 
+        project_announcement_evidence = Evidence(
+            source_type=SourceType.COUNTY_RECORD.value,
+            source_date=spec.announcement_date,
+            source_url=f"https://demo.local/projects/{project.id}/announcement",
+            source_rank=2,
+            title=f"Demo announcement record for {spec.canonical_name}",
+            extracted_text=f"Fake/demo filing announcing {spec.canonical_name} in {spec.county} County with staged development plans.",
+            reviewer_status=ReviewerStatus.REVIEWED.value,
+        )
+        create_evidence_claim(
+            db,
+            evidence=project_announcement_evidence,
+            entity_type="project",
+            entity_id=project.id,
+            claim_type="project_announcement",
+            claim_value_json={
+                "canonical_name": spec.canonical_name,
+                "announcement_date": spec.announcement_date.isoformat(),
+            },
+            claim_date=spec.announcement_date,
+            confidence="high",
+            field_name="canonical_name",
+        )
+
         total_modeled_mw = Decimal("0")
         first_phase = None
+        phase_quarter_rows: list[tuple[ProjectPhaseQuarter, QuarterlySnapshot, QuarterlyLabel]] = []
         for phase_spec in spec.phases:
             phase = Phase(
                 project_id=project.id,
@@ -419,11 +514,11 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
             )
             db.add(phase)
             db.flush()
+            first_phase = first_phase or phase
 
             modeled_primary = Decimal(str(phase_spec["modeled_primary_load_mw"]))
             optional_expansion = Decimal(str(phase_spec["optional_expansion_mw"]))
             total_modeled_mw += modeled_primary
-            first_phase = first_phase or phase
 
             db.add(
                 PhaseLoad(
@@ -448,6 +543,30 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
                     is_optional_expansion=True,
                     is_firm=False,
                 )
+            )
+
+            phase_load_evidence = Evidence(
+                source_type=SourceType.DEVELOPER_STATEMENT.value,
+                source_date=spec.latest_update_date,
+                source_url=f"https://demo.local/phases/{phase.id}/load",
+                source_rank=2,
+                title=f"Demo load memo for {phase.phase_name}",
+                extracted_text=f"Fake/demo statement describing {int(modeled_primary)} MW primary load and {int(optional_expansion)} MW optional expansion for {phase.phase_name}.",
+                reviewer_status=ReviewerStatus.REVIEWED.value,
+            )
+            create_evidence_claim(
+                db,
+                evidence=phase_load_evidence,
+                entity_type="phase",
+                entity_id=phase.id,
+                claim_type="phase_load_profile",
+                claim_value_json={
+                    "modeled_primary_load_mw": int(modeled_primary),
+                    "optional_expansion_mw": int(optional_expansion),
+                },
+                claim_date=spec.latest_update_date,
+                confidence="high",
+                field_name="modeled_primary_load_mw",
             )
 
             ppq = ProjectPhaseQuarter(
@@ -475,6 +594,7 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
                 data_quality_score=d("84.00"),
             )
             db.add(snapshot)
+            db.flush()
 
             qlabel = QuarterlyLabel(
                 project_phase_quarter_id=ppq.id,
@@ -489,6 +609,8 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
                 adjudication_status="reviewed_demo",
             )
             db.add(qlabel)
+            db.flush()
+            phase_quarter_rows.append((ppq, snapshot, qlabel))
 
         db.add(
             StressObservation(
@@ -506,47 +628,103 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
                 run_id="demo_seed_20260412",
             )
         )
+        db.flush()
 
-        db.add(
-            StressScore(
-                entity_type=StressEntityType.PROJECT.value,
-                entity_id=project.id,
+        project_stress_score = StressScore(
+            entity_type=StressEntityType.PROJECT.value,
+            entity_id=project.id,
+            region_id=regions[spec.region_code].id,
+            utility_id=utilities[spec.utility_name].id,
+            quarter=current_quarter,
+            project_stress_score=spec.project_stress_score,
+            regional_stress_score=spec.regional_stress_score,
+            anomaly_score=spec.anomaly_score,
+            decomposition_json={
+                "structural": float(spec.project_stress_score * d("0.50")),
+                "weak_labels": float(spec.project_stress_score * d("0.30")),
+                "regional": float(spec.regional_stress_score),
+            },
+            confidence_score=d("0.84"),
+            model_version="mock_v1",
+            run_id="demo_seed_20260412",
+        )
+        db.add(project_stress_score)
+        db.flush()
+
+        project_event = None
+        if spec.event_family and first_phase:
+            project_event = Event(
+                event_family=spec.event_family.value,
+                event_scope=spec.event_scope.value,
+                project_id=project.id,
+                phase_id=first_phase.id,
                 region_id=regions[spec.region_code].id,
                 utility_id=utilities[spec.utility_name].id,
-                quarter=current_quarter,
-                project_stress_score=spec.project_stress_score,
-                regional_stress_score=spec.regional_stress_score,
-                anomaly_score=spec.anomaly_score,
-                decomposition_json={
-                    "structural": float(spec.project_stress_score * d("0.50")),
-                    "weak_labels": float(spec.project_stress_score * d("0.30")),
-                    "regional": float(spec.regional_stress_score),
-                },
-                confidence_score=d("0.84"),
-                model_version="mock_v1",
-                run_id="demo_seed_20260412",
+                event_date=spec.event_date,
+                severity="medium",
+                reason_class=spec.reason_class,
+                confidence="medium",
+                evidence_class="demo_evidence",
+                causal_strength=CausalStrength.IMPLIED.value,
+                stress_direction=StressDirection.INCREASE.value,
+                weak_label_weight=spec.weak_label_weight,
+                adjudicated=True,
+                notes=spec.event_notes,
             )
-        )
+            db.add(project_event)
+            db.flush()
 
-        if spec.event_family and first_phase:
+            event_evidence = Evidence(
+                source_type=SourceType.UTILITY_STATEMENT.value,
+                source_date=spec.event_date,
+                source_url=f"https://demo.local/events/{project_event.id}",
+                source_rank=1,
+                title=f"Demo event support for {spec.canonical_name}",
+                extracted_text=f"Fake/demo statement supporting {spec.event_family.value} classification for {spec.canonical_name}: {spec.reason_class}.",
+                reviewer_status=ReviewerStatus.REVIEWED.value,
+            )
+            create_evidence_claim(
+                db,
+                evidence=event_evidence,
+                entity_type="event",
+                entity_id=project_event.id,
+                claim_type="event_support",
+                claim_value_json={
+                    "event_family": spec.event_family.value,
+                    "reason_class": spec.reason_class,
+                },
+                claim_date=spec.event_date,
+                confidence="medium",
+                field_name="reason_class",
+            )
+
+        for phase_quarter, snapshot, label in phase_quarter_rows:
+            score_response = mock_scoring.score_project(
+                MockScoringInputs(
+                    project=project,
+                    phase_quarter=phase_quarter,
+                    snapshot=snapshot,
+                    labels=label,
+                    stress_score=project_stress_score,
+                )
+            )
             db.add(
-                Event(
-                    event_family=spec.event_family.value,
-                    event_scope=spec.event_scope.value,
-                    project_id=project.id,
-                    phase_id=first_phase.id,
-                    region_id=regions[spec.region_code].id,
-                    utility_id=utilities[spec.utility_name].id,
-                    event_date=spec.event_date,
-                    severity="medium",
-                    reason_class=spec.reason_class,
-                    confidence="medium",
-                    evidence_class="demo_evidence",
-                    causal_strength=CausalStrength.IMPLIED.value,
-                    stress_direction=StressDirection.INCREASE.value,
-                    weak_label_weight=spec.weak_label_weight,
-                    adjudicated=True,
-                    notes=spec.event_notes,
+                PhaseQuarterScore(
+                    project_phase_quarter_id=phase_quarter.id,
+                    score_run_id=score_run.id,
+                    deadline_date=score_response.deadline_date,
+                    quarterly_hazard=d(str(score_response.current_hazard)),
+                    deadline_probability=d(str(score_response.deadline_probability)),
+                    top_contributors_json=[driver.model_dump() for driver in score_response.top_drivers],
+                    graph_fragility_summary_json=score_response.graph_fragility_summary.model_dump(),
+                    audit_trail_json={
+                        "seed_source": "demo_seed_data",
+                        "project_id": str(project.id),
+                        "phase_id": str(phase_quarter.phase_id),
+                        "event_id": str(project_event.id) if project_event else None,
+                    },
+                    scoring_notes="Deterministic demo score generated during seed reset.",
+                    model_version=score_response.model_version,
                 )
             )
 
@@ -566,17 +744,6 @@ def seed_projects(db: Session, regions: dict[str, Region], utilities: dict[str, 
             confidence_score=d("0.86"),
             model_version="mock_v1",
             run_id="demo_seed_20260412",
-        )
-    )
-
-    db.add(
-        ScoreRun(
-            run_type=ScoreRunType.MOCK_SCORING.value,
-            snapshot_version="demo_q2_2026_v1",
-            weight_config_version="demo_weights_v1",
-            model_version="mock_v1",
-            scoring_method="deterministic_weighted_stress",
-            notes="Demo score run metadata used for local development.",
         )
     )
 
