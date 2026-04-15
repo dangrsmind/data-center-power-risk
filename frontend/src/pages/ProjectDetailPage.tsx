@@ -1,55 +1,75 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import type { ProjectDetail, TimelineEvent } from "../api/types";
-import { getProject, getTimeline } from "../api/adapter";
+import type {
+  ProjectDetail,
+  ProjectEventsData,
+  ProjectStressData,
+  ProjectHistoryData,
+  ProjectEvidenceData,
+} from "../api/types";
+import {
+  getProject,
+  getProjectEvents,
+  getProjectStress,
+  getProjectHistory,
+  getProjectEvidence,
+} from "../api/adapter";
 import { ProjectDetailPanel } from "../components/detail/ProjectDetailPanel";
 import { PhaseList } from "../components/detail/PhaseList";
 import { ScorePanel } from "../components/detail/ScorePanel";
+import { EventsTab } from "../components/detail/EventsTab";
+import { StressTab } from "../components/detail/StressTab";
+import { HistoryTab } from "../components/detail/HistoryTab";
+import { EvidenceTab } from "../components/detail/EvidenceTab";
 
-const SOURCE_LABELS: Record<string, string> = {
-  county_record: "County Record",
-  utility_statement: "Utility Statement",
-  regulatory_filing: "Regulatory Filing",
-  press: "Press",
-  developer_statement: "Developer Statement",
-  rto_filing: "RTO Filing",
-};
-
-const SOURCE_COLORS: Record<string, string> = {
-  county_record: "#60a5fa",
-  utility_statement: "#34d399",
-  regulatory_filing: "#a78bfa",
-  press: "#fbbf24",
-  developer_statement: "#f87171",
-  rto_filing: "#38bdf8",
-};
-
-type TabId = "overview" | "phases" | "score" | "timeline";
+type TabId = "overview" | "phases" | "score" | "events" | "stress" | "history" | "evidence";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "phases", label: "Phases" },
-  { id: "score", label: "Score" },
-  { id: "timeline", label: "Evidence Timeline" },
+  { id: "overview",  label: "Overview" },
+  { id: "phases",    label: "Phases" },
+  { id: "score",     label: "Score" },
+  { id: "events",    label: "Events" },
+  { id: "stress",    label: "Stress" },
+  { id: "history",   label: "History" },
+  { id: "evidence",  label: "Evidence" },
 ];
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [project, setProject] = useState<ProjectDetail | null>(null);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+
+  const [project,  setProject]  = useState<ProjectDetail | null>(null);
+  const [events,   setEvents]   = useState<ProjectEventsData | null>(null);
+  const [stress,   setStress]   = useState<ProjectStressData | null>(null);
+  const [history,  setHistory]  = useState<ProjectHistoryData | null>(null);
+  const [evidence, setEvidence] = useState<ProjectEvidenceData | null>(null);
+
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>("overview");
+  const [error,   setError]   = useState<string | null>(null);
+  const [tab,     setTab]     = useState<TabId>("overview");
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     setProject(null);
-    setTimeline([]);
-    Promise.all([getProject(id), getTimeline(id)])
-      .then(([proj, tl]) => {
+    setEvents(null);
+    setStress(null);
+    setHistory(null);
+    setEvidence(null);
+    setError(null);
+
+    Promise.all([
+      getProject(id),
+      getProjectEvents(id),
+      getProjectStress(id),
+      getProjectHistory(id),
+      getProjectEvidence(id),
+    ])
+      .then(([proj, evts, str, hist, evid]) => {
         setProject(proj);
-        setTimeline(tl);
+        setEvents(evts);
+        setStress(str);
+        setHistory(hist);
+        setEvidence(evid);
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
@@ -140,62 +160,33 @@ export function ProjectDetailPage() {
               </div>
             )}
 
-            {tab === "timeline" && (
-              <div style={{ maxWidth: 760 }}>
-                <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-dim)", marginBottom: 14 }}>
-                  Evidence Timeline
-                </h3>
-                {timeline.length === 0 ? (
-                  <div style={{ color: "var(--text-muted)", fontSize: 13 }}>No timeline events available for this project.</div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {timeline.map((ev, i) => (
-                      <div key={i} style={{ display: "flex", gap: 16, paddingBottom: 20, position: "relative" }}>
-                        {/* Line */}
-                        {i < timeline.length - 1 && (
-                          <div style={{
-                            position: "absolute",
-                            left: 57,
-                            top: 22,
-                            bottom: 0,
-                            width: 1,
-                            background: "var(--border)",
-                          }} />
-                        )}
-                        {/* Date */}
-                        <div style={{ width: 100, flexShrink: 0, fontSize: 11, color: "var(--text-dim)", fontFamily: '"JetBrains Mono", monospace', paddingTop: 3 }}>
-                          {ev.date}
-                        </div>
-                        {/* Dot */}
-                        <div style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: "50%",
-                          background: SOURCE_COLORS[ev.source_type] ?? "#7b8db0",
-                          flexShrink: 0,
-                          marginTop: 5,
-                          zIndex: 1,
-                        }} />
-                        {/* Content */}
-                        <div style={{ flex: 1 }}>
-                          <div style={{ marginBottom: 4 }}>
-                            <span style={{
-                              fontSize: 10,
-                              padding: "1px 6px",
-                              borderRadius: 3,
-                              background: "var(--bg-active)",
-                              border: "1px solid var(--border)",
-                              color: SOURCE_COLORS[ev.source_type] ?? "var(--text-muted)",
-                            }}>
-                              {SOURCE_LABELS[ev.source_type] ?? ev.source_type}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{ev.summary}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {tab === "events" && (
+              <div style={{ maxWidth: 1000 }}>
+                <SectionCard title={`Events (${events?.events.length ?? 0})`}>
+                  <EventsTab events={events?.events ?? []} />
+                </SectionCard>
+              </div>
+            )}
+
+            {tab === "stress" && stress && (
+              <div style={{ maxWidth: 900 }}>
+                <StressTab data={stress} />
+              </div>
+            )}
+
+            {tab === "history" && (
+              <div style={{ maxWidth: 1100 }}>
+                <SectionCard title={`History (${history?.history.length ?? 0} records)`}>
+                  <HistoryTab history={history?.history ?? []} />
+                </SectionCard>
+              </div>
+            )}
+
+            {tab === "evidence" && (
+              <div style={{ maxWidth: 1000 }}>
+                <SectionCard title={`Evidence (${evidence?.evidence.length ?? 0} items)`}>
+                  <EvidenceTab evidence={evidence?.evidence ?? []} />
+                </SectionCard>
               </div>
             )}
           </>
@@ -219,12 +210,12 @@ function SectionCard({ title, children }: { title: string; children: React.React
 function QuickScoreRow({ project }: { project: ProjectDetail }) {
   const s = project.score;
   const items = [
-    { label: "Q-Hazard", value: `${(s.current_hazard * 100).toFixed(1)}%`, highlight: s.current_hazard > 0.07 },
-    { label: "Deadline P", value: `${(s.deadline_probability * 100).toFixed(1)}%`, highlight: s.deadline_probability > 0.2 },
-    { label: "Project Stress", value: s.project_stress_score.toFixed(2), highlight: s.project_stress_score > 0.6 },
-    { label: "Regional Stress", value: s.regional_stress_score.toFixed(2), highlight: s.regional_stress_score > 0.5 },
-    { label: "Anomaly", value: s.anomaly_score.toFixed(2), highlight: s.anomaly_score > 0.4 },
-    { label: "Evidence Quality", value: s.evidence_quality_score.toFixed(2), highlight: false },
+    { label: "Q-Hazard",        value: `${(s.current_hazard * 100).toFixed(1)}%`,        highlight: s.current_hazard > 0.07 },
+    { label: "Deadline P",      value: `${(s.deadline_probability * 100).toFixed(1)}%`,  highlight: s.deadline_probability > 0.2 },
+    { label: "Project Stress",  value: s.project_stress_score.toFixed(2),                highlight: s.project_stress_score > 0.6 },
+    { label: "Regional Stress", value: s.regional_stress_score.toFixed(2),               highlight: s.regional_stress_score > 0.5 },
+    { label: "Anomaly",         value: s.anomaly_score.toFixed(2),                        highlight: s.anomaly_score > 0.4 },
+    { label: "Evidence Quality",value: s.evidence_quality_score.toFixed(2),              highlight: false },
   ];
   return (
     <div style={{

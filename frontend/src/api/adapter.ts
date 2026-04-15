@@ -51,6 +51,10 @@ interface RawProjectListItem {
   latest_update_date: string | null;
   modeled_primary_load_mw: number | null;
   phase_count: number;
+  current_hazard: number;
+  deadline_probability: number;
+  risk_tier: string;
+  as_of_quarter: string | null;
 }
 
 interface RawProjectDetail {
@@ -135,13 +139,13 @@ function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
     project_id: raw.id,
     project_name: raw.canonical_name,
     state: raw.state ?? "",
-    region_or_rto: "",           // not available in list endpoint
+    region_or_rto: "",
     modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
     lifecycle_state: raw.lifecycle_state as LifecycleState,
-    risk_tier: "unknown",        // not computed in backend yet
-    current_hazard: 0,           // not in list endpoint — see project detail/score
-    deadline_probability: 0,     // not in list endpoint — see project detail/score
-    data_quality_score: 0,       // not in list endpoint — see project detail/score
+    risk_tier: (raw.risk_tier ?? "unknown") as ProjectListItem["risk_tier"],
+    current_hazard: raw.current_hazard ?? 0,
+    deadline_probability: raw.deadline_probability ?? 0,
+    data_quality_score: 0,
     latest_update_date: raw.latest_update_date ?? "",
     phase_count: raw.phase_count,
   };
@@ -268,6 +272,53 @@ export async function getTimeline(id: string): Promise<TimelineEvent[]> {
     await delay();
     return MOCK_TIMELINES[id] ?? [];
   }
-  // Timeline endpoint not yet implemented in backend — return empty
   return [];
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+export async function getProjectEvents(id: string): Promise<ProjectEventsData> {
+  if (USE_MOCK) {
+    await delay();
+    return { project_id: id, project_name: "", events: [] };
+  }
+  return fetchJson<ProjectEventsData>(`/projects/${id}/events`);
+}
+
+// ---------------------------------------------------------------------------
+// Stress
+// ---------------------------------------------------------------------------
+
+export async function getProjectStress(id: string): Promise<ProjectStressData> {
+  if (USE_MOCK) {
+    await delay();
+    return { project_id: id, project_name: "", current_stress: null, signals: [] };
+  }
+  return fetchJson<ProjectStressData>(`/projects/${id}/stress`);
+}
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+export async function getProjectHistory(id: string): Promise<ProjectHistoryData> {
+  if (USE_MOCK) {
+    await delay();
+    return { project_id: id, project_name: "", history: [] };
+  }
+  return fetchJson<ProjectHistoryData>(`/projects/${id}/history`);
+}
+
+// ---------------------------------------------------------------------------
+// Evidence
+// ---------------------------------------------------------------------------
+
+export async function getProjectEvidence(id: string): Promise<ProjectEvidenceData> {
+  if (USE_MOCK) {
+    await delay();
+    return { project_id: id, project_name: "", evidence: [] };
+  }
+  return fetchJson<ProjectEvidenceData>(`/projects/${id}/evidence`);
 }
