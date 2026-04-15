@@ -20,6 +20,10 @@ import type {
   TimelineEvent,
   LifecycleState,
   PhaseStatus,
+  ProjectEventsData,
+  ProjectStressData,
+  ProjectHistoryData,
+  ProjectEvidenceData,
 } from "./types";
 import {
   MOCK_PROJECTS,

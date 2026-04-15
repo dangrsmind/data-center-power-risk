@@ -104,3 +104,111 @@ export interface TimelineEvent {
   source_type: SourceType;
   summary: string;
 }
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+export interface ProjectEvent {
+  event_id: string;
+  event_family: string;       // E1 | E2 | E3 | E4
+  event_scope: string;
+  event_date: string;
+  phase_id: string | null;
+  phase_name: string | null;
+  region_name: string | null;
+  utility_name: string | null;
+  severity: string | null;
+  reason_class: string | null;
+  confidence: string | null;
+  causal_strength: string;
+  stress_direction: string;
+  weak_label_weight: number | null;
+  adjudicated: boolean;
+  notes: string | null;
+}
+
+export interface ProjectEventsData {
+  project_id: string;
+  project_name: string;
+  events: ProjectEvent[];
+}
+
+// ---------------------------------------------------------------------------
+// Stress
+// ---------------------------------------------------------------------------
+export interface StressSignal {
+  stress_observation_id: string;
+  signal_name: string;
+  source_signal_type: string;
+  quarter: string;
+  signal_value: number;
+  signal_weight: number;
+  derived_by: string | null;
+}
+
+export interface CurrentStress {
+  quarter: string;
+  project_stress_score: number | null;
+  regional_stress_score: number | null;
+  anomaly_score: number | null;
+  evidence_quality_score: number | null;
+  model_version: string;
+  region_name: string | null;
+  utility_name: string | null;
+  decomposition: Record<string, number> | null;
+}
+
+export interface ProjectStressData {
+  project_id: string;
+  project_name: string;
+  current_stress: CurrentStress | null;
+  signals: StressSignal[];
+}
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+export interface ProjectHistoryItem {
+  project_phase_quarter_id: string;
+  quarter: string;
+  phase_id: string;
+  phase_name: string;
+  current_hazard: number | null;
+  deadline_probability: number | null;
+  project_stress_score: number | null;
+  regional_stress_score: number | null;
+  anomaly_score: number | null;
+  E1_label: boolean | null;
+  E2_label: boolean | null;
+  E3_intensity: number | null;
+  E4_label: boolean | null;
+  data_quality_score: number | null;
+  model_version: string | null;
+}
+
+export interface ProjectHistoryData {
+  project_id: string;
+  project_name: string;
+  history: ProjectHistoryItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Evidence
+// ---------------------------------------------------------------------------
+export interface EvidenceItem {
+  evidence_id: string;
+  source_type: string;
+  source_date: string | null;
+  title: string | null;
+  source_url: string | null;
+  source_rank: number | null;
+  reviewer_status: string;
+  excerpt: string | null;
+  field_names: string[];
+}
+
+export interface ProjectEvidenceData {
+  project_id: string;
+  project_name: string;
+  evidence: EvidenceItem[];
+}
