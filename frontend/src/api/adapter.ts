@@ -265,7 +265,6 @@ export async function getProject(id: string): Promise<ProjectDetail> {
   };
 }
 
-
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -286,7 +285,7 @@ export async function getProjectStress(id: string): Promise<ProjectStressData> {
   if (USE_MOCK) {
     await delay();
     return { project_id: id, project_name: "", current_stress: null, signals: [] };
-  }
+}
   return fetchJson<ProjectStressData>(`/projects/${id}/stress`);
 }
 
