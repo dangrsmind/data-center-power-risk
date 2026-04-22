@@ -75,8 +75,8 @@ export function StressTab({ data }: Props) {
                   <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", fontWeight: 600, marginBottom: 4 }}>
                     {item.label}
                   </div>
-                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: scoreColor(item.value) }}>
-                    {item.value !== null ? item.value.toFixed(2) : "—"}
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: scoreColor(item.value ?? null) }}>
+                    {item.value != null ? item.value.toFixed(2) : "—"}
                   </div>
                 </div>
               ))}

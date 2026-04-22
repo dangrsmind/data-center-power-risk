@@ -106,7 +106,7 @@ export function EventsTab({ events }: Props) {
                 {ev.adjudicated ? "yes" : "no"}
               </td>
               <td style={{ ...TD, fontFamily: '"JetBrains Mono", monospace', color: "var(--text-dim)" }}>
-                {ev.weak_label_weight !== null ? ev.weak_label_weight.toFixed(2) : "—"}
+                {ev.weak_label_weight != null ? ev.weak_label_weight.toFixed(2) : "—"}
               </td>
             </tr>
           ))}

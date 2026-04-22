@@ -20,8 +20,8 @@ const TD: React.CSSProperties = {
   verticalAlign: "middle",
 };
 
-function PctCell({ value }: { value: number | null }) {
-  if (value === null) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+function PctCell({ value }: { value: number | null | undefined }) {
+  if (value == null) return <span style={{ color: "var(--text-dim)" }}>—</span>;
   const pct = value * 100;
   const color = pct > 70 ? "#ef4444" : pct > 40 ? "#f97316" : "#34d399";
   return (
@@ -31,8 +31,8 @@ function PctCell({ value }: { value: number | null }) {
   );
 }
 
-function ScoreCell({ value }: { value: number | null }) {
-  if (value === null) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+function ScoreCell({ value }: { value: number | null | undefined }) {
+  if (value == null) return <span style={{ color: "var(--text-dim)" }}>—</span>;
   const color = value > 0.6 ? "#ef4444" : value > 0.35 ? "#f97316" : "var(--text)";
   return (
     <span style={{ fontFamily: '"JetBrains Mono", monospace', color }}>
@@ -41,8 +41,8 @@ function ScoreCell({ value }: { value: number | null }) {
   );
 }
 
-function BoolCell({ value }: { value: boolean | null }) {
-  if (value === null) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+function BoolCell({ value }: { value: boolean | null | undefined }) {
+  if (value == null) return <span style={{ color: "var(--text-dim)" }}>—</span>;
   return (
     <span style={{ color: value ? "#ef4444" : "var(--text-dim)", fontWeight: value ? 700 : 400, fontSize: 11 }}>
       {value ? "yes" : "no"}
@@ -101,14 +101,14 @@ export function HistoryTab({ history }: Props) {
               <td style={TD}><BoolCell value={item.E1_label} /></td>
               <td style={TD}><BoolCell value={item.E2_label} /></td>
               <td style={TD}>
-                {item.E3_intensity !== null
+                {item.E3_intensity != null
                   ? <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: "var(--text-muted)" }}>{item.E3_intensity.toFixed(2)}</span>
                   : <span style={{ color: "var(--text-dim)" }}>—</span>
                 }
               </td>
               <td style={TD}><BoolCell value={item.E4_label} /></td>
               <td style={{ ...TD, color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>
-                {item.data_quality_score !== null ? item.data_quality_score.toFixed(0) : "—"}
+                {item.data_quality_score != null ? item.data_quality_score.toFixed(0) : "—"}
               </td>
             </tr>
           ))}
