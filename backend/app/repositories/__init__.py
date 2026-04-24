@@ -1,3 +1,4 @@
+from app.repositories.candidate_repo import CandidateRepository
 from app.repositories.evidence_repo import EvidenceRepository
 from app.repositories.event_repo import EventRepository
 from app.repositories.phase_repo import PhaseRepository
@@ -7,6 +8,7 @@ from app.repositories.snapshot_repo import SnapshotRepository
 from app.repositories.stress_repo import StressRepository
 
 __all__ = [
+    "CandidateRepository",
     "EvidenceRepository",
     "EventRepository",
     "PhaseRepository",

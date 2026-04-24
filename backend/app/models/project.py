@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, Date, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.enums import LifecycleState, LoadKind, enum_values
@@ -24,6 +24,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     lifecycle_state: Mapped[LifecycleState] = mapped_column(
         Enum(LifecycleState, name="lifecycle_state", native_enum=False, values_callable=enum_values), nullable=False
     )
+    candidate_metadata_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     region_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), ForeignKey("regions.id"), nullable=True
     )
