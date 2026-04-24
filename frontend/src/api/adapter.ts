@@ -17,7 +17,6 @@ import type {
   ProjectDetail,
   Phase,
   Score,
-  TimelineEvent,
   LifecycleState,
   PhaseStatus,
   ProjectEventsData,
@@ -28,7 +27,6 @@ import type {
 import {
   MOCK_PROJECTS,
   MOCK_PROJECT_DETAILS,
-  MOCK_TIMELINES,
 } from "./mock";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
@@ -267,13 +265,6 @@ export async function getProject(id: string): Promise<ProjectDetail> {
   };
 }
 
-export async function getTimeline(id: string): Promise<TimelineEvent[]> {
-  if (USE_MOCK) {
-    await delay();
-    return MOCK_TIMELINES[id] ?? [];
-  }
-  return [];
-}
 
 // ---------------------------------------------------------------------------
 // Events

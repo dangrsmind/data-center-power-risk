@@ -9,13 +9,43 @@ from app.schemas.analyst import (
     ProjectStressResponse,
     StressSignalItem,
 )
+from app.schemas.ingestion import (
+    ClaimAcceptRequest,
+    ClaimAcceptResponse,
+    ClaimLinkRequest,
+    ClaimQueueItem,
+    ClaimQueueResponse,
+    ClaimReviewRequest,
+    ClaimResponse,
+    EvidenceDetailResponse,
+    EvidenceClaimsCreateRequest,
+    EvidenceClaimsCreateResponse,
+    EvidenceCreateRequest,
+    EvidenceQueueItem,
+    EvidenceQueueResponse,
+    EvidenceResponse,
+)
 from app.schemas.phase import PhaseListItem
 from app.schemas.project import ProjectDetail, ProjectListItem
 from app.schemas.score import GraphFragilitySummary, ProjectScoreResponse, ScoreDriver
 
 __all__ = [
+    "ClaimQueueItem",
+    "ClaimQueueResponse",
+    "ClaimAcceptRequest",
+    "ClaimAcceptResponse",
+    "ClaimLinkRequest",
+    "ClaimReviewRequest",
+    "ClaimResponse",
     "CurrentStressResponse",
+    "EvidenceDetailResponse",
+    "EvidenceClaimsCreateRequest",
+    "EvidenceClaimsCreateResponse",
+    "EvidenceCreateRequest",
     "EvidenceListItem",
+    "EvidenceQueueItem",
+    "EvidenceQueueResponse",
+    "EvidenceResponse",
     "EventListItem",
     "GraphFragilitySummary",
     "PhaseListItem",

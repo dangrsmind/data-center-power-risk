@@ -13,3 +13,4 @@ backend/build/
 backend/dist/
 *.sqlite
 *.db
+frontend/node_modules/
