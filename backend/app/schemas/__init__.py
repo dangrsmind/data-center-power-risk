@@ -9,6 +9,13 @@ from app.schemas.analyst import (
     ProjectStressResponse,
     StressSignalItem,
 )
+from app.schemas.automation import (
+    ClaimSuggestRequest,
+    ClaimSuggestResponse,
+    IntakePacketRequest,
+    IntakePacketResponse,
+    SuggestedLinkTarget,
+)
 from app.schemas.candidates import CandidateImportItemResult, CandidateImportResponse
 from app.schemas.ingestion import (
     ClaimAcceptRequest,
@@ -31,6 +38,10 @@ from app.schemas.project import ProjectDetail, ProjectListItem
 from app.schemas.score import GraphFragilitySummary, ProjectScoreResponse, ScoreDriver
 
 __all__ = [
+    "ClaimSuggestRequest",
+    "ClaimSuggestResponse",
+    "IntakePacketRequest",
+    "IntakePacketResponse",
     "CandidateImportItemResult",
     "CandidateImportResponse",
     "ClaimQueueItem",
@@ -62,4 +73,5 @@ __all__ = [
     "ProjectScoreResponse",
     "ScoreDriver",
     "StressSignalItem",
+    "SuggestedLinkTarget",
 ]

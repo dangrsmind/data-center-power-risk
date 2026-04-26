@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import candidates_router, claims_router, evidence_router, projects_router, queue_router
+from app.api.routes import automation_router, candidates_router, claims_router, evidence_router, projects_router, queue_router
 from app.core.db import DATABASE_URL, create_db_and_tables
 
 
@@ -36,6 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(projects_router)
+app.include_router(automation_router)
 app.include_router(candidates_router)
 app.include_router(evidence_router)
 app.include_router(claims_router)

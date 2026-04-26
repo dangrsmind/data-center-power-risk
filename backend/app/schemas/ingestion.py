@@ -38,7 +38,7 @@ class ProjectNameClaimValue(BaseModel):
 
 
 class PhaseNameClaimValue(BaseModel):
-    phase_name: str
+    phase_name: str = Field(pattern=r"^Phase\s+(?:[IVX]+|\d+|[A-Z])$")
 
 
 class DeveloperNamedClaimValue(BaseModel):

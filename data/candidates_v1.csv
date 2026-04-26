@@ -1,0 +1,4 @@
+candidate_id,canonical_name,developer,state,county,region_hint,known_load_mw,priority_tier,source_1_url,source_1_type
+CAND_001,CleanArc VA1,CleanArc Data Centers,VA,Caroline,PJM,300,A,https://example.com,developer_statement
+CAND_002,AVAIO Farmville,AVAIO Digital,VA,Prince Edward,PJM,300,A,https://example.com,developer_statement
+CAND_003,T5 ATL IV,T5 Data Centers,GA,Fulton,SERC,300,A,https://example.com,developer_statement

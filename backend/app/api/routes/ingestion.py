@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -43,12 +44,45 @@ def get_evidence_detail(evidence_id: uuid.UUID, db: Session = Depends(get_db)) -
     response_model=EvidenceClaimsCreateResponse,
     response_model_exclude_none=True,
 )
-def create_evidence_claims(
+async def create_evidence_claims(
     evidence_id: uuid.UUID,
-    request: EvidenceClaimsCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> EvidenceClaimsCreateResponse:
-    return IngestionService(db).create_claims(evidence_id, request)
+    try:
+        raw_payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
+
+    try:
+        parsed_request = TypeAdapter(EvidenceClaimsCreateRequest).validate_python(raw_payload)
+    except ValidationError as exc:
+        raw_claims = raw_payload.get("claims", []) if isinstance(raw_payload, dict) else []
+        invalid_claims: list[dict] = []
+        for error in exc.errors():
+            loc = error.get("loc", ())
+            claim_index = next((part for part in loc if isinstance(part, int)), None)
+            claim_type = None
+            if claim_index is not None and isinstance(raw_claims, list) and claim_index < len(raw_claims):
+                claim = raw_claims[claim_index]
+                if isinstance(claim, dict):
+                    claim_type = claim.get("claim_type")
+            invalid_claims.append(
+                {
+                    "claim_index": claim_index,
+                    "claim_type": claim_type,
+                    "message": error.get("msg", "Invalid claim payload"),
+                }
+            )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Invalid claims payload",
+                "invalid_claims": invalid_claims,
+            },
+        ) from exc
+
+    return IngestionService(db).create_claims(evidence_id, parsed_request)
 
 
 @queue_router.get("/evidence", response_model=EvidenceQueueResponse, response_model_exclude_none=True)
