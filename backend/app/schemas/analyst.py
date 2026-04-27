@@ -130,3 +130,20 @@ class ProjectEvidenceResponse(BaseModel):
     project_id: uuid.UUID
     project_name: str
     evidence: list[EvidenceListItem]
+
+
+class RiskSignalEvidenceSummary(BaseModel):
+    evidence_count: int
+    accepted_claim_count: int
+    unresolved_claim_count: int
+
+
+class ProjectRiskSignalResponse(BaseModel):
+    project_id: uuid.UUID
+    risk_signal: str
+    risk_signal_score: float
+    risk_signal_tier: str
+    drivers: list[str]
+    missing_fields: list[str]
+    evidence_summary: RiskSignalEvidenceSummary
+    method: str

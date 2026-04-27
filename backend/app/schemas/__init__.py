@@ -6,7 +6,9 @@ from app.schemas.analyst import (
     ProjectEventsResponse,
     ProjectHistoryItem,
     ProjectHistoryResponse,
+    ProjectRiskSignalResponse,
     ProjectStressResponse,
+    RiskSignalEvidenceSummary,
     StressSignalItem,
 )
 from app.schemas.automation import (
@@ -69,7 +71,9 @@ __all__ = [
     "ProjectHistoryItem",
     "ProjectHistoryResponse",
     "ProjectListItem",
+    "ProjectRiskSignalResponse",
     "ProjectStressResponse",
+    "RiskSignalEvidenceSummary",
     "ProjectScoreResponse",
     "ScoreDriver",
     "StressSignalItem",

@@ -10,6 +10,7 @@ from app.schemas.analyst import (
     ProjectEvidenceResponse,
     ProjectEventsResponse,
     ProjectHistoryResponse,
+    ProjectRiskSignalResponse,
     ProjectStressResponse,
 )
 from app.schemas.phase import PhaseListItem
@@ -59,3 +60,8 @@ def get_project_history(project_id: uuid.UUID, db: Session = Depends(get_db)) ->
 @router.get("/{project_id}/evidence", response_model=ProjectEvidenceResponse, response_model_exclude_none=True)
 def get_project_evidence(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectEvidenceResponse:
     return ProjectService(db).get_project_evidence(project_id)
+
+
+@router.get("/{project_id}/risk-signal", response_model=ProjectRiskSignalResponse, response_model_exclude_none=True)
+def get_project_risk_signal(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectRiskSignalResponse:
+    return ProjectService(db).get_project_risk_signal(project_id)

@@ -27,6 +27,7 @@ from app.schemas.analyst import (
     ProjectEventsResponse,
     ProjectHistoryItem,
     ProjectHistoryResponse,
+    ProjectRiskSignalResponse,
     ProjectStressResponse,
     StressSignalItem,
 )
@@ -34,6 +35,7 @@ from app.schemas.phase import PhaseListItem
 from app.schemas.project import ProjectDetail, ProjectListItem
 from app.schemas.score import ProjectScoreResponse
 from app.services.mock_scoring_service import MockScoringInputs, MockScoringService
+from app.services.risk_signal_service import RiskSignalService
 
 
 def _json_number(value: Decimal | int | float | None) -> int | float | None:
@@ -343,6 +345,9 @@ class ProjectService:
                 for row in evidence_rows
             ],
         )
+
+    def get_project_risk_signal(self, project_id: uuid.UUID) -> ProjectRiskSignalResponse:
+        return RiskSignalService(self.db).get_project_risk_signal(project_id)
 
     def _build_project_score_response(self, project: Project) -> ProjectScoreResponse:
         phase_quarter = self.snapshot_repo.get_latest_project_phase_quarter(project.id)
