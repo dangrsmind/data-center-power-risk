@@ -6,6 +6,7 @@ import type {
   ProjectStressData,
   ProjectHistoryData,
   ProjectEvidenceData,
+  ProjectRiskSignalData,
 } from "../api/types";
 import {
   getProject,
@@ -13,6 +14,7 @@ import {
   getProjectStress,
   getProjectHistory,
   getProjectEvidence,
+  getProjectRiskSignal,
 } from "../api/adapter";
 import { ProjectDetailPanel } from "../components/detail/ProjectDetailPanel";
 import { PhaseList } from "../components/detail/PhaseList";
@@ -21,27 +23,30 @@ import { EventsTab } from "../components/detail/EventsTab";
 import { StressTab } from "../components/detail/StressTab";
 import { HistoryTab } from "../components/detail/HistoryTab";
 import { EvidenceTab } from "../components/detail/EvidenceTab";
+import { RiskSignalTab } from "../components/detail/RiskSignalTab";
 
-type TabId = "overview" | "phases" | "score" | "events" | "stress" | "history" | "evidence";
+type TabId = "overview" | "phases" | "score" | "events" | "stress" | "history" | "evidence" | "risk-signal";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "overview",  label: "Overview" },
-  { id: "phases",    label: "Phases" },
-  { id: "score",     label: "Score" },
-  { id: "events",    label: "Events" },
-  { id: "stress",    label: "Stress" },
-  { id: "history",   label: "History" },
-  { id: "evidence",  label: "Evidence" },
+  { id: "overview",     label: "Overview" },
+  { id: "phases",       label: "Phases" },
+  { id: "score",        label: "Score" },
+  { id: "events",       label: "Events" },
+  { id: "stress",       label: "Stress" },
+  { id: "history",      label: "History" },
+  { id: "evidence",     label: "Evidence" },
+  { id: "risk-signal",  label: "Risk Signal" },
 ];
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
 
-  const [project,  setProject]  = useState<ProjectDetail | null>(null);
-  const [events,   setEvents]   = useState<ProjectEventsData | null>(null);
-  const [stress,   setStress]   = useState<ProjectStressData | null>(null);
-  const [history,  setHistory]  = useState<ProjectHistoryData | null>(null);
-  const [evidence, setEvidence] = useState<ProjectEvidenceData | null>(null);
+  const [project,     setProject]     = useState<ProjectDetail | null>(null);
+  const [events,      setEvents]      = useState<ProjectEventsData | null>(null);
+  const [stress,      setStress]      = useState<ProjectStressData | null>(null);
+  const [history,     setHistory]     = useState<ProjectHistoryData | null>(null);
+  const [evidence,    setEvidence]    = useState<ProjectEvidenceData | null>(null);
+  const [riskSignal,  setRiskSignal]  = useState<ProjectRiskSignalData | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -55,6 +60,7 @@ export function ProjectDetailPage() {
     setStress(null);
     setHistory(null);
     setEvidence(null);
+    setRiskSignal(null);
     setError(null);
 
     Promise.all([
@@ -63,13 +69,15 @@ export function ProjectDetailPage() {
       getProjectStress(id),
       getProjectHistory(id),
       getProjectEvidence(id),
+      getProjectRiskSignal(id),
     ])
-      .then(([proj, evts, str, hist, evid]) => {
+      .then(([proj, evts, str, hist, evid, rs]) => {
         setProject(proj);
         setEvents(evts);
         setStress(str);
         setHistory(hist);
         setEvidence(evid);
+        setRiskSignal(rs);
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
@@ -188,6 +196,15 @@ export function ProjectDetailPage() {
                   <EvidenceTab evidence={evidence?.evidence ?? []} />
                 </SectionCard>
               </div>
+            )}
+
+            {tab === "risk-signal" && riskSignal && (
+              <div style={{ maxWidth: 820 }}>
+                <RiskSignalTab data={riskSignal} />
+              </div>
+            )}
+            {tab === "risk-signal" && !riskSignal && !loading && (
+              <div style={{ color: "var(--text-muted)", fontSize: 13 }}>No risk signal data available.</div>
             )}
           </>
         )}

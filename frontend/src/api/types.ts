@@ -212,3 +212,23 @@ export interface ProjectEvidenceData {
   project_name: string;
   evidence: EvidenceItem[];
 }
+
+// ---------------------------------------------------------------------------
+// Risk Signal
+// ---------------------------------------------------------------------------
+export interface RiskSignalEvidenceSummary {
+  evidence_count: number;
+  accepted_claim_count: number;
+  unresolved_claim_count: number;
+}
+
+export interface ProjectRiskSignalData {
+  project_id: string;
+  risk_signal: string;
+  risk_signal_score: number;
+  risk_signal_tier: string;
+  drivers: string[];
+  missing_fields: string[];
+  evidence_summary: RiskSignalEvidenceSummary;
+  method: string;
+}

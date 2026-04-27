@@ -75,6 +75,7 @@ __all__ = [
     "ProjectStressResponse",
     "RiskSignalEvidenceSummary",
     "ProjectScoreResponse",
+    "RiskSignalEvidenceSummary",
     "ScoreDriver",
     "StressSignalItem",
     "SuggestedLinkTarget",

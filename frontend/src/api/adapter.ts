@@ -23,6 +23,7 @@ import type {
   ProjectStressData,
   ProjectHistoryData,
   ProjectEvidenceData,
+  ProjectRiskSignalData,
 } from "./types";
 import {
   MOCK_PROJECTS,
@@ -311,4 +312,25 @@ export async function getProjectEvidence(id: string): Promise<ProjectEvidenceDat
     return { project_id: id, project_name: "", evidence: [] };
   }
   return fetchJson<ProjectEvidenceData>(`/projects/${id}/evidence`);
+}
+
+// ---------------------------------------------------------------------------
+// Risk Signal
+// ---------------------------------------------------------------------------
+
+export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      project_id: id,
+      risk_signal: "power_path_underresolved",
+      risk_signal_score: 0.75,
+      risk_signal_tier: "high",
+      drivers: [],
+      missing_fields: [],
+      evidence_summary: { evidence_count: 0, accepted_claim_count: 0, unresolved_claim_count: 0 },
+      method: "deterministic_evidence_backed_v1",
+    };
+  }
+  return fetchJson<ProjectRiskSignalData>(`/projects/${id}/risk-signal`);
 }
