@@ -35,7 +35,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "stress",       label: "Stress" },
   { id: "history",      label: "History" },
   { id: "evidence",     label: "Evidence" },
-  { id: "risk-signal",  label: "Risk Signal" },
+  { id: "risk-signal",  label: "Evidence Signal" },
 ];
 
 export function ProjectDetailPage() {
@@ -147,8 +147,11 @@ export function ProjectDetailPage() {
             {tab === "overview" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 900 }}>
                 <ProjectDetailPanel project={project} />
-                <SectionCard title="Score Summary">
+                <SectionCard title="Model Score Summary">
                   <QuickScoreRow project={project} />
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+                    Produced by the ML scoring model. May differ from the Evidence-Based Risk Signal.
+                  </div>
                 </SectionCard>
                 <SectionCard title="Phase Overview">
                   <PhaseList phases={project.phases} />

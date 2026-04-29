@@ -69,6 +69,16 @@ export function RiskSignalTab({ data }: { data: ProjectRiskSignalData }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
+      {/* Section header */}
+      <div>
+        <h2 style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", margin: 0, marginBottom: 4 }}>
+          Evidence-Based Risk Signal
+        </h2>
+        <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>
+          Scores accepted evidence records and claims about the power path. Independent of the ML model score shown on the Score tab.
+        </p>
+      </div>
+
       {/* Header card */}
       <div style={{
         background: "var(--bg-surface)",

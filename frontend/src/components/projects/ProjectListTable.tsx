@@ -16,7 +16,7 @@ const COLUMNS: { key: string; label: string; sortKey?: SortKey; width?: number }
   { key: "state", label: "State", width: 60 },
   { key: "region_or_rto", label: "RTO", width: 80 },
   { key: "lifecycle_state", label: "Lifecycle", width: 150 },
-  { key: "risk_tier", label: "Risk", width: 90 },
+  { key: "risk_tier", label: "Model Risk", width: 100 },
   { key: "modeled_primary_load_mw", label: "Load (MW)", sortKey: "modeled_primary_load_mw", width: 100 },
   { key: "phase_count", label: "Phases", width: 70 },
   { key: "current_hazard", label: "Q-Hazard", sortKey: "current_hazard", width: 90 },
@@ -129,7 +129,7 @@ export function ProjectListTable({ projects, loading }: Props) {
           {LIFECYCLE_OPTIONS.map(l => <option key={l} value={l}>{l.replace(/_/g, " ")}</option>)}
         </select>
         <select style={filterSelect} value={risk} onChange={e => setRisk(e.target.value)}>
-          <option value="">All Risk Tiers</option>
+          <option value="">All Model Risk Tiers</option>
           {RISK_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
         <select style={filterSelect} value={rto} onChange={e => setRto(e.target.value)}>
@@ -139,6 +139,9 @@ export function ProjectListTable({ projects, loading }: Props) {
         <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)" }}>
           {sorted.length} of {projects.length} projects
         </span>
+      </div>
+      <div style={{ padding: "5px 16px", background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.03em" }}>
+        Model Risk tier is derived from the ML scoring model (Q-Hazard / Deadline P). It may differ from the Evidence-Based Risk Signal shown on each project's Evidence Signal tab.
       </div>
 
       {/* Table */}

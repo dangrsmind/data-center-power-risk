@@ -8,6 +8,10 @@ interface Props {
 export function ScorePanel({ score }: Props) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Source note */}
+      <div style={{ fontSize: 11, color: "var(--text-dim)", padding: "7px 10px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 5 }}>
+        ML scoring model — independent of the Evidence-Based Risk Signal shown on the Evidence Signal tab.
+      </div>
       {/* Primary score cards */}
       <div style={{
         display: "grid",
