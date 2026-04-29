@@ -232,3 +232,120 @@ export interface ProjectRiskSignalData {
   evidence_summary: RiskSignalEvidenceSummary;
   method: string;
 }
+
+// ---------------------------------------------------------------------------
+// Ingest Workbench
+// ---------------------------------------------------------------------------
+
+export type IngestSourceType =
+  | "official_filing"
+  | "utility_statement"
+  | "regulatory_record"
+  | "county_record"
+  | "press"
+  | "developer_statement"
+  | "other";
+
+export interface IntakePacketRequest {
+  source_url?: string;
+  source_type: IngestSourceType;
+  source_date?: string;
+  title?: string;
+  evidence_text: string;
+  project_id?: string;
+}
+
+export interface IngestEvidencePayload {
+  source_type: string;
+  source_date?: string;
+  source_url?: string;
+  source_rank?: number;
+  title?: string;
+  extracted_text?: string;
+  reviewer_status?: string;
+}
+
+export interface IngestClaimItem {
+  claim_type: string;
+  claim_value: Record<string, unknown>;
+  claim_date?: string;
+  confidence?: string;
+}
+
+export interface IngestSuggestedLinkTarget {
+  claim_type: string;
+  suggested_entity_type: string;
+  suggested_entity_id: string;
+  suggested_entity_label: string;
+  reason: string;
+}
+
+export interface IntakePacketResponse {
+  evidence_payload: IngestEvidencePayload;
+  claims_payload: { claims: IngestClaimItem[] };
+  suggested_link_targets: IngestSuggestedLinkTarget[];
+  exact_next_steps: string[];
+  uncertainties: string[];
+  warnings: string[];
+  generator_version: string;
+}
+
+export interface IngestEvidenceResponse {
+  evidence_id: string;
+  source_type: string;
+  source_date?: string;
+  source_url?: string;
+  title?: string;
+  extracted_text?: string;
+  reviewer_status: string;
+  next_action: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IngestClaimResponse {
+  claim_id: string;
+  evidence_id: string;
+  claim_type: string;
+  claim_value: Record<string, unknown>;
+  claim_date?: string;
+  confidence?: string;
+  entity_type?: string;
+  entity_id?: string;
+  entity_label?: string;
+  review_status: string;
+  is_contradictory: boolean;
+  next_action: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  review_notes?: string;
+  accepted_at?: string;
+  accepted_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IngestClaimsCreateResponse {
+  evidence_id: string;
+  created_claims: IngestClaimResponse[];
+}
+
+export interface IngestClaimAcceptResponse {
+  claim_id: string;
+  review_status: string;
+  accepted_at: string;
+  accepted_by: string;
+  entity_label?: string;
+  next_action: string;
+  normalized_update: Record<string, unknown>;
+  field_provenance: {
+    field_provenance_id: string;
+    entity_type: string;
+    entity_id: string;
+    field_name: string;
+    evidence_id: string;
+    claim_id?: string;
+    created_at: string;
+    updated_at: string;
+  };
+}

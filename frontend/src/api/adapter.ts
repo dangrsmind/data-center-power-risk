@@ -24,6 +24,14 @@ import type {
   ProjectHistoryData,
   ProjectEvidenceData,
   ProjectRiskSignalData,
+  IntakePacketRequest,
+  IntakePacketResponse,
+  IngestEvidencePayload,
+  IngestEvidenceResponse,
+  IngestClaimItem,
+  IngestClaimsCreateResponse,
+  IngestClaimResponse,
+  IngestClaimAcceptResponse,
 } from "./types";
 import {
   MOCK_PROJECTS,
@@ -200,11 +208,24 @@ function transformScore(raw: RawScore): Score {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch utility
+// Fetch utilities
 // ---------------------------------------------------------------------------
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${res.status} ${res.statusText} — ${path}${text ? `: ${text}` : ""}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`API ${res.status} ${res.statusText} — ${path}${text ? `: ${text}` : ""}`);
@@ -312,6 +333,50 @@ export async function getProjectEvidence(id: string): Promise<ProjectEvidenceDat
     return { project_id: id, project_name: "", evidence: [] };
   }
   return fetchJson<ProjectEvidenceData>(`/projects/${id}/evidence`);
+}
+
+// ---------------------------------------------------------------------------
+// Ingest Workbench
+// ---------------------------------------------------------------------------
+
+export async function postIntakePacket(req: IntakePacketRequest): Promise<IntakePacketResponse> {
+  return postJson<IntakePacketResponse>("/automation/intake/packet", req);
+}
+
+export async function createEvidence(req: IngestEvidencePayload): Promise<IngestEvidenceResponse> {
+  return postJson<IngestEvidenceResponse>("/evidence", req);
+}
+
+export async function createEvidenceClaims(
+  evidenceId: string,
+  claims: IngestClaimItem[],
+): Promise<IngestClaimsCreateResponse> {
+  return postJson<IngestClaimsCreateResponse>(`/evidence/${evidenceId}/claims`, { claims });
+}
+
+export async function linkClaim(
+  claimId: string,
+  projectId: string,
+): Promise<IngestClaimResponse> {
+  return postJson<IngestClaimResponse>(`/claims/${claimId}/link`, { project_id: projectId });
+}
+
+export async function reviewClaim(
+  claimId: string,
+  reviewer: string,
+): Promise<IngestClaimResponse> {
+  return postJson<IngestClaimResponse>(`/claims/${claimId}/review`, {
+    review_status: "accepted_candidate",
+    reviewer,
+    is_contradictory: false,
+  });
+}
+
+export async function acceptClaim(
+  claimId: string,
+  acceptedBy: string,
+): Promise<IngestClaimAcceptResponse> {
+  return postJson<IngestClaimAcceptResponse>(`/claims/${claimId}/accept`, { accepted_by: acceptedBy });
 }
 
 // ---------------------------------------------------------------------------

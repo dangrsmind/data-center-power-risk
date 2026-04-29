@@ -1,7 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
 
 const NAV = [
-  { path: "/", label: "Projects", icon: "▤" },
+  { path: "/",       label: "Projects", icon: "▤" },
+  { path: "/ingest", label: "Ingest",   icon: "⊕" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
