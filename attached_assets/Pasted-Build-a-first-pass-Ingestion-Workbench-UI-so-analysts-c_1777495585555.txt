@@ -1,0 +1,86 @@
+Build a first-pass Ingestion Workbench UI so analysts can ingest real-world sources without command line, Swagger, or manual JSON editing.
+
+Goal:
+Turn the existing backend workflow into a guided UI flow:
+
+source text → intake packet → create evidence → create claims → select safe claims → link → review → accept → verify
+
+Existing backend endpoints:
+
+* POST /automation/intake/packet
+* POST /evidence
+* POST /evidence/{evidence_id}/claims
+* POST /claims/{claim_id}/link
+* POST /claims/{claim_id}/review
+* POST /claims/{claim_id}/accept
+* GET /projects
+* GET /projects/{project_id}/evidence
+* GET /projects/{project_id}/risk-signal
+
+Requirements:
+
+1. Add a new frontend page:
+   /ingest
+
+2. Add navigation entry:
+   "Ingest"
+
+3. UI flow:
+   Step 1: Select existing project from dropdown
+   Step 2: Enter source metadata:
+
+   * source_url
+   * source_type
+   * source_date
+   * title
+   * evidence_text
+     Step 3: Click "Generate Intake Packet"
+   * calls POST /automation/intake/packet
+   * displays evidence draft
+   * displays suggested claims
+   * displays warnings/uncertainties
+     Step 4: User selects which claims to create
+     Step 5: Click "Create Evidence + Claims"
+   * calls POST /evidence
+   * then POST /evidence/{id}/claims
+     Step 6: UI shows created claim list with checkboxes
+     Step 7: User selects safe claims and clicks:
+     "Link, Review, and Accept Selected Claims"
+   * calls link/review/accept for each selected claim
+     Step 8: Show success summary:
+   * evidence_id
+   * accepted claims
+   * skipped claims
+   * link to project detail Evidence Signal tab
+
+4. Safety constraints:
+
+   * Do not auto-accept all claims.
+   * User must explicitly select claims to accept.
+   * Default selected claims should only be project-level safe claims:
+     project_name_mention, developer_named, location_county, location_state
+   * Load, timing, phase, utility, power-path claims should default unchecked.
+   * Show warnings next to lower-confidence or ambiguous claims.
+
+5. Adapter requirements:
+
+   * Use API adapter layer only.
+   * Add typed adapter functions for all needed endpoints.
+   * No direct fetch calls in components.
+
+6. UX requirements:
+
+   * No JSON visible to user unless in optional debug collapsible.
+   * No manual copying IDs.
+   * Show clear step numbers.
+   * Disable buttons until required fields exist.
+   * Display backend errors clearly.
+   * Keep styling consistent with existing UI.
+   * Do not redesign project detail or project list.
+
+7. After implementation:
+
+   * verify ingesting one source for an existing project works end-to-end
+   * verify project evidence appears
+   * verify risk signal updates or remains explainable
+   * report files changed and all API calls made
