@@ -1,21 +1,23 @@
 import type { EvidenceItem } from "../../api/types";
 
 const SOURCE_LABELS: Record<string, string> = {
-  county_record: "County Record",
-  utility_statement: "Utility Statement",
-  regulatory_filing: "Regulatory Filing",
-  press: "Press",
-  developer_statement: "Developer Statement",
-  rto_filing: "RTO Filing",
+  official_filing:    "Official Filing",
+  utility_statement:  "Utility Statement",
+  regulatory_record:  "Regulatory Record",
+  county_record:      "County Record",
+  press:              "Press",
+  developer_statement:"Developer Statement",
+  other:              "Other",
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  county_record: "#60a5fa",
-  utility_statement: "#34d399",
-  regulatory_filing: "#a78bfa",
-  press: "#fbbf24",
-  developer_statement: "#f87171",
-  rto_filing: "#38bdf8",
+  official_filing:    "#a78bfa",
+  utility_statement:  "#34d399",
+  regulatory_record:  "#818cf8",
+  county_record:      "#60a5fa",
+  press:              "#fbbf24",
+  developer_statement:"#f87171",
+  other:              "#94a3b8",
 };
 
 const STATUS_COLORS: Record<string, string> = {

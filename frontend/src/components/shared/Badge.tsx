@@ -9,6 +9,7 @@ interface BadgeProps {
 const riskColors: Record<RiskTier, { color: string; bg: string }> = {
   high: { color: "var(--risk-high)", bg: "var(--risk-high-bg)" },
   elevated: { color: "var(--risk-elevated)", bg: "var(--risk-elevated-bg)" },
+  medium: { color: "var(--risk-elevated)", bg: "var(--risk-elevated-bg)" },
   moderate: { color: "var(--risk-moderate)", bg: "var(--risk-moderate-bg)" },
   low: { color: "var(--risk-low)", bg: "var(--risk-low-bg)" },
   unknown: { color: "var(--risk-unknown)", bg: "var(--risk-unknown-bg)" },

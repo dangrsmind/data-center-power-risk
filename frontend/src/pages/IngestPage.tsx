@@ -63,6 +63,45 @@ const SAFE_CLAIM_TYPES = new Set([
   "location_state",
 ]);
 
+// Per-claim-type review warnings for non-safe claims.
+// Communicate exactly what "not yet accepted" means for each type.
+const CLAIM_REVIEW_WARNINGS: Record<string, string> = {
+  modeled_load_mw:
+    "Headline/stated capacity — requires analyst acceptance before used as modeled load in risk scoring.",
+  optional_expansion_mw:
+    "Stated expansion capacity — requires analyst acceptance before use in risk scoring.",
+  target_energization_date:
+    "Stated target date — requires analyst acceptance before used as the project's target energization date.",
+  utility_named:
+    "Requires analyst acceptance before linking as the project's utility.",
+  region_or_rto_named:
+    "Requires analyst acceptance before linking as the project's RTO / region.",
+  power_path_identified_flag:
+    "Power-path infrastructure flag — requires analyst acceptance before affecting the risk signal.",
+  new_transmission_required_flag:
+    "Transmission infrastructure flag — requires analyst acceptance before affecting the risk signal.",
+  new_substation_required_flag:
+    "Substation infrastructure flag — requires analyst acceptance before affecting the risk signal.",
+  onsite_generation_flag:
+    "Onsite generation flag — requires analyst acceptance before affecting the risk signal.",
+  timeline_disruption_signal:
+    "Timeline disruption signal — requires analyst acceptance before affecting the risk signal.",
+  phase_name_mention:
+    "Phase identity claim — verify the phase name matches an existing phase before accepting.",
+  operator_named:
+    "Operator identity claim — verify before accepting.",
+  announcement_date:
+    "Announced date claim — verify against official records before accepting.",
+  latest_update_date:
+    "Latest update date claim — verify the date before accepting.",
+  event_support_e2:
+    "E2 event support signal — requires analyst acceptance before affecting stress scoring.",
+  event_support_e3:
+    "E3 event support signal — requires analyst acceptance before affecting stress scoring.",
+  event_support_e4:
+    "E4 event support signal — requires analyst acceptance before affecting stress scoring.",
+};
+
 type Stage = "form" | "generating" | "packet" | "creating" | "claims" | "accepting" | "done";
 
 // ---------------------------------------------------------------------------
@@ -693,7 +732,9 @@ export function IngestPage() {
                         confidence={claim.confidence}
                         checked={selectedPacketClaims.has(i)}
                         onChange={v => { if (v) setSelectedPacketClaims(p => new Set([...p, i])); else togglePacketClaim(i); }}
-                        warning={!isSafe(claim.claim_type) ? "Load, timing, phase, utility, and power-path claims may need manual review." : undefined}
+                        warning={!isSafe(claim.claim_type)
+                          ? (CLAIM_REVIEW_WARNINGS[claim.claim_type] ?? "Review required before accepting this claim.")
+                          : undefined}
                       />
                     ))}
                   </div>
@@ -747,7 +788,13 @@ export function IngestPage() {
                     confidence={claim.confidence}
                     checked={selectedCreatedClaims.has(claim.claim_id)}
                     onChange={v => { if (v) setSelectedCreatedClaims(p => new Set([...p, claim.claim_id])); else toggleCreatedClaim(claim.claim_id); }}
-                    warning={claim.is_contradictory ? "⚠ Backend flagged this claim as contradictory." : undefined}
+                    warning={
+                      claim.is_contradictory
+                        ? "⚠ Backend flagged this claim as contradictory."
+                        : !isSafe(claim.claim_type)
+                        ? (CLAIM_REVIEW_WARNINGS[claim.claim_type] ?? "Review required before accepting this claim.")
+                        : undefined
+                    }
                   />
                 ))}
               </div>

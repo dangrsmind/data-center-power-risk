@@ -57,12 +57,16 @@ export function ProjectDetailPanel({ project: p }: Props) {
           <KeyValue
             label="Data Quality Score"
             value={
-              <span style={{
-                fontFamily: '"JetBrains Mono", monospace',
-                color: p.data_quality_score >= 80 ? "#22c55e" : p.data_quality_score >= 60 ? "#eab308" : "#ef4444",
-              }}>
-                {p.data_quality_score} / 100
-              </span>
+              p.data_quality_score === null
+                ? "—"
+                : (
+                  <span style={{
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: p.data_quality_score >= 80 ? "#22c55e" : p.data_quality_score >= 60 ? "#eab308" : "#ef4444",
+                  }}>
+                    {p.data_quality_score} / 100
+                  </span>
+                )
             }
           />
         </KeyValueGrid>

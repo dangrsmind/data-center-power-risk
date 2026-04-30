@@ -16,7 +16,7 @@ export type LifecycleState =
   | "delayed"
   | "downsized";
 
-export type RiskTier = "high" | "elevated" | "moderate" | "low" | "unknown";
+export type RiskTier = "high" | "elevated" | "medium" | "moderate" | "low" | "unknown";
 
 export type PhaseStatus =
   | "planning"
@@ -44,7 +44,7 @@ export interface ProjectListItem {
   risk_tier: RiskTier;
   current_hazard: number;
   deadline_probability: number;
-  data_quality_score: number;
+  data_quality_score: number | null;
   latest_update_date: string;
   phase_count: number;
 }

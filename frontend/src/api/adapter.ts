@@ -141,6 +141,24 @@ function formatWeakSignalSummary(raw: Record<string, number | boolean | null>): 
   return parts.join(". ") + ".";
 }
 
+// Normalize backend risk tier values to the frontend RiskTier union.
+// Backend _risk_tier() returns "high" / "medium" / "low".
+// Frontend type uses "elevated" for the middle band (not "medium").
+function normalizeRiskTier(raw: string | null | undefined): ProjectListItem["risk_tier"] {
+  if (!raw) return "unknown";
+  if (raw === "medium") return "elevated";
+  return raw as ProjectListItem["risk_tier"];
+}
+
+// Derive risk_tier from deadline_probability using the same thresholds as the
+// backend _risk_tier() function in project_service.py:
+//   >= 0.66 → high, >= 0.33 → elevated (medium), else low
+function deriveRiskTier(deadlineProbability: number): ProjectListItem["risk_tier"] {
+  if (deadlineProbability >= 0.66) return "high";
+  if (deadlineProbability >= 0.33) return "elevated";
+  return "low";
+}
+
 function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
   return {
     project_id: raw.id,
@@ -149,10 +167,12 @@ function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
     region_or_rto: "",
     modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
     lifecycle_state: raw.lifecycle_state as LifecycleState,
-    risk_tier: (raw.risk_tier ?? "unknown") as ProjectListItem["risk_tier"],
+    risk_tier: normalizeRiskTier(raw.risk_tier),
     current_hazard: raw.current_hazard ?? 0,
     deadline_probability: raw.deadline_probability ?? 0,
-    data_quality_score: 0,
+    // data_quality_score is not in the list endpoint payload — use null to
+    // distinguish "not available" from a real score of 0.
+    data_quality_score: null,
     latest_update_date: raw.latest_update_date ?? "",
     phase_count: raw.phase_count,
   };
@@ -278,7 +298,10 @@ export async function getProject(id: string): Promise<ProjectDetail> {
     headline_load_mw: null,       // not in backend schema yet
     optional_expansion_mw: null,  // not in project record — available per-phase
     lifecycle_state: rawProject.lifecycle_state as LifecycleState,
-    risk_tier: "unknown",         // not computed in backend yet
+    // Derive risk_tier from score deadline_probability, consistent with backend
+    // _risk_tier() in project_service.py. The /projects/{id} endpoint does not
+    // return risk_tier directly, so we compute it here.
+    risk_tier: deriveRiskTier(rawScore.deadline_probability),
     announce_date: rawProject.announcement_date,
     phases,
     score,

@@ -235,19 +235,23 @@ export function ProjectListTable({ projects, loading }: Props) {
                   </span>
                 </td>
                 <td style={{ padding: "9px 12px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ width: 48, height: 4, background: "var(--bg-active)", borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{
-                        width: `${p.data_quality_score}%`,
-                        height: "100%",
-                        background: p.data_quality_score >= 80 ? "#22c55e" : p.data_quality_score >= 60 ? "#eab308" : "#ef4444",
-                        borderRadius: 2,
-                      }} />
+                  {p.data_quality_score === null ? (
+                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>—</span>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 48, height: 4, background: "var(--bg-active)", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{
+                          width: `${p.data_quality_score}%`,
+                          height: "100%",
+                          background: p.data_quality_score >= 80 ? "#22c55e" : p.data_quality_score >= 60 ? "#eab308" : "#ef4444",
+                          borderRadius: 2,
+                        }} />
+                      </div>
+                      <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, color: "var(--text-muted)" }}>
+                        {p.data_quality_score}
+                      </span>
                     </div>
-                    <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, color: "var(--text-muted)" }}>
-                      {p.data_quality_score}
-                    </span>
-                  </div>
+                  )}
                 </td>
                 <td style={{ padding: "9px 12px", color: "var(--text-muted)", fontSize: 12 }}>
                   {p.latest_update_date}
