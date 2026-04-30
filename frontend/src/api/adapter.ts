@@ -163,16 +163,15 @@ function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
   return {
     project_id: raw.id,
     project_name: raw.canonical_name,
+    developer: raw.developer ?? null,
     state: raw.state ?? "",
+    county: raw.county ?? null,
     region_or_rto: "",
     modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
     lifecycle_state: raw.lifecycle_state as LifecycleState,
     risk_tier: normalizeRiskTier(raw.risk_tier),
     current_hazard: raw.current_hazard ?? 0,
     deadline_probability: raw.deadline_probability ?? 0,
-    // data_quality_score is not in the list endpoint payload — use null to
-    // distinguish "not available" from a real score of 0.
-    data_quality_score: null,
     latest_update_date: raw.latest_update_date ?? "",
     phase_count: raw.phase_count,
   };
@@ -291,7 +290,9 @@ export async function getProject(id: string): Promise<ProjectDetail> {
   return {
     project_id: rawProject.id,
     project_name: rawProject.canonical_name,
+    developer: rawProject.developer ?? null,
     state: rawProject.state ?? "",
+    county: rawProject.county ?? null,
     region_or_rto: "",            // region_id UUID only — name lookup not yet available
     utility: null,                // utility_id UUID only — name lookup not yet available
     modeled_primary_load_mw: rawProject.modeled_primary_load_mw ?? 0,

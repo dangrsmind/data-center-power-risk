@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { ProjectListItem, RiskTier, LifecycleState } from "../../api/types";
 import { RiskBadge, LifecycleBadge } from "../shared/Badge";
 
-type SortKey = "current_hazard" | "deadline_probability" | "data_quality_score" | "latest_update_date" | "modeled_primary_load_mw";
+type SortKey = "current_hazard" | "deadline_probability" | "latest_update_date" | "modeled_primary_load_mw";
 type SortDir = "asc" | "desc";
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
 const COLUMNS: { key: string; label: string; sortKey?: SortKey; width?: number }[] = [
   { key: "project_name", label: "Project" },
   { key: "state", label: "State", width: 60 },
+  { key: "county", label: "County", width: 110 },
   { key: "region_or_rto", label: "RTO", width: 80 },
   { key: "lifecycle_state", label: "Lifecycle", width: 150 },
   { key: "risk_tier", label: "Model Risk", width: 100 },
@@ -21,7 +22,6 @@ const COLUMNS: { key: string; label: string; sortKey?: SortKey; width?: number }
   { key: "phase_count", label: "Phases", width: 70 },
   { key: "current_hazard", label: "Q-Hazard", sortKey: "current_hazard", width: 90 },
   { key: "deadline_probability", label: "Deadline P", sortKey: "deadline_probability", width: 100 },
-  { key: "data_quality_score", label: "DQ Score", sortKey: "data_quality_score", width: 90 },
   { key: "latest_update_date", label: "Last Update", sortKey: "latest_update_date", width: 110 },
 ];
 
@@ -203,8 +203,12 @@ export function ProjectListTable({ projects, loading }: Props) {
               >
                 <td style={{ padding: "9px 12px" }}>
                   <div style={{ fontWeight: 500 }}>{p.project_name}</div>
+                  {p.developer && (
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>{p.developer}</div>
+                  )}
                 </td>
                 <td style={{ padding: "9px 12px", color: "var(--text-muted)" }}>{p.state}</td>
+                <td style={{ padding: "9px 12px", color: "var(--text-muted)", fontSize: 12 }}>{p.county ?? "—"}</td>
                 <td style={{ padding: "9px 12px", color: "var(--text-muted)" }}>{p.region_or_rto}</td>
                 <td style={{ padding: "9px 12px" }}><LifecycleBadge state={p.lifecycle_state} /></td>
                 <td style={{ padding: "9px 12px" }}><RiskBadge tier={p.risk_tier} /></td>
@@ -233,25 +237,6 @@ export function ProjectListTable({ projects, loading }: Props) {
                   }}>
                     {pct(p.deadline_probability)}
                   </span>
-                </td>
-                <td style={{ padding: "9px 12px" }}>
-                  {p.data_quality_score === null ? (
-                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>—</span>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <div style={{ width: 48, height: 4, background: "var(--bg-active)", borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{
-                          width: `${p.data_quality_score}%`,
-                          height: "100%",
-                          background: p.data_quality_score >= 80 ? "#22c55e" : p.data_quality_score >= 60 ? "#eab308" : "#ef4444",
-                          borderRadius: 2,
-                        }} />
-                      </div>
-                      <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, color: "var(--text-muted)" }}>
-                        {p.data_quality_score}
-                      </span>
-                    </div>
-                  )}
                 </td>
                 <td style={{ padding: "9px 12px", color: "var(--text-muted)", fontSize: 12 }}>
                   {p.latest_update_date}

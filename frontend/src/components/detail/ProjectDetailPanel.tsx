@@ -32,8 +32,10 @@ export function ProjectDetailPanel({ project: p }: Props) {
       {/* Metadata grid */}
       <div style={{ background: "var(--bg-active)", border: "1px solid var(--border)", borderRadius: 6, padding: "14px 16px" }}>
         <KeyValueGrid cols={4}>
+          <KeyValue label="Developer" value={p.developer ?? "—"} />
           <KeyValue label="State" value={p.state} />
-          <KeyValue label="RTO / Region" value={p.region_or_rto} />
+          <KeyValue label="County" value={p.county ?? "—"} />
+          <KeyValue label="RTO / Region" value={p.region_or_rto || "—"} />
           <KeyValue label="Utility" value={p.utility ?? "—"} />
           <KeyValue label="Announced" value={p.announce_date ?? "—"} />
           <KeyValue

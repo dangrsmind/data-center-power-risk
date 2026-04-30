@@ -37,14 +37,15 @@ export type SourceType =
 export interface ProjectListItem {
   project_id: string;
   project_name: string;
+  developer: string | null;
   state: string;
+  county: string | null;
   region_or_rto: string;
   modeled_primary_load_mw: number;
   lifecycle_state: LifecycleState;
   risk_tier: RiskTier;
   current_hazard: number;
   deadline_probability: number;
-  data_quality_score: number | null;
   latest_update_date: string;
   phase_count: number;
 }
@@ -84,7 +85,9 @@ export interface Score {
 export interface ProjectDetail {
   project_id: string;
   project_name: string;
+  developer: string | null;
   state: string;
+  county: string | null;
   region_or_rto: string;
   utility: string | null;
   modeled_primary_load_mw: number;
