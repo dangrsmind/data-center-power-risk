@@ -126,6 +126,18 @@ Project mock score:
 curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/score
 ```
 
+## Generate modeling training table
+
+Build the strict as-of feature table for future modeling:
+
+```bash
+cd backend
+source .venv/bin/activate
+python scripts/generate_training_table.py --csv build/project_phase_quarter_features.csv
+```
+
+This creates/replaces the SQLite table `project_phase_quarter_features` and optionally writes a CSV. Each row is keyed by project, phase, and quarter, with E1 targets plus a JSON `features_as_of_prior_quarter` payload. Claim-derived features only count records accepted before the row quarter cutoff.
+
 OpenAPI docs:
 
 ```bash
