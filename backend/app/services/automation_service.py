@@ -233,9 +233,35 @@ class AutomationService:
             generator_version=INTAKE_PACKET_VERSION,
         )
 
+    # Maximum word count and character length for a valid extracted project name.
+    # Longer extractions are silently dropped — the user must supply the name manually.
+    _PROJECT_NAME_MAX_WORDS = 6
+    _PROJECT_NAME_MAX_LEN = 60
+    # Article/preposition openers that indicate a sentence, not a proper name.
+    _SENTENCE_STARTERS = (
+        "the ", "a ", "an ", "this ", "that ", "these ", "those ",
+        "in ", "on ", "at ", "for ", "with ", "by ", "of ",
+    )
+
+    def _is_valid_extracted_project_name(self, name: str) -> bool:
+        """Return True only if the extracted string looks like a proper project/campus name."""
+        if not name:
+            return False
+        if len(name) > self._PROJECT_NAME_MAX_LEN:
+            return False
+        if len(name.split()) > self._PROJECT_NAME_MAX_WORDS:
+            return False
+        lower = name.lower()
+        if any(lower.startswith(s) for s in self._SENTENCE_STARTERS):
+            return False
+        return True
+
     def _extract_project_name(self, text: str) -> str | None:
         patterns = [
-            r"^\s*([A-Z][A-Za-z0-9&'./ -]{1,120}?)\s*,\s*(?:developed by|operated by|is planned|located in|will be)\b",
+            # Proper-noun phrase before "developed by / operated by / is planned / will be".
+            # Character class is intentionally tighter: no lowercase-only runs that span words.
+            r"^\s*([A-Z][A-Za-z0-9&'./ -]{1,59}?)\s*,\s*(?:developed by|operated by|is planned|located in|will be)\b",
+            # Named campus/hub/park etc — proper noun only.
             r"\b([A-Z][A-Za-z0-9&' -]+(?:Campus|Data Center|Compute Campus|Compute Hub|Foundry|Reserve|Park|Facility|Project))\b",
             r"\bProject ([A-Z][A-Za-z0-9&' -]+)\b",
         ]
@@ -243,7 +269,9 @@ class AutomationService:
             match = re.search(pattern, text)
             if match:
                 value = match.group(1).strip()
-                return value if value.startswith("Project ") else value
+                candidate = value if value.startswith("Project ") else value
+                if self._is_valid_extracted_project_name(candidate):
+                    return candidate
         return None
 
     def _extract_developer_name(self, text: str) -> str | None:

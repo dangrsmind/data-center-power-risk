@@ -370,6 +370,67 @@ class IngestionService:
             return "review_claim"
         return "complete"
 
+    # ------------------------------------------------------------------
+    # Project-name validation guard
+    # ------------------------------------------------------------------
+    _NAME_MAX_LEN = 60
+    _NAME_MAX_WORDS = 6
+    _SENTENCE_STARTERS = (
+        "the ", "a ", "an ", "this ", "that ", "these ", "those ",
+        "in ", "on ", "at ", "for ", "with ", "by ", "of ",
+    )
+
+    def _validate_project_name(self, name: str) -> None:
+        """
+        Reject a project_name claim value that looks like a headline or sentence
+        rather than a concise proper campus/project name.
+
+        Rules enforced:
+          • Non-empty after strip
+          • ≤ _NAME_MAX_LEN characters
+          • ≤ _NAME_MAX_WORDS whitespace-separated words
+          • Does not start with a common article or preposition phrase
+
+        If any rule fails an HTTPException(400) is raised so the acceptance
+        is aborted before the DB write.
+        """
+        stripped = name.strip()
+        if not stripped:
+            raise HTTPException(
+                status_code=400,
+                detail="project_name claim value is empty.",
+            )
+        if len(stripped) > self._NAME_MAX_LEN:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"project_name is too long ({len(stripped)} chars, max {self._NAME_MAX_LEN}). "
+                    "Evidence headlines and descriptions must not overwrite canonical_name. "
+                    "Use only the concise campus or project name."
+                ),
+            )
+        word_count = len(stripped.split())
+        if word_count > self._NAME_MAX_WORDS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"project_name contains {word_count} words (max {self._NAME_MAX_WORDS}). "
+                    "The value appears to be a sentence or headline, not a project name. "
+                    "Shorten it to the actual campus or project name before accepting."
+                ),
+            )
+        lower = stripped.lower()
+        for starter in self._SENTENCE_STARTERS:
+            if lower.startswith(starter):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"project_name starts with '{stripped.split()[0]}', which looks like a "
+                        "headline or sentence opener, not a project name. "
+                        "Only a proper campus or project identifier may overwrite canonical_name."
+                    ),
+                )
+
     def _apply_claim_acceptance(self, claim: Claim) -> tuple[str, dict]:
         claim_value = claim.claim_value_json or {}
         if claim.entity_type == ClaimEntityType.PROJECT:
@@ -377,7 +438,9 @@ class IngestionService:
             if project is None:
                 raise HTTPException(status_code=400, detail="Target project not found")
             if claim.claim_type == ClaimType.PROJECT_NAME_MENTION:
-                project.canonical_name = str(claim_value["project_name"])
+                raw_name = str(claim_value.get("project_name", ""))
+                self._validate_project_name(raw_name)
+                project.canonical_name = raw_name.strip()
                 return "canonical_name", {"target_table": "projects", "field_name": "canonical_name", "accepted_value": project.canonical_name}
             if claim.claim_type == ClaimType.DEVELOPER_NAMED:
                 project.developer = str(claim_value["developer_name"])

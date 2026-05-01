@@ -57,7 +57,6 @@ const CLAIM_TYPE_LABELS: Record<string, string> = {
 };
 
 const SAFE_CLAIM_TYPES = new Set([
-  "project_name_mention",
   "developer_named",
   "location_county",
   "location_state",
@@ -66,6 +65,10 @@ const SAFE_CLAIM_TYPES = new Set([
 // Per-claim-type review warnings for non-safe claims.
 // Communicate exactly what "not yet accepted" means for each type.
 const CLAIM_REVIEW_WARNINGS: Record<string, string> = {
+  project_name_mention:
+    "This will overwrite the project's canonical name. Verify the value is a concise campus or project name " +
+    "(max 6 words, no headline or sentence text) before accepting. " +
+    "The backend will reject values longer than 60 characters or starting with article/sentence openers.",
   modeled_load_mw:
     "Headline/stated capacity — requires analyst acceptance before used as modeled load in risk scoring.",
   optional_expansion_mw:
