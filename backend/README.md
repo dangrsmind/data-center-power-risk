@@ -138,6 +138,13 @@ python scripts/generate_training_table.py --csv build/project_phase_quarter_feat
 
 This creates/replaces the SQLite table `project_phase_quarter_features` and optionally writes a CSV. Each row is keyed by project, phase, and quarter, with E1 targets plus a JSON `features_as_of_prior_quarter` payload. Claim-derived features only count records accepted before the row quarter cutoff.
 
+Audit the generated table before modeling:
+
+```bash
+python scripts/audit_training_table.py
+python scripts/audit_training_table.py --json
+```
+
 OpenAPI docs:
 
 ```bash
