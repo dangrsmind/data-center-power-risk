@@ -252,6 +252,19 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${res.status} ${res.statusText} — ${path}${text ? `: ${text}` : ""}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 function delay(ms = 120): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -357,6 +370,17 @@ export async function getProjectEvidence(id: string): Promise<ProjectEvidenceDat
     return { project_id: id, project_name: "", evidence: [] };
   }
   return fetchJson<ProjectEvidenceData>(`/projects/${id}/evidence`);
+}
+
+export async function patchEvidenceReview(
+  evidenceId: string,
+  reviewerStatus: string,
+  reviewedBy: string,
+): Promise<{ reviewer_status: string }> {
+  return patchJson<{ reviewer_status: string }>(`/evidence/${evidenceId}/review`, {
+    reviewer_status: reviewerStatus,
+    reviewed_by: reviewedBy,
+  });
 }
 
 // ---------------------------------------------------------------------------

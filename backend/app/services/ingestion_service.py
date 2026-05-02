@@ -27,6 +27,7 @@ from app.schemas.ingestion import (
     EvidenceQueueResponse,
     EvidenceReviewRequest,
     EvidenceResponse,
+    EvidenceReviewRequest,
     ProvenanceLinkResponse,
 )
 
@@ -261,6 +262,15 @@ class IngestionService:
                 )
             )
         return ClaimQueueResponse(items=items)
+
+    def review_evidence(self, evidence_id: uuid.UUID, request: EvidenceReviewRequest) -> EvidenceResponse:
+        evidence = self.repo.get_evidence(evidence_id)
+        if evidence is None:
+            raise HTTPException(status_code=404, detail="Evidence not found")
+        evidence.reviewer_status = request.reviewer_status
+        self.db.commit()
+        self.db.refresh(evidence)
+        return self._to_evidence_response(evidence)
 
     def _to_evidence_response(self, evidence: Evidence) -> EvidenceResponse:
         return EvidenceResponse(

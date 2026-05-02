@@ -385,3 +385,8 @@ class EvidenceDetailResponse(BaseModel):
     linked_claims: list[ClaimResponse]
     unlinked_claims: list[ClaimResponse]
     provenance_links: list[ProvenanceLinkResponse]
+
+
+class EvidenceReviewRequest(BaseModel):
+    reviewer_status: ReviewerStatus
+    reviewed_by: str

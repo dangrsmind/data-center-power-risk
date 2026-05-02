@@ -21,6 +21,7 @@ from app.schemas.ingestion import (
     EvidenceQueueResponse,
     EvidenceReviewRequest,
     EvidenceResponse,
+    EvidenceReviewRequest,
 )
 from app.services.ingestion_service import IngestionService
 

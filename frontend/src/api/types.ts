@@ -216,6 +216,11 @@ export interface ProjectEvidenceData {
   evidence: EvidenceItem[];
 }
 
+export interface EvidenceReviewResponse {
+  evidence_id: string;
+  reviewer_status: string;
+}
+
 // ---------------------------------------------------------------------------
 // Risk Signal
 // ---------------------------------------------------------------------------
