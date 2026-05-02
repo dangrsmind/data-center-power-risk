@@ -835,9 +835,12 @@ export function IngestPage() {
             <SectionHeader n={8} label="Done" active={true} done={false} />
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {/* Header */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 20, color: "#22c55e" }}>✓</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Ingestion complete</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+                  {acceptResults.length > 0 ? "Claims accepted successfully" : "Ingestion complete"}
+                </span>
               </div>
 
               {/* Summary grid */}
@@ -856,23 +859,53 @@ export function IngestPage() {
                 ))}
               </div>
 
-              {/* Accepted claim list */}
+              {/* Accepted claim list with field details */}
               {acceptResults.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", marginBottom: 6 }}>Accepted</div>
-                  {acceptResults.map(r => (
-                    <div key={r.claim_id} style={{ fontSize: 12, color: "var(--text)", display: "flex", gap: 8, marginBottom: 4 }}>
-                      <span style={{ color: "#22c55e" }}>✓</span>
-                      <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>
-                        {createdClaims.find(c => c.claim_id === r.claim_id)?.claim_type ?? r.claim_id.slice(0, 8)}
-                      </span>
-                      {r.entity_label && (
-                        <span style={{ color: "var(--text-muted)" }}>→ {r.entity_label}</span>
-                      )}
-                    </div>
-                  ))}
+                  <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", marginBottom: 6 }}>Accepted fields</div>
+                  {acceptResults.map(r => {
+                    const claimType = createdClaims.find(c => c.claim_id === r.claim_id)?.claim_type ?? r.claim_id.slice(0, 8);
+                    const update = r.normalized_update as Record<string, unknown>;
+                    const fieldName = typeof update?.field_name === "string" ? update.field_name : null;
+                    const acceptedValue = update?.accepted_value != null ? String(update.accepted_value) : null;
+                    return (
+                      <div key={r.claim_id} style={{ fontSize: 12, color: "var(--text)", display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
+                        <span style={{ color: "#22c55e", flexShrink: 0, marginTop: 1 }}>✓</span>
+                        <div>
+                          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>{claimType}</span>
+                          {r.entity_label && (
+                            <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>→ {r.entity_label}</span>
+                          )}
+                          {fieldName && acceptedValue && (
+                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                              <span style={{ color: "var(--text-dim)" }}>{fieldName}</span>
+                              {" = "}
+                              <span style={{ fontFamily: '"JetBrains Mono", monospace', color: "#34d399" }}>{acceptedValue}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+
+              {/* Source review status note */}
+              <div style={{
+                background: "var(--bg-active)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "10px 14px",
+                fontSize: 12,
+                color: "var(--text-muted)",
+                lineHeight: 1.6,
+              }}>
+                <span style={{ color: "#fbbf24", fontWeight: 600 }}>Source not yet reviewed — </span>
+                The evidence record's review status remains{" "}
+                <span style={{ fontFamily: '"JetBrains Mono", monospace', color: "#fbbf24" }}>pending</span>.
+                {" "}Claim acceptance is independent of source sign-off. An analyst can separately
+                mark the source as reviewed via the Evidence queue.
+              </div>
 
               {/* Skipped claim list */}
               {skippedClaimIds.size > 0 && (
