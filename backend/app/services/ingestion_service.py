@@ -25,6 +25,7 @@ from app.schemas.ingestion import (
     EvidenceCreateRequest,
     EvidenceQueueItem,
     EvidenceQueueResponse,
+    EvidenceReviewRequest,
     EvidenceResponse,
     ProvenanceLinkResponse,
 )
@@ -96,6 +97,19 @@ class IngestionService:
             unlinked_claims=[self._to_claim_response(claim) for claim in unlinked_claims],
             provenance_links=[self._to_provenance_response(row) for row in provenance_rows],
         )
+
+    def review_evidence(self, evidence_id: uuid.UUID, request: EvidenceReviewRequest) -> EvidenceResponse:
+        evidence = self.repo.get_evidence(evidence_id)
+        if evidence is None:
+            raise HTTPException(status_code=404, detail="Evidence not found")
+
+        evidence.reviewer_status = request.reviewer_status
+        evidence.reviewed_by = request.reviewed_by
+        evidence.reviewed_at = datetime.now(timezone.utc)
+        evidence.review_notes = request.notes
+        self.db.commit()
+        self.db.refresh(evidence)
+        return self._to_evidence_response(evidence)
 
     def link_claim(self, claim_id: uuid.UUID, request: ClaimLinkRequest) -> ClaimResponse:
         claim = self.repo.get_claim(claim_id)
@@ -259,6 +273,9 @@ class IngestionService:
             extracted_text=evidence.extracted_text,
             reviewer_status=evidence.reviewer_status,
             next_action="create_claims" if evidence.reviewer_status.value == "pending" else "review_evidence",
+            reviewed_at=evidence.reviewed_at,
+            reviewed_by=evidence.reviewed_by,
+            review_notes=evidence.review_notes,
             created_at=evidence.created_at,
             updated_at=evidence.updated_at,
         )

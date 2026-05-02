@@ -29,6 +29,9 @@ class EvidenceResponse(BaseModel):
     extracted_text: str | None
     reviewer_status: ReviewerStatus
     next_action: Literal["create_claims", "review_evidence"]
+    reviewed_at: datetime | None
+    reviewed_by: str | None
+    review_notes: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -342,6 +345,12 @@ class ClaimReviewRequest(BaseModel):
     reviewer: str
     notes: str | None = None
     is_contradictory: bool = False
+
+
+class EvidenceReviewRequest(BaseModel):
+    reviewer_status: Literal[ReviewerStatus.REVIEWED]
+    reviewed_by: str
+    notes: str | None = None
 
 
 class ClaimAcceptRequest(BaseModel):

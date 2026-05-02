@@ -24,6 +24,9 @@ class Evidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reviewer_status: Mapped[ReviewerStatus] = mapped_column(
         Enum(ReviewerStatus, name="reviewer_status", native_enum=False, values_callable=enum_values), nullable=False
     )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255))
+    review_notes: Mapped[str | None] = mapped_column(Text)
 
 
 class Claim(UUIDPrimaryKeyMixin, TimestampMixin, Base):

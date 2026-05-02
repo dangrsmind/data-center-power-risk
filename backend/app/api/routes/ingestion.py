@@ -19,6 +19,7 @@ from app.schemas.ingestion import (
     EvidenceClaimsCreateResponse,
     EvidenceCreateRequest,
     EvidenceQueueResponse,
+    EvidenceReviewRequest,
     EvidenceResponse,
 )
 from app.services.ingestion_service import IngestionService
@@ -37,6 +38,15 @@ def create_evidence(request: EvidenceCreateRequest, db: Session = Depends(get_db
 @evidence_router.get("/{evidence_id}", response_model=EvidenceDetailResponse, response_model_exclude_none=True)
 def get_evidence_detail(evidence_id: uuid.UUID, db: Session = Depends(get_db)) -> EvidenceDetailResponse:
     return IngestionService(db).get_evidence_detail(evidence_id)
+
+
+@evidence_router.patch("/{evidence_id}/review", response_model=EvidenceResponse, response_model_exclude_none=True)
+def review_evidence(
+    evidence_id: uuid.UUID,
+    request: EvidenceReviewRequest,
+    db: Session = Depends(get_db),
+) -> EvidenceResponse:
+    return IngestionService(db).review_evidence(evidence_id, request)
 
 
 @evidence_router.post(
