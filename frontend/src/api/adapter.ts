@@ -364,6 +364,14 @@ export async function getProjectHistory(id: string): Promise<ProjectHistoryData>
 // Evidence
 // ---------------------------------------------------------------------------
 
+export async function getProjectEnrichment(id: string): Promise<ProjectEnrichmentData> {
+  if (USE_MOCK) {
+    await delay();
+    return { utility: null, confidence: null, source: null };
+  }
+  return fetchJson<ProjectEnrichmentData>(`/projects/${id}/enrichment`);
+}
+
 export async function getProjectEvidence(id: string): Promise<ProjectEvidenceData> {
   if (USE_MOCK) {
     await delay();

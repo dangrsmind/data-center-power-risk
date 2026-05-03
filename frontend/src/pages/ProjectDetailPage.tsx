@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import type {
   ProjectDetail,
+  ProjectEnrichmentData,
   ProjectEventsData,
   ProjectStressData,
   ProjectHistoryData,
@@ -10,6 +11,7 @@ import type {
 } from "../api/types";
 import {
   getProject,
+  getProjectEnrichment,
   getProjectEvents,
   getProjectStress,
   getProjectHistory,
@@ -42,6 +44,7 @@ export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [project,     setProject]     = useState<ProjectDetail | null>(null);
+  const [enrichment,  setEnrichment]  = useState<ProjectEnrichmentData | null>(null);
   const [events,      setEvents]      = useState<ProjectEventsData | null>(null);
   const [stress,      setStress]      = useState<ProjectStressData | null>(null);
   const [history,     setHistory]     = useState<ProjectHistoryData | null>(null);
@@ -56,6 +59,7 @@ export function ProjectDetailPage() {
     if (!id) return;
     setLoading(true);
     setProject(null);
+    setEnrichment(null);
     setEvents(null);
     setStress(null);
     setHistory(null);
@@ -65,14 +69,16 @@ export function ProjectDetailPage() {
 
     Promise.all([
       getProject(id),
+      getProjectEnrichment(id),
       getProjectEvents(id),
       getProjectStress(id),
       getProjectHistory(id),
       getProjectEvidence(id),
       getProjectRiskSignal(id),
     ])
-      .then(([proj, evts, str, hist, evid, rs]) => {
+      .then(([proj, enrich, evts, str, hist, evid, rs]) => {
         setProject(proj);
+        setEnrichment(enrich);
         setEvents(evts);
         setStress(str);
         setHistory(hist);
@@ -147,6 +153,7 @@ export function ProjectDetailPage() {
             {tab === "overview" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 900 }}>
                 <ProjectDetailPanel project={project} />
+                <InfrastructureContextCard enrichment={enrichment} />
                 <SectionCard title="Model Score Summary">
                   <QuickScoreRow project={project} />
                   <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
@@ -213,6 +220,48 @@ export function ProjectDetailPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function InfrastructureContextCard({ enrichment }: { enrichment: ProjectEnrichmentData | null }) {
+  const hasData = enrichment && (enrichment.utility || enrichment.confidence || enrichment.source);
+  return (
+    <SectionCard title="Infrastructure Context">
+      <div style={{ background: "var(--bg-active)", border: "1px solid var(--border)", borderRadius: 6, padding: "14px 16px" }}>
+        {!hasData ? (
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            No infrastructure context available yet.
+          </span>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", fontWeight: 700, marginBottom: 4 }}>
+                Utility Territory
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text)" }}>
+                {enrichment.utility ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", fontWeight: 700, marginBottom: 4 }}>
+                Confidence
+              </div>
+              <div style={{ fontSize: 13, color: enrichment.confidence === "high" ? "#22c55e" : enrichment.confidence === "medium" ? "#fbbf24" : "var(--text)" }}>
+                {enrichment.confidence ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", fontWeight: 700, marginBottom: 4 }}>
+                Source
+              </div>
+              <div style={{ fontSize: 13, fontFamily: '"JetBrains Mono", monospace', color: "var(--text-muted)" }}>
+                {enrichment.source ?? "—"}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </SectionCard>
   );
 }
 

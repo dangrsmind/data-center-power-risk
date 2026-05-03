@@ -221,6 +221,12 @@ export interface EvidenceReviewResponse {
   reviewer_status: string;
 }
 
+export interface ProjectEnrichmentData {
+  utility: string | null;
+  confidence: string | null;
+  source: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Risk Signal
 // ---------------------------------------------------------------------------

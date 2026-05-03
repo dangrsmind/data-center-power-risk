@@ -32,7 +32,7 @@ from app.schemas.analyst import (
     StressSignalItem,
 )
 from app.schemas.phase import PhaseListItem
-from app.schemas.project import ProjectDetail, ProjectListItem
+from app.schemas.project import ProjectDetail, ProjectEnrichmentResponse, ProjectListItem
 from app.schemas.score import ProjectScoreResponse
 from app.services.mock_scoring_service import MockScoringInputs, MockScoringService
 from app.services.risk_signal_service import RiskSignalService
@@ -126,6 +126,21 @@ class ProjectService:
             utility_id=project.utility_id,
             modeled_primary_load_mw=_json_number(row.modeled_primary_load_mw),
             phase_count=row.phase_count,
+        )
+
+    def get_project_enrichment(self, project_id: uuid.UUID) -> ProjectEnrichmentResponse:
+        project = self.project_repo.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project.utility_id is None:
+            return ProjectEnrichmentResponse(utility=None, confidence=None, source=None)
+        utility = self.db.get(Utility, project.utility_id)
+        if utility is None:
+            return ProjectEnrichmentResponse(utility=None, confidence=None, source=None)
+        return ProjectEnrichmentResponse(
+            utility=utility.name,
+            confidence="medium",
+            source="HIFLD",
         )
 
     def list_project_phases(self, project_id: uuid.UUID) -> list[PhaseListItem]:

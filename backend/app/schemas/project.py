@@ -42,3 +42,9 @@ class ProjectDetail(BaseModel):
     utility_id: uuid.UUID | None
     modeled_primary_load_mw: int | float | None
     phase_count: int
+
+
+class ProjectEnrichmentResponse(BaseModel):
+    utility: str | None
+    confidence: str | None
+    source: str | None
