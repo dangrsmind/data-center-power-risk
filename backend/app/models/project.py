@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Date, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, Enum, Float, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.enums import LifecycleState, LoadKind, enum_values
@@ -19,6 +19,8 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     operator: Mapped[str | None] = mapped_column(String(255))
     state: Mapped[str | None] = mapped_column(String(2))
     county: Mapped[str | None] = mapped_column(String(255))
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     announcement_date: Mapped[date | None] = mapped_column(Date)
     latest_update_date: Mapped[date | None] = mapped_column(Date)
     lifecycle_state: Mapped[LifecycleState] = mapped_column(
