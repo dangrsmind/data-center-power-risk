@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.enrichment import GridRetailTerritory, ProjectEnrichmentSnapshot
 from app.models.evidence import Claim, Evidence, FieldProvenance
 from app.models.event import Adjudication, Event
 from app.models.graph import GraphEdge, GraphNode
@@ -23,11 +24,13 @@ __all__ = [
     "FieldProvenance",
     "GraphEdge",
     "GraphNode",
+    "GridRetailTerritory",
     "Phase",
     "PhaseLoad",
     "PhaseQuarterScore",
     "Project",
     "ProjectAlias",
+    "ProjectEnrichmentSnapshot",
     "ProjectPhaseQuarter",
     "QuarterlyLabel",
     "QuarterlySnapshot",

@@ -19,6 +19,7 @@ from app.schemas.automation import (
     SuggestedLinkTarget,
 )
 from app.schemas.candidates import CandidateImportItemResult, CandidateImportResponse
+from app.schemas.enrichment import ProjectEnrichmentResponse
 from app.schemas.ingestion import (
     ClaimAcceptRequest,
     ClaimAcceptResponse,
@@ -66,6 +67,7 @@ __all__ = [
     "GraphFragilitySummary",
     "PhaseListItem",
     "ProjectDetail",
+    "ProjectEnrichmentResponse",
     "ProjectEvidenceResponse",
     "ProjectEventsResponse",
     "ProjectHistoryItem",
