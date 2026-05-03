@@ -15,6 +15,8 @@ class ProjectListItem(BaseModel):
     operator: str | None
     state: str | None
     county: str | None
+    latitude: float | None
+    longitude: float | None
     lifecycle_state: str
     announcement_date: date | None
     latest_update_date: date | None

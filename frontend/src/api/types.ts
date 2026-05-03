@@ -40,6 +40,8 @@ export interface ProjectListItem {
   developer: string | null;
   state: string;
   county: string | null;
+  latitude: number | null;
+  longitude: number | null;
   region_or_rto: string;
   modeled_primary_load_mw: number;
   lifecycle_state: LifecycleState;

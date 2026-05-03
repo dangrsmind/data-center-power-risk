@@ -53,6 +53,8 @@ interface RawProjectListItem {
   operator: string | null;
   state: string | null;
   county: string | null;
+  latitude: number | null;
+  longitude: number | null;
   lifecycle_state: string;
   announcement_date: string | null;
   latest_update_date: string | null;
@@ -166,6 +168,8 @@ function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
     developer: raw.developer ?? null,
     state: raw.state ?? "",
     county: raw.county ?? null,
+    latitude: raw.latitude ?? null,
+    longitude: raw.longitude ?? null,
     region_or_rto: "",
     modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
     lifecycle_state: raw.lifecycle_state as LifecycleState,

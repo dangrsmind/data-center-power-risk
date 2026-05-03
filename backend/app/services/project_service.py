@@ -93,6 +93,8 @@ class ProjectService:
                 operator=row.project.operator,
                 state=row.project.state,
                 county=row.project.county,
+                latitude=row.project.latitude,
+                longitude=row.project.longitude,
                 lifecycle_state=row.project.lifecycle_state.value,
                 announcement_date=row.project.announcement_date,
                 latest_update_date=row.project.latest_update_date,
