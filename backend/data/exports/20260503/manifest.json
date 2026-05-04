@@ -1,0 +1,20 @@
+{
+  "counts": {
+    "claims": 0,
+    "events": 0,
+    "evidence": 0,
+    "field_provenance": 0,
+    "phases": 0,
+    "projects": 0
+  },
+  "exported_at": "2026-05-03T19:06:41.931350",
+  "format": "jsonl",
+  "tables": [
+    "projects",
+    "phases",
+    "evidence",
+    "claims",
+    "field_provenance",
+    "events"
+  ]
+}
