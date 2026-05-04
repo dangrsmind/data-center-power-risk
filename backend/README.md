@@ -56,7 +56,42 @@ uvicorn app.main:app --reload
 
 The app creates tables on startup.
 
+## Clean dataset management
+
+Use these commands when building or restoring a real training/testing dataset.
+
+Clean schema-only reset:
+
+```bash
+cd backend
+source .venv/bin/activate
+unset DATABASE_URL
+python scripts/reset_db.py --schema-only --confirm REAL_RESET
+```
+
+This drops and recreates the application schema, does not create demo projects, and prints `projects`, `evidence`, and `claims` counts. For PostgreSQL, export `DATABASE_URL` before running the same command.
+
+Backup/export the current dataset:
+
+```bash
+python scripts/export_dataset.py
+```
+
+Exports JSONL files for `projects`, `phases`, `evidence`, `claims`, `field_provenance`, and `events` under `data/exports/YYYYMMDD/`.
+
+Restore/import into an empty local database:
+
+```bash
+unset DATABASE_URL
+python scripts/reset_db.py --schema-only --confirm REAL_RESET
+python scripts/import_dataset.py data/exports/YYYYMMDD
+```
+
+The import command refuses to load if any target dataset table already has rows, so demo data and real data are not silently mixed.
+
 ## Reset and seed demo data
+
+Warning: `scripts/seed_demo_data.py` creates fake/demo data. Do not use it for real training/testing datasets.
 
 The seed script replaces placeholder records with deterministic, clearly fake demo data.
 It also rebuilds explicit evidence links and stored demo `phase_quarter_scores` used by the analyst endpoints.
