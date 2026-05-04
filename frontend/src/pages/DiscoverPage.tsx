@@ -1,13 +1,14 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import type { DiscoveredSource } from "../api/types";
-import { getDiscoveredSources } from "../api/adapter";
+import { getDiscoveredSources, getDiscoverDecisions, postDiscoverDecisions } from "../api/adapter";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type Decision = "approved" | "rejected";
+type Decision    = "approved" | "rejected";
 type StatusFilter = "all" | "pending" | "approved" | "rejected";
+type SaveState   = "idle" | "saving" | "saved" | "error";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -63,13 +64,21 @@ function hostname(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
+function decisionsToSets(decisions: Record<string, Decision>) {
+  const approved: string[] = [];
+  const rejected: string[] = [];
+  for (const [id, dec] of Object.entries(decisions)) {
+    if (dec === "approved") approved.push(id);
+    else rejected.push(id);
+  }
+  return { approved, rejected };
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function Badge({
-  label, color, bg,
-}: { label: string; color: string; bg: string }) {
+function Badge({ label, color, bg }: { label: string; color: string; bg: string }) {
   return (
     <span style={{
       fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
@@ -92,21 +101,17 @@ function StatusBadge({ status }: { status: "pending" | "approved" | "rejected" }
 }
 
 function SourceCard({
-  source,
-  decision,
-  onApprove,
-  onReject,
-  onUndo,
+  source, decision, saving, onApprove, onReject, onUndo,
 }: {
   source: DiscoveredSource;
   decision: Decision | undefined;
+  saving: boolean;
   onApprove: () => void;
   onReject: () => void;
   onUndo: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const status: "pending" | "approved" | "rejected" = decision ?? "pending";
-
   const confColor = CONF_COLOR[source.confidence] ?? "#94a3b8";
   const confBg    = CONF_BG[source.confidence]    ?? "rgba(148,163,184,0.1)";
 
@@ -124,37 +129,35 @@ function SourceCard({
       padding: "14px 16px",
       marginBottom: 10,
       transition: "border-color 0.15s",
+      opacity: saving ? 0.7 : 1,
     }}>
-      {/* ── Top row ── */}
+      {/* ── Top row: badges + status + actions ── */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-        {/* Left badges */}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flex: 1 }}>
           <Badge
             label={source.confidence ? `Confidence: ${source.confidence}` : "Confidence: —"}
-            color={confColor}
-            bg={confBg}
+            color={confColor} bg={confBg}
           />
           <Badge
             label={SOURCE_TYPE_LABEL[source.source_type] ?? source.source_type}
-            color="#94a3b8"
-            bg="rgba(148,163,184,0.08)"
+            color="#94a3b8" bg="rgba(148,163,184,0.08)"
           />
           <Badge
             label={source.discovery_method.replace(/_/g, " ")}
-            color="#60a5fa"
-            bg="rgba(96,165,250,0.08)"
+            color="#60a5fa" bg="rgba(96,165,250,0.08)"
           />
         </div>
 
-        {/* Status + actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <StatusBadge status={status} />
 
           {decision ? (
             <button
               onClick={onUndo}
+              disabled={saving}
               style={{
-                fontSize: 11, padding: "3px 10px", borderRadius: 4, cursor: "pointer",
+                fontSize: 11, padding: "3px 10px", borderRadius: 4,
+                cursor: saving ? "default" : "pointer",
                 background: "transparent", border: "1px solid var(--border)",
                 color: "var(--text-muted)",
               }}
@@ -165,9 +168,11 @@ function SourceCard({
             <>
               <button
                 onClick={onApprove}
+                disabled={saving}
                 style={{
                   fontSize: 11, fontWeight: 600, padding: "3px 12px", borderRadius: 4,
-                  cursor: "pointer", background: "rgba(34,197,94,0.1)",
+                  cursor: saving ? "default" : "pointer",
+                  background: "rgba(34,197,94,0.1)",
                   border: "1px solid rgba(34,197,94,0.45)", color: "#22c55e",
                 }}
               >
@@ -175,9 +180,11 @@ function SourceCard({
               </button>
               <button
                 onClick={onReject}
+                disabled={saving}
                 style={{
                   fontSize: 11, fontWeight: 600, padding: "3px 12px", borderRadius: 4,
-                  cursor: "pointer", background: "rgba(239,68,68,0.08)",
+                  cursor: saving ? "default" : "pointer",
+                  background: "rgba(239,68,68,0.08)",
                   border: "1px solid rgba(239,68,68,0.35)", color: "#ef4444",
                 }}
               >
@@ -219,12 +226,12 @@ function SourceCard({
         </div>
       </div>
 
-      {/* ── Detected facts row ── */}
+      {/* ── Detected facts ── */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
-        <Fact label="Load" value={source.detected_load_mw != null ? `${source.detected_load_mw.toLocaleString()} MW` : "—"} />
-        <Fact label="Region" value={source.detected_region || "—"} />
-        <Fact label="Utility" value={source.detected_utility || "—"} />
-        <Fact label="Source date" value={source.source_date || "—"} />
+        <Fact label="Load"        value={source.detected_load_mw != null ? `${source.detected_load_mw.toLocaleString()} MW` : "—"} />
+        <Fact label="Region"      value={source.detected_region  || "—"} />
+        <Fact label="Utility"     value={source.detected_utility || "—"} />
+        <Fact label="Source date" value={source.source_date      || "—"} />
       </div>
 
       {/* ── Source title ── */}
@@ -234,12 +241,8 @@ function SourceCard({
             Title{" "}
           </span>
           {source.source_url ? (
-            <a
-              href={source.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--accent)", textDecoration: "none" }}
-            >
+            <a href={source.source_url} target="_blank" rel="noopener noreferrer"
+              style={{ color: "var(--accent)", textDecoration: "none" }}>
               {truncate(source.title, 120)}
             </a>
           ) : (
@@ -260,17 +263,12 @@ function SourceCard({
             Review reason{" "}
           </span>
           <span style={{ fontSize: 11, color: "#f59e0b", lineHeight: 1.4 }}>
-            {expanded
-              ? source.requires_review_reason
-              : truncate(source.requires_review_reason, 100)}
+            {expanded ? source.requires_review_reason : truncate(source.requires_review_reason, 100)}
           </span>
           {source.requires_review_reason.length > 100 && (
             <button
               onClick={() => setExpanded(e => !e)}
-              style={{
-                fontSize: 10, color: "var(--accent)", background: "none",
-                border: "none", cursor: "pointer", padding: "0 4px",
-              }}
+              style={{ fontSize: 10, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}
             >
               {expanded ? "less" : "more"}
             </button>
@@ -297,15 +295,43 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SaveIndicator({ state, updatedAt }: { state: SaveState; updatedAt: string | null }) {
+  if (state === "idle" && !updatedAt) return null;
+  if (state === "saving") {
+    return (
+      <span style={{ fontSize: 11, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 4 }}>
+        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#f59e0b", animation: "pulse 1s infinite" }} />
+        Saving…
+      </span>
+    );
+  }
+  if (state === "error") {
+    return (
+      <span style={{ fontSize: 11, color: "#ef4444" }}>Save failed — check backend connection</span>
+    );
+  }
+  if (state === "saved" || (state === "idle" && updatedAt)) {
+    return (
+      <span style={{ fontSize: 11, color: "#22c55e" }}>
+        ✓ Decisions saved{updatedAt ? ` · ${formatDate(updatedAt)}` : ""}
+      </span>
+    );
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
 export function DiscoverPage() {
-  const [sources,   setSources]   = useState<DiscoveredSource[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  const [sources,    setSources]    = useState<DiscoveredSource[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [decisions,  setDecisions]  = useState<Record<string, Decision>>({});
+  const [saveState,  setSaveState]  = useState<SaveState>("idle");
+  const [updatedAt,  setUpdatedAt]  = useState<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Filters
   const [filterStatus,     setFilterStatus]     = useState<StatusFilter>("all");
@@ -313,17 +339,59 @@ export function DiscoverPage() {
   const [filterState,      setFilterState]      = useState("all");
   const [search,           setSearch]           = useState("");
 
+  // Load sources + decisions in parallel on mount
   useEffect(() => {
     setLoading(true);
-    getDiscoveredSources()
-      .then(data => { setSources(data); setLoading(false); })
+    Promise.all([
+      getDiscoveredSources(),
+      getDiscoverDecisions(),
+    ])
+      .then(([srcs, dec]) => {
+        setSources(srcs);
+        // Hydrate decisions from persisted state
+        const hydrated: Record<string, Decision> = {};
+        for (const id of dec.approved) hydrated[id] = "approved";
+        for (const id of dec.rejected) hydrated[id] = "rejected";
+        setDecisions(hydrated);
+        setUpdatedAt(dec.updated_at);
+        setLoading(false);
+      })
       .catch(e => { setError(String(e)); setLoading(false); });
   }, []);
+
+  // Save decisions to backend and update indicator
+  const saveDecisions = useCallback(async (next: Record<string, Decision>) => {
+    setSaveState("saving");
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    try {
+      const { approved, rejected } = decisionsToSets(next);
+      const result = await postDiscoverDecisions(approved, rejected);
+      setUpdatedAt(result.updated_at);
+      setSaveState("saved");
+      // Auto-clear "saved" indicator after 3 seconds
+      savedTimerRef.current = setTimeout(() => setSaveState("idle"), 3000);
+    } catch {
+      setSaveState("error");
+    }
+  }, []);
+
+  const makeDecision = useCallback(async (id: string, dec: Decision | null) => {
+    const next = { ...decisions };
+    if (dec === null) delete next[id]; else next[id] = dec;
+    setDecisions(next);
+    await saveDecisions(next);
+  }, [decisions, saveDecisions]);
+
+  const approve = useCallback((id: string) => makeDecision(id, "approved"), [makeDecision]);
+  const reject  = useCallback((id: string) => makeDecision(id, "rejected"),  [makeDecision]);
+  const undo    = useCallback((id: string) => makeDecision(id, null),         [makeDecision]);
 
   const allStates = useMemo(
     () => [...new Set(sources.map(s => s.state).filter(Boolean))].sort(),
     [sources],
   );
+
+  const isSaving = saveState === "saving";
 
   const filtered = useMemo(() => sources.filter(s => {
     const dec = decisions[s.discovery_id];
@@ -342,14 +410,9 @@ export function DiscoverPage() {
     return true;
   }), [sources, decisions, filterStatus, filterConfidence, filterState, search]);
 
-  // Summary counts (always over all sources)
   const pendingCount  = sources.filter(s => !decisions[s.discovery_id]).length;
   const approvedCount = Object.values(decisions).filter(d => d === "approved").length;
   const rejectedCount = Object.values(decisions).filter(d => d === "rejected").length;
-
-  const approve = (id: string) => setDecisions(prev => ({ ...prev, [id]: "approved" }));
-  const reject  = (id: string) => setDecisions(prev => ({ ...prev, [id]: "rejected" }));
-  const undo    = (id: string) => setDecisions(prev => { const n = { ...prev }; delete n[id]; return n; });
 
   const sel: React.CSSProperties = {
     padding: "5px 8px", fontSize: 11, background: "var(--bg)", border: "1px solid var(--border)",
@@ -372,13 +435,18 @@ export function DiscoverPage() {
           </div>
         </div>
 
+        {/* Save indicator */}
+        <div style={{ marginLeft: 8 }}>
+          <SaveIndicator state={saveState} updatedAt={updatedAt} />
+        </div>
+
         {/* Summary counts */}
         {!loading && !error && sources.length > 0 && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center" }}>
-            <CountPill label="Total" value={sources.length} color="var(--text-muted)" />
-            <CountPill label="Pending"  value={pendingCount}  color="#94a3b8" />
-            <CountPill label="Approved" value={approvedCount} color="#22c55e" />
-            <CountPill label="Rejected" value={rejectedCount} color="#ef4444" />
+            <CountPill label="Total"    value={sources.length} color="var(--text-muted)" />
+            <CountPill label="Pending"  value={pendingCount}   color="#94a3b8" />
+            <CountPill label="Approved" value={approvedCount}  color="#22c55e" />
+            <CountPill label="Rejected" value={rejectedCount}  color="#ef4444" />
           </div>
         )}
       </div>
@@ -390,23 +458,17 @@ export function DiscoverPage() {
           display: "flex", gap: 10, alignItems: "center", flexShrink: 0,
           background: "var(--bg)", flexWrap: "wrap",
         }}>
-          {/* Status filter tabs */}
+          {/* Status tabs */}
           <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
             {STATUS_FILTER_LABELS.map(({ value, label }) => {
               const active = filterStatus === value;
               return (
-                <button
-                  key={value}
-                  onClick={() => setFilterStatus(value)}
-                  style={{
-                    fontSize: 11, fontWeight: active ? 700 : 400,
-                    padding: "4px 12px", cursor: "pointer",
-                    background: active ? "var(--accent)" : "transparent",
-                    color: active ? "#fff" : "var(--text-muted)",
-                    border: "none",
-                    borderRight: "1px solid var(--border)",
-                  }}
-                >
+                <button key={value} onClick={() => setFilterStatus(value)} style={{
+                  fontSize: 11, fontWeight: active ? 700 : 400, padding: "4px 12px", cursor: "pointer",
+                  background: active ? "var(--accent)" : "transparent",
+                  color: active ? "#fff" : "var(--text-muted)",
+                  border: "none", borderRight: "1px solid var(--border)",
+                }}>
                   {label}
                 </button>
               );
@@ -464,7 +526,7 @@ export function DiscoverPage() {
           }}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Failed to load discovered sources</div>
             <div style={{ fontSize: 12, opacity: 0.8 }}>{error}</div>
-            <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 8 }}>
+            <div style={{ fontSize: 11, marginTop: 8 }}>
               Make sure the backend is running and the discovery script has been run.
             </div>
           </div>
@@ -477,10 +539,10 @@ export function DiscoverPage() {
           }}>
             <div style={{ fontSize: 32, opacity: 0.25 }}>◎</div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-muted)" }}>
-              No discovered sources available yet
+              No discovered sources available yet. Run discovery first.
             </div>
             <div style={{ fontSize: 13, color: "var(--text-dim)", textAlign: "center", maxWidth: 380, lineHeight: 1.6 }}>
-              Run the discovery script first to populate this queue:
+              Populate the queue by running the discovery script:
             </div>
             <code style={{
               fontSize: 11, background: "var(--bg-surface)", border: "1px solid var(--border)",
@@ -502,22 +564,12 @@ export function DiscoverPage() {
             key={source.discovery_id}
             source={source}
             decision={decisions[source.discovery_id]}
+            saving={isSaving}
             onApprove={() => approve(source.discovery_id)}
             onReject={()  => reject(source.discovery_id)}
             onUndo={()    => undo(source.discovery_id)}
           />
         ))}
-
-        {/* Note about local state */}
-        {!loading && !error && sources.length > 0 && (approvedCount + rejectedCount) > 0 && (
-          <div style={{
-            fontSize: 11, color: "var(--text-dim)", borderTop: "1px solid var(--border)",
-            paddingTop: 12, marginTop: 4, textAlign: "center", fontStyle: "italic",
-          }}>
-            Decisions are stored in local session state only — no backend ingest endpoint exists yet.
-            Approved rows will not be ingested until a POST /discover/approve endpoint is available.
-          </div>
-        )}
       </div>
     </div>
   );

@@ -29,6 +29,7 @@ import type {
   IngestEvidencePayload,
   IngestEvidenceResponse,
   DiscoveredSource,
+  DiscoverDecisions,
   IngestClaimItem,
   IngestClaimsCreateResponse,
   IngestClaimResponse,
@@ -454,6 +455,25 @@ export async function getDiscoveredSources(): Promise<DiscoveredSource[]> {
     return [];
   }
   return fetchJson<DiscoveredSource[]>("/discover/sources");
+}
+
+export async function getDiscoverDecisions(): Promise<DiscoverDecisions> {
+  if (USE_MOCK) {
+    await delay();
+    return { approved: [], rejected: [], updated_at: null };
+  }
+  return fetchJson<DiscoverDecisions>("/discover/decisions");
+}
+
+export async function postDiscoverDecisions(
+  approved_ids: string[],
+  rejected_ids: string[],
+): Promise<DiscoverDecisions> {
+  if (USE_MOCK) {
+    await delay();
+    return { approved: approved_ids, rejected: rejected_ids, updated_at: new Date().toISOString() };
+  }
+  return postJson<DiscoverDecisions>("/discover/decisions", { approved_ids, rejected_ids });
 }
 
 export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {

@@ -369,6 +369,18 @@ export interface IngestClaimAcceptResponse {
 // ---------------------------------------------------------------------------
 // Discovery Review
 // ---------------------------------------------------------------------------
+
+export interface DiscoverDecisions {
+  approved: string[];
+  rejected: string[];
+  updated_at: string | null;
+}
+
+export interface DiscoverDecisionsRequest {
+  approved_ids: string[];
+  rejected_ids: string[];
+}
+
 export interface DiscoveredSource {
   discovery_id: string;
   candidate_project_name: string;

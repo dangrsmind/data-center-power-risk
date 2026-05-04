@@ -33,7 +33,8 @@ from app.services.automation_service import AutomationService
 from app.services.ingestion_service import IngestionService
 
 
-DEFAULT_CSV_PATH = REPO_DIR / "data" / "starter_sources" / "discovered_sources_v0_1.csv"
+DEFAULT_CSV_PATH       = REPO_DIR / "data" / "starter_sources" / "discovered_sources_v0_1.csv"
+DEFAULT_DECISIONS_PATH = REPO_DIR / "data" / "starter_sources" / "discovery_decisions_v0_1.json"
 REQUIRED_COLUMNS = [
     "discovery_id",
     "candidate_project_name",
@@ -125,6 +126,15 @@ def parse_args() -> argparse.Namespace:
         "--allow-partial",
         action="store_true",
         help="Ingest rows missing project name or state as explicit review-only candidates.",
+    )
+    parser.add_argument(
+        "--ignore-decisions",
+        action="store_true",
+        help=(
+            "Skip the decisions file and ingest all qualifying rows. "
+            "By default only rows with approved discovery_ids are ingested "
+            "when a decisions file exists."
+        ),
     )
     return parser.parse_args()
 
@@ -499,6 +509,41 @@ def ingest_rows(rows: list[DiscoveredRow], summary: Summary) -> Summary:
     return summary
 
 
+def load_decisions(path: Path) -> dict[str, set[str]]:
+    """Load persisted discovery decisions. Returns sets of approved and rejected IDs."""
+    if not path.exists():
+        return {"approved": set(), "rejected": set()}
+    with path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return {
+        "approved": set(data.get("approved", [])),
+        "rejected": set(data.get("rejected", [])),
+    }
+
+
+def apply_decisions(
+    rows: list[DiscoveredRow],
+    decisions: dict[str, set[str]],
+    summary: Summary,
+) -> list[DiscoveredRow]:
+    """Filter rows to only those explicitly approved. Unapproved rows are recorded as skipped."""
+    approved = decisions["approved"]
+    kept: list[DiscoveredRow] = []
+    for row in rows:
+        if row.discovery_id in approved:
+            kept.append(row)
+        else:
+            summary.skipped_rows.append(
+                RowIssue(
+                    row_number=row.row_number,
+                    discovery_id=row.discovery_id,
+                    candidate_project_name=row.candidate_project_name,
+                    reason="not in approved decisions — run /discover UI or use --ignore-decisions",
+                )
+            )
+    return kept
+
+
 def main() -> None:
     args = parse_args()
     if args.limit is not None and args.limit < 0:
@@ -507,6 +552,27 @@ def main() -> None:
     args.csv = resolve_repo_relative(args.csv)
     summary = Summary()
     rows = load_rows(args.csv, args.limit, args.allow_partial, summary)
+
+    # Filter to approved rows only unless --ignore-decisions is set
+    if not args.ignore_decisions:
+        decisions = load_decisions(DEFAULT_DECISIONS_PATH)
+        has_decisions = bool(decisions["approved"] or decisions["rejected"])
+        if has_decisions:
+            before = len(rows)
+            rows = apply_decisions(rows, decisions, summary)
+            print(
+                f"[decisions] decisions file found: {len(rows)} approved, "
+                f"{before - len(rows)} not approved (skipped).",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "[decisions] No decisions file found or file is empty — "
+                "ingesting all qualifying rows. Use the Discover UI to approve rows first.",
+                file=sys.stderr,
+            )
+    else:
+        print("[decisions] --ignore-decisions flag set — ingesting all qualifying rows.", file=sys.stderr)
 
     if args.dry_run:
         summary = dry_run_summary(rows, summary)
