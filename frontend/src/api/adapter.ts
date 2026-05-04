@@ -28,6 +28,7 @@ import type {
   IntakePacketResponse,
   IngestEvidencePayload,
   IngestEvidenceResponse,
+  DiscoveredSource,
   IngestClaimItem,
   IngestClaimsCreateResponse,
   IngestClaimResponse,
@@ -442,6 +443,18 @@ export async function acceptClaim(
 // ---------------------------------------------------------------------------
 // Risk Signal
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Discovery Review
+// ---------------------------------------------------------------------------
+
+export async function getDiscoveredSources(): Promise<DiscoveredSource[]> {
+  if (USE_MOCK) {
+    await delay();
+    return [];
+  }
+  return fetchJson<DiscoveredSource[]>("/discover/sources");
+}
 
 export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {
   if (USE_MOCK) {

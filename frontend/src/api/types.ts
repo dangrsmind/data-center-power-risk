@@ -365,3 +365,26 @@ export interface IngestClaimAcceptResponse {
     updated_at: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Discovery Review
+// ---------------------------------------------------------------------------
+export interface DiscoveredSource {
+  discovery_id: string;
+  candidate_project_name: string;
+  developer: string;
+  state: string;
+  county: string;
+  source_url: string;
+  source_type: string;
+  source_date: string;
+  title: string;
+  extracted_text: string;
+  detected_load_mw: number | null;
+  detected_region: string;
+  detected_utility: string;
+  confidence: string;
+  requires_review_reason: string;
+  discovery_method: string;
+  retrieved_at: string;
+}
