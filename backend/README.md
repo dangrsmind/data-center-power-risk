@@ -89,6 +89,29 @@ python scripts/import_dataset.py data/exports/YYYYMMDD
 
 The import command refuses to load if any target dataset table already has rows, so demo data and real data are not silently mixed.
 
+Build starter dataset v0.1:
+
+```bash
+unset DATABASE_URL
+python scripts/reset_db.py --schema-only --confirm REAL_RESET
+python scripts/ingest_starter_dataset.py --dry-run
+python scripts/ingest_starter_dataset.py
+python scripts/export_dataset.py
+```
+
+The starter ingest reads `../data/starter_sources/projects_v0_1.csv`. Add only real source-backed rows to that CSV; do not use `example.com`, placeholder evidence, or demo text. The script creates or updates projects, creates one evidence record per row, generates claims through the existing automation packet, and auto-accepts only `developer_named`, `location_state`, and `location_county`. Project-name, modeled-load, utility, region, date, phase, and power-path claims remain in the review queue.
+
+Useful starter ingest options:
+
+```bash
+python scripts/ingest_starter_dataset.py --dry-run
+python scripts/ingest_starter_dataset.py --limit 10
+python scripts/ingest_starter_dataset.py --project-name "Exact Project Name"
+python scripts/ingest_starter_dataset.py --allow-existing
+```
+
+By default the script refuses to run if the configured database already contains rows. Use `--allow-existing` only when intentionally adding more real starter evidence to an existing real dataset.
+
 ## Reset and seed demo data
 
 Warning: `scripts/seed_demo_data.py` creates fake/demo data. Do not use it for real training/testing datasets.
