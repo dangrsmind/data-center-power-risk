@@ -1,0 +1,147 @@
+project_name_seeds:
+  - CleanArc VA1
+  - PowerHouse Arcola
+  - PowerHouse 95
+  - AVAIO Farmville
+  - T5 ATL IV
+  - LS Power Doswell
+  - Meta Richland Parish Data Center
+  - Prince William Digital Gateway
+developer_seeds:
+  - CleanArc Data Centers
+  - PowerHouse Data Centers
+  - AVAIO Digital
+  - T5 Data Centers
+  - LS Power
+  - Meta
+  - QTS Data Centers
+  - Compass Datacenters
+state_county_seeds:
+  - state: VA
+    county: Caroline
+  - state: VA
+    county: Loudoun
+  - state: VA
+    county: Spotsylvania
+  - state: VA
+    county: Prince Edward
+  - state: VA
+    county: Hanover
+  - state: VA
+    county: Prince William
+  - state: GA
+    county: Fulton
+  - state: LA
+    county: Richland Parish
+  - state: PA
+    county: Cumberland
+source_urls:
+  - url: https://www.cleanarcdatacenters.com/press-release/cleanarc-data-centers-breaks-ground-on-900mw-flagship-hyperscale-campus-in-virginia-2-2/
+    source_type: developer_statement
+    project_name: CleanArc VA1
+    developer: CleanArc Data Centers
+    state: VA
+    county: Caroline
+  - url: https://www.cleanarcdatacenters.com/cleanarc-data-centers-adds-300mw-to-planned-capacity-for-virginia-hyperscale-campus/
+    source_type: developer_statement
+    project_name: CleanArc VA1
+    developer: CleanArc Data Centers
+    state: VA
+    county: Caroline
+  - url: https://www.prnewswire.com/news-releases/powerhouse-data-centers-executes-hyperscale-lease-at-powerhouse-arcola-advancing-northern-virginia-expansion-302661927.html
+    source_type: press
+    project_name: PowerHouse Arcola
+    developer: PowerHouse Data Centers
+    state: VA
+    county: Loudoun
+  - url: https://www.prnewswire.com/news-releases/powerhouse-data-centers-closes-on-site-of-800-mw-data-center-campus-in-spotsylvania-virginia-302041246.html
+    source_type: press
+    project_name: PowerHouse 95
+    developer: PowerHouse Data Centers
+    state: VA
+    county: Spotsylvania
+  - url: https://www.avaiodigital.com/updates/avaio-digital-and-prince-edward-county-ida-agree-to-bring-5-billion-sustainable-hyperscale-data-center-campus-to-the-farmville-va-community
+    source_type: developer_statement
+    project_name: AVAIO Farmville
+    developer: AVAIO Digital
+    state: VA
+    county: Prince Edward
+  - url: https://www.prnewswire.com/news-releases/avaio-digital-and-prince-edward-county-ida-agree-to-bring-5-billion-sustainable-hyperscale-data-center-campus-to-the-farmville-va-community-302362190.html
+    source_type: press
+    project_name: AVAIO Farmville
+    developer: AVAIO Digital
+    state: VA
+    county: Prince Edward
+  - url: https://www.t5datacenters.com/news/
+    source_type: developer_statement
+    project_name: T5 ATL IV
+    developer: T5 Data Centers
+    state: GA
+    county: Fulton
+  - url: https://www.entergy.com/news/entergy-louisiana-breaks-ground-on-key-substation-to-power-data-center-in-richland-parish
+    source_type: utility_statement
+    project_name: Meta Richland Parish Data Center
+    developer: Meta
+    state: LA
+    county: Richland Parish
+  - url: https://www.entergynewsroom.com/news/entergy-louisiana-power-meta-s-data-center-in-richland-parish/
+    source_type: utility_statement
+    project_name: Meta Richland Parish Data Center
+    developer: Meta
+    state: LA
+    county: Richland Parish
+  - url: https://www.prnewswire.com/news-releases/entergy-louisiana-to-power-metas-data-center-in-richland-parish-302324046.html
+    source_type: press
+    project_name: Meta Richland Parish Data Center
+    developer: Meta
+    state: LA
+    county: Richland Parish
+  - url: https://www.psats.org/puc-advances-plan-to-charge-electric-tariffs-on-data-centers-large-load-customers/
+    source_type: regulatory_record
+    project_name: PA PUC Large Load Tariff
+    developer: Pennsylvania Public Utility Commission
+    state: PA
+    county:
+  - url: https://www.ercot.com/committees/tac/llwg
+    source_type: regulatory_record
+    project_name: ERCOT Large Load Working Group
+    developer: ERCOT
+    state: TX
+    county:
+  - url: https://www.ercot.com/services/comm/mkt_notices/M-B062325-01
+    source_type: regulatory_record
+    project_name: ERCOT Large Load Survey
+    developer: ERCOT
+    state: TX
+    county:
+  - url: https://nerc.com/comm/RSTC/Pages/LLTF-Initiative.aspx
+    source_type: regulatory_record
+    project_name: NERC Large Loads Action Plan
+    developer: NERC
+    state:
+    county:
+  - url: https://www.nerc.com/globalassets/our-work/assessments/nerc_ltra_2025.pdf
+    source_type: regulatory_record
+    project_name: NERC 2025 Long-Term Reliability Assessment
+    developer: NERC
+    state:
+    county:
+  - url: https://www.pjm.com/-/media/DotCom/committees-groups/subcommittees/las/2025/20250916/20250916-item-04ai---dominion-data-center-large-load-request.pdf
+    source_type: regulatory_record
+    project_name: Dominion Virginia Data Center Large Load Request
+    developer: Dominion Energy Virginia
+    state: VA
+    county:
+search_query_seeds:
+  - CleanArc VA1 900MW Caroline County Virginia data center
+  - PowerHouse Arcola Loudoun County hyperscale lease data center
+  - PowerHouse 95 800 MW Spotsylvania Virginia data center
+  - AVAIO Digital Farmville Prince Edward County 300 MW Dominion
+  - T5 ATL IV data center Georgia Fulton County
+  - LS Power Doswell Virginia data center Dominion interconnection
+  - Meta Entergy Richland Parish data center transmission substation
+  - Prince William Digital Gateway QTS Compass county data center
+  - PA PUC large load tariff data centers
+  - Dominion Virginia data center large load forecast PJM
+  - ERCOT large load working group data center interconnection
+  - NERC large loads task force data center reliability

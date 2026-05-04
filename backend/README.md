@@ -112,6 +112,29 @@ python scripts/ingest_starter_dataset.py --allow-existing
 
 By default the script refuses to run if the configured database already contains rows. Use `--allow-existing` only when intentionally adding more real starter evidence to an existing real dataset.
 
+Discover starter dataset source drafts:
+
+```bash
+python scripts/discover_starter_dataset.py --dry-run
+python scripts/discover_starter_dataset.py --limit 20
+python scripts/discover_starter_dataset.py --seed-file ../data/starter_sources/discovery_seeds.yml
+python scripts/discover_starter_dataset.py --write-projects-csv
+```
+
+Discovery reads `../data/starter_sources/discovery_seeds.yml` and writes reviewable drafts to `../data/starter_sources/discovered_sources_v0_1.csv`. It fetches only explicit URL seeds, rate-limits requests, checks `robots.txt`, records fetch failures as rows with review reasons, and does not touch the database. Search query seeds are preserved as `query:` rows for analyst follow-up rather than broad web scraping.
+
+Use `--write-projects-csv` only after reviewing the discovered rows. It generates `projects_v0_1.csv` from high-confidence URL rows and still leaves ingestion/claim review to `ingest_starter_dataset.py`.
+
+Ingest reviewed discovered source drafts:
+
+```bash
+python scripts/ingest_discovered_sources.py --dry-run
+python scripts/ingest_discovered_sources.py --limit 10
+python scripts/ingest_discovered_sources.py --allow-existing
+```
+
+This reads `../data/starter_sources/discovered_sources_v0_1.csv`, creates candidate projects and evidence records, generates suggested claims, and auto-accepts only `developer_named`, `location_state`, and `location_county`. Project names, load, utility, region, dates, phase, and power-path claims remain queued for UI/manual review. Rows missing project name or state are skipped unless `--allow-partial` is used.
+
 ## Reset and seed demo data
 
 Warning: `scripts/seed_demo_data.py` creates fake/demo data. Do not use it for real training/testing datasets.
