@@ -15,6 +15,7 @@ router = APIRouter(prefix="/discover", tags=["discover"])
 _DATA_DIR   = Path(__file__).parents[4] / "data" / "starter_sources"
 _CSV_PATH   = _DATA_DIR / "discovered_sources_v0_1.csv"
 _DEC_PATH   = _DATA_DIR / "discovery_decisions_v0_1.json"
+_MAN_PATH   = _DATA_DIR / "manual_source_captures_v0_1.json"
 
 
 # ---------------------------------------------------------------------------
@@ -52,8 +53,30 @@ class DiscoverDecisionsResponse(BaseModel):
     updated_at: str | None
 
 
+class ManualCaptureItem(BaseModel):
+    discovery_id: str
+    manual_extracted_text: str
+    source_date: str
+    notes: str
+    captured_at: str
+    captured_by: str
+
+
+class ManualCaptureRequest(BaseModel):
+    discovery_id: str
+    manual_extracted_text: str
+    source_date: str = ""
+    notes: str = ""
+    captured_by: str = "analyst"
+
+
+class ManualCapturesResponse(BaseModel):
+    captures: list[ManualCaptureItem]
+    updated_at: str | None
+
+
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — decisions
 # ---------------------------------------------------------------------------
 
 def _read_decisions() -> DiscoverDecisionsResponse:
@@ -74,6 +97,43 @@ def _write_decisions(approved: list[str], rejected: list[str]) -> DiscoverDecisi
     payload = {"approved": approved, "rejected": rejected, "updated_at": now}
     _DEC_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return DiscoverDecisionsResponse(approved=approved, rejected=rejected, updated_at=now)
+
+
+# ---------------------------------------------------------------------------
+# Helpers — manual captures
+# ---------------------------------------------------------------------------
+
+def _read_manual_captures() -> dict[str, dict]:
+    """Return the raw captures dict keyed by discovery_id."""
+    if not _MAN_PATH.exists():
+        return {}
+    with _MAN_PATH.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _write_manual_capture(
+    discovery_id: str,
+    manual_extracted_text: str,
+    source_date: str,
+    notes: str,
+    captured_by: str,
+) -> ManualCaptureItem:
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    captures = _read_manual_captures()
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "manual_extracted_text": manual_extracted_text,
+        "source_date": source_date,
+        "notes": notes,
+        "captured_at": now,
+        "captured_by": captured_by,
+    }
+    captures[discovery_id] = entry
+    _MAN_PATH.write_text(json.dumps(captures, indent=2, ensure_ascii=False), encoding="utf-8")
+    return ManualCaptureItem(
+        discovery_id=discovery_id,
+        **entry,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -134,4 +194,33 @@ def save_decisions(body: DiscoverDecisionsRequest) -> DiscoverDecisionsResponse:
     return _write_decisions(
         approved=sorted(approved_set),
         rejected=sorted(rejected_set),
+    )
+
+
+@router.get("/manual-captures", response_model=ManualCapturesResponse)
+def get_manual_captures() -> ManualCapturesResponse:
+    """Return all persisted manual text captures."""
+    raw = _read_manual_captures()
+    captures = [
+        ManualCaptureItem(discovery_id=did, **entry)
+        for did, entry in raw.items()
+    ]
+    # updated_at = most recent captured_at across all entries
+    updated_at: str | None = None
+    if captures:
+        updated_at = max(c.captured_at for c in captures)
+    return ManualCapturesResponse(captures=captures, updated_at=updated_at)
+
+
+@router.post("/manual-captures", response_model=ManualCaptureItem)
+def save_manual_capture(body: ManualCaptureRequest) -> ManualCaptureItem:
+    """Persist a single manual text capture for a discovery row."""
+    if not body.manual_extracted_text.strip():
+        raise HTTPException(status_code=422, detail="manual_extracted_text must not be empty.")
+    return _write_manual_capture(
+        discovery_id=body.discovery_id,
+        manual_extracted_text=body.manual_extracted_text.strip(),
+        source_date=body.source_date.strip(),
+        notes=body.notes.strip(),
+        captured_by=body.captured_by or "analyst",
     )

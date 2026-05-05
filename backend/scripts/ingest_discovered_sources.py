@@ -33,8 +33,9 @@ from app.services.automation_service import AutomationService
 from app.services.ingestion_service import IngestionService
 
 
-DEFAULT_CSV_PATH       = REPO_DIR / "data" / "starter_sources" / "discovered_sources_v0_1.csv"
-DEFAULT_DECISIONS_PATH = REPO_DIR / "data" / "starter_sources" / "discovery_decisions_v0_1.json"
+DEFAULT_CSV_PATH            = REPO_DIR / "data" / "starter_sources" / "discovered_sources_v0_1.csv"
+DEFAULT_DECISIONS_PATH      = REPO_DIR / "data" / "starter_sources" / "discovery_decisions_v0_1.json"
+DEFAULT_MANUAL_CAPTURES_PATH = REPO_DIR / "data" / "starter_sources" / "manual_source_captures_v0_1.json"
 REQUIRED_COLUMNS = [
     "discovery_id",
     "candidate_project_name",
@@ -228,11 +229,41 @@ def row_skip_reason(row: DiscoveredRow, allow_partial: bool) -> str | None:
         missing.append("state")
     if missing:
         return "missing " + ", ".join(missing)
-    if not row.extracted_text:
-        return "missing extracted_text"
+    # extracted_text check is deferred until after manual captures are applied
     if not row.source_url:
         return "missing source_url"
     return None
+
+
+def load_manual_captures(path: Path) -> dict[str, dict]:
+    """Load persisted manual text captures keyed by discovery_id."""
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def apply_manual_captures(rows: list[DiscoveredRow], captures: dict[str, dict]) -> list[DiscoveredRow]:
+    """Patch extracted_text from manual captures where the CSV field is empty."""
+    if not captures:
+        return rows
+    patched: list[DiscoveredRow] = []
+    for row in rows:
+        cap = captures.get(row.discovery_id)
+        if cap and not row.extracted_text:
+            manual_text = (cap.get("manual_extracted_text") or "").strip()
+            if manual_text:
+                row.extracted_text = manual_text
+                # Override source_date if analyst provided one
+                manual_date = (cap.get("source_date") or "").strip()
+                if manual_date and not row.source_date:
+                    try:
+                        from datetime import date as _date
+                        row.source_date = _date.fromisoformat(manual_date)
+                    except ValueError:
+                        pass
+        patched.append(row)
+    return patched
 
 
 def load_rows(path: Path, limit: int | None, allow_partial: bool, summary: Summary) -> list[DiscoveredRow]:
@@ -290,8 +321,8 @@ def assert_db_empty_unless_allowed(allow_existing: bool) -> None:
         )
 
 
-def metadata_for_row(row: DiscoveredRow) -> dict[str, Any]:
-    return {
+def metadata_for_row(row: DiscoveredRow, manually_captured: bool = False) -> dict[str, Any]:
+    meta: dict[str, Any] = {
         "starter_dataset_version": "v0.1",
         "source": "discovered_sources_v0_1",
         "discovery_id": row.discovery_id,
@@ -309,6 +340,13 @@ def metadata_for_row(row: DiscoveredRow) -> dict[str, Any]:
         "source_type": row.source_type.value,
         "source_date": row.source_date.isoformat() if row.source_date else None,
     }
+    if manually_captured:
+        meta["manually_captured"] = True
+        meta["manual_capture_note"] = (
+            "extracted_text was not available from automated fetch; "
+            "text was manually copied by an analyst from the source URL."
+        )
+    return meta
 
 
 def merge_metadata(existing: dict | list | None, incoming: dict[str, Any]) -> dict[str, Any] | None:
@@ -552,6 +590,35 @@ def main() -> None:
     args.csv = resolve_repo_relative(args.csv)
     summary = Summary()
     rows = load_rows(args.csv, args.limit, args.allow_partial, summary)
+
+    # Apply manual captures — patch extracted_text from analyst-entered text where missing
+    manual_captures = load_manual_captures(DEFAULT_MANUAL_CAPTURES_PATH)
+    if manual_captures:
+        rows = apply_manual_captures(rows, manual_captures)
+        print(
+            f"[manual-captures] {len(manual_captures)} manual capture(s) loaded; "
+            "applied where extracted_text was missing.",
+            file=sys.stderr,
+        )
+
+    # Deferred extracted_text check (after manual captures are applied)
+    kept: list = []
+    for row in rows:
+        if not args.allow_partial and not row.extracted_text:
+            summary.skipped_rows.append(
+                RowIssue(
+                    row_number=row.row_number,
+                    discovery_id=row.discovery_id,
+                    candidate_project_name=row.candidate_project_name,
+                    reason=(
+                        "missing extracted_text — use 'Add Manual Text' in /discover UI "
+                        "or run with --ignore-decisions + --allow-partial"
+                    ),
+                )
+            )
+        else:
+            kept.append(row)
+    rows = kept
 
     # Filter to approved rows only unless --ignore-decisions is set
     if not args.ignore_decisions:

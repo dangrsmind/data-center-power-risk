@@ -381,6 +381,28 @@ export interface DiscoverDecisionsRequest {
   rejected_ids: string[];
 }
 
+export interface ManualCapture {
+  discovery_id: string;
+  manual_extracted_text: string;
+  source_date: string;
+  notes: string;
+  captured_at: string;
+  captured_by: string;
+}
+
+export interface ManualCapturesResponse {
+  captures: ManualCapture[];
+  updated_at: string | null;
+}
+
+export interface ManualCaptureRequest {
+  discovery_id: string;
+  manual_extracted_text: string;
+  source_date?: string;
+  notes?: string;
+  captured_by?: string;
+}
+
 export interface DiscoveredSource {
   discovery_id: string;
   candidate_project_name: string;

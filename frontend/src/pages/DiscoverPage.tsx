@@ -1,17 +1,46 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import type { DiscoveredSource } from "../api/types";
-import { getDiscoveredSources, getDiscoverDecisions, postDiscoverDecisions } from "../api/adapter";
+import type { DiscoveredSource, ManualCapture } from "../api/types";
+import {
+  getDiscoveredSources,
+  getDiscoverDecisions,
+  postDiscoverDecisions,
+  getManualCaptures,
+  postManualCapture,
+} from "../api/adapter";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type Decision    = "approved" | "rejected";
+type Decision     = "approved" | "rejected";
 type StatusFilter = "all" | "pending" | "approved" | "rejected";
-type SaveState   = "idle" | "saving" | "saved" | "error";
+type SaveState    = "idle" | "saving" | "saved" | "error";
+
+interface ModalState {
+  source: DiscoveredSource;
+  existing: ManualCapture | null;
+}
 
 // ---------------------------------------------------------------------------
-// Constants
+// Constants — flags that indicate manual capture is needed
+// ---------------------------------------------------------------------------
+
+const BLOCKED_KEYWORDS = [
+  "robots_check_failed",
+  "fetch_failed",
+  "curl_fallback_failed",
+  "CERTIFICATE",
+  "SSL",
+];
+
+function needsManualCapture(source: DiscoveredSource): boolean {
+  if (!source.extracted_text) return true;
+  const reason = source.requires_review_reason ?? "";
+  return BLOCKED_KEYWORDS.some(kw => reason.includes(kw));
+}
+
+// ---------------------------------------------------------------------------
+// Style constants
 // ---------------------------------------------------------------------------
 
 const CONF_COLOR: Record<string, string> = {
@@ -47,7 +76,7 @@ const STATUS_FILTER_LABELS: { value: StatusFilter; label: string }[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatDate(iso: string): string {
+function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
     return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
@@ -75,7 +104,7 @@ function decisionsToSets(decisions: Record<string, Decision>) {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Small shared components
 // ---------------------------------------------------------------------------
 
 function Badge({ label, color, bg }: { label: string; color: string; bg: string }) {
@@ -100,26 +129,361 @@ function StatusBadge({ status }: { status: "pending" | "approved" | "rejected" }
   return <Badge label={cfg.label} color={cfg.color} bg={cfg.bg} />;
 }
 
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 9, textTransform: "uppercase" as const, letterSpacing: "0.07em", color: "var(--text-dim)", marginBottom: 1 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{value}</div>
+    </div>
+  );
+}
+
+function SaveIndicator({ state, updatedAt }: { state: SaveState; updatedAt: string | null }) {
+  if (state === "idle" && !updatedAt) return null;
+  if (state === "saving") {
+    return (
+      <span style={{ fontSize: 11, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 4 }}>
+        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#f59e0b" }} />
+        Saving…
+      </span>
+    );
+  }
+  if (state === "error") {
+    return <span style={{ fontSize: 11, color: "#ef4444" }}>Save failed — check backend connection</span>;
+  }
+  return (
+    <span style={{ fontSize: 11, color: "#22c55e" }}>
+      ✓ Decisions saved{updatedAt ? ` · ${formatDate(updatedAt)}` : ""}
+    </span>
+  );
+}
+
+function CountPill({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Manual Capture Modal
+// ---------------------------------------------------------------------------
+
+function ManualCaptureModal({
+  source,
+  existing,
+  onSave,
+  onClose,
+}: {
+  source: DiscoveredSource;
+  existing: ManualCapture | null;
+  onSave: (capture: ManualCapture) => void;
+  onClose: () => void;
+}) {
+  const [text, setText]         = useState(existing?.manual_extracted_text ?? "");
+  const [date, setDate]         = useState(existing?.source_date ?? source.source_date ?? "");
+  const [notes, setNotes]       = useState(existing?.notes ?? "");
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const textareaRef             = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleSave() {
+    if (!text.trim()) { setError("Please paste the text before saving."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await postManualCapture({
+        discovery_id: source.discovery_id,
+        manual_extracted_text: text.trim(),
+        source_date: date.trim(),
+        notes: notes.trim(),
+        captured_by: "analyst",
+      });
+      onSave(result);
+    } catch (e) {
+      setError(String(e));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.65)", display: "flex",
+        alignItems: "center", justifyContent: "center",
+        padding: "20px",
+      }}
+    >
+      <div style={{
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        width: "100%", maxWidth: 640,
+        maxHeight: "90vh",
+        display: "flex", flexDirection: "column",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+      }}>
+
+        {/* Modal header */}
+        <div style={{
+          padding: "16px 20px 12px",
+          borderBottom: "1px solid var(--border)",
+          display: "flex", alignItems: "flex-start", gap: 12,
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>
+              {existing ? "Edit Manual Text" : "Add Manual Text"}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
+              {source.candidate_project_name || "—"}
+              {source.developer ? <span style={{ color: "var(--text-dim)" }}> · {source.developer}</span> : null}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "var(--text-dim)", fontSize: 18, lineHeight: 1,
+              padding: "2px 4px", borderRadius: 3,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Source info */}
+        <div style={{
+          padding: "12px 20px",
+          borderBottom: "1px solid var(--border)",
+          background: "rgba(0,0,0,0.15)",
+        }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              {source.title && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, lineHeight: 1.4 }}>
+                  <span style={{ color: "var(--text-dim)", fontSize: 10 }}>Title </span>
+                  {truncate(source.title, 100)}
+                </div>
+              )}
+              {source.source_url && (
+                <div style={{ fontSize: 11 }}>
+                  <span style={{ color: "var(--text-dim)", fontSize: 10 }}>URL </span>
+                  <a
+                    href={source.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "var(--accent)", textDecoration: "none", wordBreak: "break-all" }}
+                  >
+                    {source.source_url.length > 80 ? source.source_url.slice(0, 80) + "…" : source.source_url}
+                  </a>
+                </div>
+              )}
+            </div>
+            {source.source_url && (
+              <a
+                href={source.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: 11, fontWeight: 600, padding: "5px 12px",
+                  borderRadius: 4, border: "1px solid var(--accent)",
+                  color: "var(--accent)", textDecoration: "none", whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                ↗ Open source
+              </a>
+            )}
+          </div>
+
+          {source.requires_review_reason && (
+            <div style={{
+              marginTop: 8, fontSize: 10, color: "#f59e0b",
+              background: "rgba(245,158,11,0.08)", borderRadius: 3,
+              padding: "4px 8px", lineHeight: 1.5,
+            }}>
+              <span style={{ fontWeight: 700 }}>Blocked reason: </span>
+              {source.requires_review_reason}
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+
+          <label style={{ display: "block", marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 5 }}>
+              Paste text from source
+              <span style={{ fontWeight: 400, color: "var(--text-dim)", marginLeft: 6 }}>
+                — open the link above in your browser, select and copy the relevant content, then paste here
+              </span>
+            </div>
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Paste article text, document excerpt, or press release content here…"
+              rows={10}
+              style={{
+                width: "100%", resize: "vertical",
+                background: "var(--bg)", border: "1px solid var(--border)",
+                borderRadius: 4, padding: "8px 10px",
+                fontSize: 12, color: "var(--text)", lineHeight: 1.6,
+                fontFamily: "inherit",
+                boxSizing: "border-box",
+              }}
+            />
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 3 }}>
+              {text.trim().length} characters
+            </div>
+          </label>
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <label style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 5 }}>
+                Source date override
+                <span style={{ fontWeight: 400, color: "var(--text-dim)", marginLeft: 4 }}>(optional, YYYY-MM-DD)</span>
+              </div>
+              <input
+                type="text"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                placeholder="e.g. 2025-03-15"
+                style={{
+                  width: "100%", boxSizing: "border-box",
+                  background: "var(--bg)", border: "1px solid var(--border)",
+                  borderRadius: 4, padding: "6px 10px",
+                  fontSize: 12, color: "var(--text)",
+                }}
+              />
+            </label>
+          </div>
+
+          <label style={{ display: "block", marginTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 5 }}>
+              Notes
+              <span style={{ fontWeight: 400, color: "var(--text-dim)", marginLeft: 4 }}>(optional)</span>
+            </div>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="e.g. copied from page 3 of the PDF; article paywall bypassed via web archive"
+              rows={2}
+              style={{
+                width: "100%", resize: "vertical",
+                background: "var(--bg)", border: "1px solid var(--border)",
+                borderRadius: 4, padding: "6px 10px",
+                fontSize: 12, color: "var(--text)", lineHeight: 1.5,
+                fontFamily: "inherit",
+                boxSizing: "border-box",
+              }}
+            />
+          </label>
+
+          {existing && (
+            <div style={{
+              marginTop: 10, fontSize: 10, color: "var(--text-dim)",
+              background: "rgba(34,197,94,0.06)", borderRadius: 3, padding: "5px 8px",
+              border: "1px solid rgba(34,197,94,0.15)",
+            }}>
+              Previously captured {formatDate(existing.captured_at)} by {existing.captured_by}.
+              Saving will overwrite the existing capture.
+            </div>
+          )}
+
+          {error && (
+            <div style={{ marginTop: 10, fontSize: 11, color: "#ef4444", background: "rgba(239,68,68,0.08)", borderRadius: 3, padding: "6px 10px" }}>
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: "12px 20px",
+          borderTop: "1px solid var(--border)",
+          display: "flex", gap: 10, justifyContent: "flex-end",
+          background: "rgba(0,0,0,0.1)",
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              fontSize: 12, padding: "6px 16px", borderRadius: 4,
+              background: "transparent", border: "1px solid var(--border)",
+              color: "var(--text-muted)", cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !text.trim()}
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "6px 18px", borderRadius: 4,
+              background: saving || !text.trim() ? "rgba(34,197,94,0.3)" : "rgba(34,197,94,0.15)",
+              border: "1px solid rgba(34,197,94,0.5)", color: "#22c55e",
+              cursor: saving || !text.trim() ? "default" : "pointer",
+            }}
+          >
+            {saving ? "Saving…" : existing ? "Update capture" : "Save capture"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Source card
+// ---------------------------------------------------------------------------
+
 function SourceCard({
-  source, decision, saving, onApprove, onReject, onUndo,
+  source, decision, capture, saving, onApprove, onReject, onUndo, onAddManual,
 }: {
   source: DiscoveredSource;
   decision: Decision | undefined;
+  capture: ManualCapture | null;
   saving: boolean;
   onApprove: () => void;
   onReject: () => void;
   onUndo: () => void;
+  onAddManual: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const status: "pending" | "approved" | "rejected" = decision ?? "pending";
   const confColor = CONF_COLOR[source.confidence] ?? "#94a3b8";
   const confBg    = CONF_BG[source.confidence]    ?? "rgba(148,163,184,0.1)";
+  const needsManual = needsManualCapture(source);
 
   const borderColor = status === "approved"
     ? "rgba(34,197,94,0.35)"
     : status === "rejected"
     ? "rgba(239,68,68,0.25)"
     : "var(--border)";
+
+  // Preview: use manual text if extracted_text is missing
+  const displayText = source.extracted_text || capture?.manual_extracted_text || "";
 
   return (
     <div style={{
@@ -146,9 +510,15 @@ function SourceCard({
             label={source.discovery_method.replace(/_/g, " ")}
             color="#60a5fa" bg="rgba(96,165,250,0.08)"
           />
+          {capture && (
+            <Badge label="Manual text added" color="#a78bfa" bg="rgba(167,139,250,0.12)" />
+          )}
+          {needsManual && !capture && (
+            <Badge label="Text blocked" color="#f59e0b" bg="rgba(245,158,11,0.1)" />
+          )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
           <StatusBadge status={status} />
 
           {decision ? (
@@ -193,6 +563,27 @@ function SourceCard({
             </>
           )}
 
+          {/* Add / Edit manual text button — shown when fetch was blocked or text is missing */}
+          {needsManual && (
+            <button
+              onClick={onAddManual}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 4,
+                cursor: "pointer",
+                background: capture
+                  ? "rgba(167,139,250,0.12)"
+                  : "rgba(245,158,11,0.1)",
+                border: capture
+                  ? "1px solid rgba(167,139,250,0.4)"
+                  : "1px solid rgba(245,158,11,0.4)",
+                color: capture ? "#a78bfa" : "#f59e0b",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {capture ? "✎ Edit text" : "+ Add Manual Text"}
+            </button>
+          )}
+
           {source.source_url && (
             <a
               href={source.source_url}
@@ -231,7 +622,7 @@ function SourceCard({
         <Fact label="Load"        value={source.detected_load_mw != null ? `${source.detected_load_mw.toLocaleString()} MW` : "—"} />
         <Fact label="Region"      value={source.detected_region  || "—"} />
         <Fact label="Utility"     value={source.detected_utility || "—"} />
-        <Fact label="Source date" value={source.source_date      || "—"} />
+        <Fact label="Source date" value={capture?.source_date || source.source_date || "—"} />
       </div>
 
       {/* ── Source title ── */}
@@ -252,6 +643,49 @@ function SourceCard({
             <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 6 }}>
               ({hostname(source.source_url)})
             </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Manual text preview ── */}
+      {capture && (
+        <div style={{
+          marginBottom: 6,
+          background: "rgba(167,139,250,0.06)",
+          border: "1px solid rgba(167,139,250,0.2)",
+          borderRadius: 4, padding: "7px 10px",
+        }}>
+          <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a78bfa", marginBottom: 3, fontWeight: 700 }}>
+            Manual text preview
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+            {truncate(capture.manual_extracted_text, 220)}
+          </div>
+          {capture.notes && (
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+              Notes: {capture.notes}
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 3 }}>
+            Captured {formatDate(capture.captured_at)} by {capture.captured_by}
+          </div>
+        </div>
+      )}
+
+      {/* ── Extracted text preview (when available from fetch) ── */}
+      {!capture && displayText && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, lineHeight: 1.5 }}>
+          <span style={{ color: "var(--text-dim)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Text preview{" "}
+          </span>
+          {expanded ? displayText : truncate(displayText, 200)}
+          {displayText.length > 200 && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              style={{ fontSize: 10, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}
+            >
+              {expanded ? "less" : "more"}
+            </button>
           )}
         </div>
       )}
@@ -284,82 +718,52 @@ function SourceCard({
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 9, textTransform: "uppercase" as const, letterSpacing: "0.07em", color: "var(--text-dim)", marginBottom: 1 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{value}</div>
-    </div>
-  );
-}
-
-function SaveIndicator({ state, updatedAt }: { state: SaveState; updatedAt: string | null }) {
-  if (state === "idle" && !updatedAt) return null;
-  if (state === "saving") {
-    return (
-      <span style={{ fontSize: 11, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 4 }}>
-        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#f59e0b", animation: "pulse 1s infinite" }} />
-        Saving…
-      </span>
-    );
-  }
-  if (state === "error") {
-    return (
-      <span style={{ fontSize: 11, color: "#ef4444" }}>Save failed — check backend connection</span>
-    );
-  }
-  if (state === "saved" || (state === "idle" && updatedAt)) {
-    return (
-      <span style={{ fontSize: 11, color: "#22c55e" }}>
-        ✓ Decisions saved{updatedAt ? ` · ${formatDate(updatedAt)}` : ""}
-      </span>
-    );
-  }
-  return null;
-}
-
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
 export function DiscoverPage() {
-  const [sources,    setSources]    = useState<DiscoveredSource[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState<string | null>(null);
-  const [decisions,  setDecisions]  = useState<Record<string, Decision>>({});
-  const [saveState,  setSaveState]  = useState<SaveState>("idle");
-  const [updatedAt,  setUpdatedAt]  = useState<string | null>(null);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sources,   setSources]   = useState<DiscoveredSource[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  const [captures,  setCaptures]  = useState<Record<string, ManualCapture>>({});
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [modal,     setModal]     = useState<ModalState | null>(null);
+  const savedTimerRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Filters
   const [filterStatus,     setFilterStatus]     = useState<StatusFilter>("all");
   const [filterConfidence, setFilterConfidence] = useState("all");
   const [filterState,      setFilterState]      = useState("all");
+  const [filterManual,     setFilterManual]      = useState(false);
   const [search,           setSearch]           = useState("");
 
-  // Load sources + decisions in parallel on mount
+  // Load sources + decisions + manual captures in parallel on mount
   useEffect(() => {
     setLoading(true);
     Promise.all([
       getDiscoveredSources(),
       getDiscoverDecisions(),
+      getManualCaptures(),
     ])
-      .then(([srcs, dec]) => {
+      .then(([srcs, dec, man]) => {
         setSources(srcs);
-        // Hydrate decisions from persisted state
         const hydrated: Record<string, Decision> = {};
         for (const id of dec.approved) hydrated[id] = "approved";
         for (const id of dec.rejected) hydrated[id] = "rejected";
         setDecisions(hydrated);
         setUpdatedAt(dec.updated_at);
+        const cap: Record<string, ManualCapture> = {};
+        for (const c of man.captures) cap[c.discovery_id] = c;
+        setCaptures(cap);
         setLoading(false);
       })
       .catch(e => { setError(String(e)); setLoading(false); });
   }, []);
 
-  // Save decisions to backend and update indicator
+  // Save decisions
   const saveDecisions = useCallback(async (next: Record<string, Decision>) => {
     setSaveState("saving");
     if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
@@ -368,7 +772,6 @@ export function DiscoverPage() {
       const result = await postDiscoverDecisions(approved, rejected);
       setUpdatedAt(result.updated_at);
       setSaveState("saved");
-      // Auto-clear "saved" indicator after 3 seconds
       savedTimerRef.current = setTimeout(() => setSaveState("idle"), 3000);
     } catch {
       setSaveState("error");
@@ -386,6 +789,15 @@ export function DiscoverPage() {
   const reject  = useCallback((id: string) => makeDecision(id, "rejected"),  [makeDecision]);
   const undo    = useCallback((id: string) => makeDecision(id, null),         [makeDecision]);
 
+  const handleManualSave = useCallback((capture: ManualCapture) => {
+    setCaptures(prev => ({ ...prev, [capture.discovery_id]: capture }));
+    setModal(null);
+  }, []);
+
+  const openModal = useCallback((source: DiscoveredSource) => {
+    setModal({ source, existing: captures[source.discovery_id] ?? null });
+  }, [captures]);
+
   const allStates = useMemo(
     () => [...new Set(sources.map(s => s.state).filter(Boolean))].sort(),
     [sources],
@@ -399,6 +811,7 @@ export function DiscoverPage() {
     if (filterStatus !== "all" && status !== filterStatus) return false;
     if (filterConfidence !== "all" && s.confidence !== filterConfidence) return false;
     if (filterState !== "all" && s.state !== filterState) return false;
+    if (filterManual && !needsManualCapture(s)) return false;
     if (search) {
       const q = search.toLowerCase();
       if (
@@ -408,11 +821,13 @@ export function DiscoverPage() {
       ) return false;
     }
     return true;
-  }), [sources, decisions, filterStatus, filterConfidence, filterState, search]);
+  }), [sources, decisions, filterStatus, filterConfidence, filterState, filterManual, search]);
 
-  const pendingCount  = sources.filter(s => !decisions[s.discovery_id]).length;
-  const approvedCount = Object.values(decisions).filter(d => d === "approved").length;
-  const rejectedCount = Object.values(decisions).filter(d => d === "rejected").length;
+  const pendingCount    = sources.filter(s => !decisions[s.discovery_id]).length;
+  const approvedCount   = Object.values(decisions).filter(d => d === "approved").length;
+  const rejectedCount   = Object.values(decisions).filter(d => d === "rejected").length;
+  const capturedCount   = Object.keys(captures).length;
+  const blockedCount    = sources.filter(needsManualCapture).length;
 
   const sel: React.CSSProperties = {
     padding: "5px 8px", fontSize: 11, background: "var(--bg)", border: "1px solid var(--border)",
@@ -421,6 +836,16 @@ export function DiscoverPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+
+      {/* Modal */}
+      {modal && (
+        <ManualCaptureModal
+          source={modal.source}
+          existing={modal.existing}
+          onSave={handleManualSave}
+          onClose={() => setModal(null)}
+        />
+      )}
 
       {/* ── Header ── */}
       <div style={{
@@ -435,18 +860,18 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        {/* Save indicator */}
         <div style={{ marginLeft: 8 }}>
           <SaveIndicator state={saveState} updatedAt={updatedAt} />
         </div>
 
-        {/* Summary counts */}
         {!loading && !error && sources.length > 0 && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center" }}>
-            <CountPill label="Total"    value={sources.length} color="var(--text-muted)" />
-            <CountPill label="Pending"  value={pendingCount}   color="#94a3b8" />
-            <CountPill label="Approved" value={approvedCount}  color="#22c55e" />
-            <CountPill label="Rejected" value={rejectedCount}  color="#ef4444" />
+            <CountPill label="Total"    value={sources.length}  color="var(--text-muted)" />
+            <CountPill label="Pending"  value={pendingCount}    color="#94a3b8" />
+            <CountPill label="Approved" value={approvedCount}   color="#22c55e" />
+            <CountPill label="Rejected" value={rejectedCount}   color="#ef4444" />
+            <CountPill label="Blocked"  value={blockedCount}    color="#f59e0b" />
+            <CountPill label="Captured" value={capturedCount}   color="#a78bfa" />
           </div>
         )}
       </div>
@@ -487,6 +912,20 @@ export function DiscoverPage() {
             {allStates.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
 
+          <button
+            onClick={() => setFilterManual(b => !b)}
+            style={{
+              ...sel,
+              background: filterManual ? "rgba(245,158,11,0.15)" : "var(--bg)",
+              border: filterManual ? "1px solid rgba(245,158,11,0.5)" : "1px solid var(--border)",
+              color: filterManual ? "#f59e0b" : "var(--text-muted)",
+              fontWeight: filterManual ? 700 : 400,
+              cursor: "pointer",
+            }}
+          >
+            {filterManual ? "⚠ Blocked only" : "All sources"}
+          </button>
+
           <input
             type="text"
             placeholder="Search name, developer, title…"
@@ -495,9 +934,9 @@ export function DiscoverPage() {
             style={{ ...sel, width: 220, cursor: "text" }}
           />
 
-          {(filterStatus !== "all" || filterConfidence !== "all" || filterState !== "all" || search) && (
+          {(filterStatus !== "all" || filterConfidence !== "all" || filterState !== "all" || filterManual || search) && (
             <button
-              onClick={() => { setFilterStatus("all"); setFilterConfidence("all"); setFilterState("all"); setSearch(""); }}
+              onClick={() => { setFilterStatus("all"); setFilterConfidence("all"); setFilterState("all"); setFilterManual(false); setSearch(""); }}
               style={{ fontSize: 11, color: "var(--accent)", background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "4px 10px" }}
             >
               ✕ Clear
@@ -539,10 +978,7 @@ export function DiscoverPage() {
           }}>
             <div style={{ fontSize: 32, opacity: 0.25 }}>◎</div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-muted)" }}>
-              No discovered sources available yet. Run discovery first.
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-dim)", textAlign: "center", maxWidth: 380, lineHeight: 1.6 }}>
-              Populate the queue by running the discovery script:
+              No discovered sources yet. Run discovery first.
             </div>
             <code style={{
               fontSize: 11, background: "var(--bg-surface)", border: "1px solid var(--border)",
@@ -564,23 +1000,14 @@ export function DiscoverPage() {
             key={source.discovery_id}
             source={source}
             decision={decisions[source.discovery_id]}
+            capture={captures[source.discovery_id] ?? null}
             saving={isSaving}
             onApprove={() => approve(source.discovery_id)}
             onReject={()  => reject(source.discovery_id)}
             onUndo={()    => undo(source.discovery_id)}
+            onAddManual={() => openModal(source)}
           />
         ))}
-      </div>
-    </div>
-  );
-}
-
-function CountPill({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-        {label}
       </div>
     </div>
   );

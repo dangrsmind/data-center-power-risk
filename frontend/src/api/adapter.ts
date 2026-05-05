@@ -30,6 +30,9 @@ import type {
   IngestEvidenceResponse,
   DiscoveredSource,
   DiscoverDecisions,
+  ManualCapture,
+  ManualCapturesResponse,
+  ManualCaptureRequest,
   IngestClaimItem,
   IngestClaimsCreateResponse,
   IngestClaimResponse,
@@ -474,6 +477,29 @@ export async function postDiscoverDecisions(
     return { approved: approved_ids, rejected: rejected_ids, updated_at: new Date().toISOString() };
   }
   return postJson<DiscoverDecisions>("/discover/decisions", { approved_ids, rejected_ids });
+}
+
+export async function getManualCaptures(): Promise<ManualCapturesResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return { captures: [], updated_at: null };
+  }
+  return fetchJson<ManualCapturesResponse>("/discover/manual-captures");
+}
+
+export async function postManualCapture(req: ManualCaptureRequest): Promise<ManualCapture> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      discovery_id: req.discovery_id,
+      manual_extracted_text: req.manual_extracted_text,
+      source_date: req.source_date ?? "",
+      notes: req.notes ?? "",
+      captured_at: new Date().toISOString(),
+      captured_by: req.captured_by ?? "analyst",
+    };
+  }
+  return postJson<ManualCapture>("/discover/manual-captures", req);
 }
 
 export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {
