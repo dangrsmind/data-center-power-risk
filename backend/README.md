@@ -137,6 +137,68 @@ python scripts/ingest_discovered_sources.py --allow-existing
 
 This reads `../data/starter_sources/discovered_sources_v0_1.csv`, creates candidate projects and evidence records, generates suggested claims, and auto-accepts only `developer_named`, `location_state`, and `location_county`. Project names, load, utility, region, dates, phase, and power-path claims remain queued for UI/manual review. Rows missing project name or state are skipped unless `--allow-partial` is used.
 
+## Baseline prediction model card
+
+Endpoint:
+
+```bash
+curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/prediction
+```
+
+Model version: `baseline_power_delay_v0`
+
+Prediction target: `power_delivery_delay`
+
+Assumptions:
+
+- This is a deterministic rule baseline, not a trained ML model.
+- It uses accepted claims only for project facts such as load, utility, region, target energization date, and power-path evidence.
+- Missing data lowers confidence. Missing utility, region, target date, load, or power-path support does not automatically make a project high risk.
+- Enrichment context can appear as a driver, but it is not treated as accepted evidence.
+- The existing Evidence Signal remains separate and is used as one input driver; it is not replaced.
+
+Inputs:
+
+- accepted `modeled_load_mw`
+- accepted `utility_named`
+- accepted `region_or_rto_named`
+- accepted `target_energization_date`
+- accepted power-path claims
+- accepted regional large-load stress claims
+- latest enrichment snapshot, if available
+- reviewed evidence count and accepted claim count
+- missing critical fields
+
+Weights:
+
+- baseline prior: `+0.12`
+- accepted load over `300 MW`: `+0.16`
+- accepted load over `800 MW`: `+0.28`
+- target date under 24 months with no accepted power-path evidence: `+0.18`
+- accepted new substation or transmission requirement: `+0.12`
+- accepted regional large-load stress evidence: `+0.10`
+- Evidence Signal moderate tier: `+0.06`
+- Evidence Signal high tier: `+0.12`
+- accepted power-path support: `-0.08`
+- accepted substation/interconnection detail: `-0.04`
+- missing critical input: `0.00` risk weight, confidence penalty only
+
+Limitations:
+
+- No learned coefficients, vector embeddings, OCR, or ML parsing are used.
+- Probabilities are calibrated rule outputs for triage, not statistically fitted event probabilities.
+- The baseline cannot infer unaccepted project facts from raw evidence text.
+- It does not model utility queue position, interconnection study status, local permitting, or construction sequencing unless those facts are represented as accepted claims.
+
+What would change the conclusion:
+
+- accepted load moving above or below `300 MW` or `800 MW`
+- accepted target energization date moving inside or outside a 24-month window
+- accepted utility, region, or power-path evidence being added
+- accepted evidence that new substation/transmission work is required
+- accepted regional large-load stress evidence being added or rejected
+- additional reviewed evidence increasing confidence
+
 ## Reset and seed demo data
 
 Warning: `scripts/seed_demo_data.py` creates fake/demo data. Do not use it for real training/testing datasets.

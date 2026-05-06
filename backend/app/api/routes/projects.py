@@ -12,6 +12,7 @@ from app.schemas.analyst import (
     ProjectEvidenceResponse,
     ProjectEventsResponse,
     ProjectHistoryResponse,
+    ProjectPredictionResponse,
     ProjectRiskSignalResponse,
     ProjectStressResponse,
 )
@@ -19,7 +20,7 @@ from app.schemas.enrichment import ProjectEnrichmentResponse
 from app.schemas.phase import PhaseListItem
 from app.schemas.project import ProjectCoordinatesRequest, ProjectDetail, ProjectListItem
 from app.schemas.score import ProjectScoreResponse
-from app.services import EnrichmentService, ProjectService
+from app.services import EnrichmentService, PredictionService, ProjectService
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -96,6 +97,11 @@ def get_project_evidence(project_id: uuid.UUID, db: Session = Depends(get_db)) -
 @router.get("/{project_id}/risk-signal", response_model=ProjectRiskSignalResponse, response_model_exclude_none=True)
 def get_project_risk_signal(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectRiskSignalResponse:
     return ProjectService(db).get_project_risk_signal(project_id)
+
+
+@router.get("/{project_id}/prediction", response_model=ProjectPredictionResponse, response_model_exclude_none=True)
+def get_project_prediction(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectPredictionResponse:
+    return PredictionService(db).get_project_prediction(project_id)
 
 
 @router.get("/{project_id}/enrichment", response_model=ProjectEnrichmentResponse, response_model_exclude_none=True)
