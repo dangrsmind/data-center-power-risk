@@ -232,6 +232,29 @@ export interface ProjectEnrichmentData {
 }
 
 // ---------------------------------------------------------------------------
+// Prediction
+// ---------------------------------------------------------------------------
+export interface PredictionDriver {
+  driver: string;
+  direction: string;
+  weight: number;
+  evidence: string;
+}
+
+export interface ProjectPredictionData {
+  model_version: string;
+  prediction_type: string;
+  p_delay_6mo: number;
+  p_delay_12mo: number;
+  p_delay_18mo: number;
+  risk_tier: string;
+  confidence: string;
+  drivers: PredictionDriver[];
+  missing_inputs: string[];
+  method_note: string;
+}
+
+// ---------------------------------------------------------------------------
 // Risk Signal
 // ---------------------------------------------------------------------------
 export interface RiskSignalEvidenceSummary {

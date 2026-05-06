@@ -7,6 +7,7 @@ import type {
   ProjectStressData,
   ProjectHistoryData,
   ProjectEvidenceData,
+  ProjectPredictionData,
   ProjectRiskSignalData,
 } from "../api/types";
 import {
@@ -16,6 +17,7 @@ import {
   getProjectStress,
   getProjectHistory,
   getProjectEvidence,
+  getProjectPrediction,
   getProjectRiskSignal,
   patchProjectCoordinates,
 } from "../api/adapter";
@@ -26,19 +28,21 @@ import { EventsTab } from "../components/detail/EventsTab";
 import { StressTab } from "../components/detail/StressTab";
 import { HistoryTab } from "../components/detail/HistoryTab";
 import { EvidenceTab } from "../components/detail/EvidenceTab";
+import { PredictionTab } from "../components/detail/PredictionTab";
 import { RiskSignalTab } from "../components/detail/RiskSignalTab";
 
-type TabId = "overview" | "phases" | "score" | "events" | "stress" | "history" | "evidence" | "risk-signal";
+type TabId = "overview" | "phases" | "score" | "events" | "stress" | "history" | "evidence" | "prediction" | "risk-signal";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "overview",     label: "Overview" },
-  { id: "phases",       label: "Phases" },
-  { id: "score",        label: "Score" },
-  { id: "events",       label: "Events" },
-  { id: "stress",       label: "Stress" },
-  { id: "history",      label: "History" },
-  { id: "evidence",     label: "Evidence" },
-  { id: "risk-signal",  label: "Evidence Signal" },
+  { id: "overview",    label: "Overview" },
+  { id: "phases",      label: "Phases" },
+  { id: "score",       label: "Score" },
+  { id: "events",      label: "Events" },
+  { id: "stress",      label: "Stress" },
+  { id: "history",     label: "History" },
+  { id: "evidence",    label: "Evidence" },
+  { id: "prediction",  label: "Prediction" },
+  { id: "risk-signal", label: "Evidence Signal" },
 ];
 
 export function ProjectDetailPage() {
@@ -50,6 +54,7 @@ export function ProjectDetailPage() {
   const [stress,      setStress]      = useState<ProjectStressData | null>(null);
   const [history,     setHistory]     = useState<ProjectHistoryData | null>(null);
   const [evidence,    setEvidence]    = useState<ProjectEvidenceData | null>(null);
+  const [prediction,  setPrediction]  = useState<ProjectPredictionData | null>(null);
   const [riskSignal,  setRiskSignal]  = useState<ProjectRiskSignalData | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -65,28 +70,34 @@ export function ProjectDetailPage() {
     setStress(null);
     setHistory(null);
     setEvidence(null);
+    setPrediction(null);
     setRiskSignal(null);
     setError(null);
 
-    Promise.all([
+    Promise.allSettled([
       getProject(id),
       getProjectEnrichment(id),
       getProjectEvents(id),
       getProjectStress(id),
       getProjectHistory(id),
       getProjectEvidence(id),
+      getProjectPrediction(id),
       getProjectRiskSignal(id),
     ])
-      .then(([proj, enrich, evts, str, hist, evid, rs]) => {
-        setProject(proj);
-        setEnrichment(enrich);
-        setEvents(evts);
-        setStress(str);
-        setHistory(hist);
-        setEvidence(evid);
-        setRiskSignal(rs);
+      .then(([proj, enrich, evts, str, hist, evid, pred, rs]) => {
+        if (proj.status === "rejected") {
+          setError(String(proj.reason));
+          return;
+        }
+        setProject(proj.value);
+        if (enrich.status === "fulfilled") setEnrichment(enrich.value);
+        if (evts.status   === "fulfilled") setEvents(evts.value);
+        if (str.status    === "fulfilled") setStress(str.value);
+        if (hist.status   === "fulfilled") setHistory(hist.value);
+        if (evid.status   === "fulfilled") setEvidence(evid.value);
+        if (pred.status   === "fulfilled") setPrediction(pred.value);
+        if (rs.status     === "fulfilled") setRiskSignal(rs.value);
       })
-      .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -211,6 +222,15 @@ export function ProjectDetailPage() {
                   <EvidenceTab evidence={evidence?.evidence ?? []} />
                 </SectionCard>
               </div>
+            )}
+
+            {tab === "prediction" && prediction && (
+              <div style={{ maxWidth: 820 }}>
+                <PredictionTab data={prediction} />
+              </div>
+            )}
+            {tab === "prediction" && !prediction && !loading && (
+              <div style={{ color: "var(--text-muted)", fontSize: 13 }}>No prediction data available.</div>
             )}
 
             {tab === "risk-signal" && riskSignal && (

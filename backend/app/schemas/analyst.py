@@ -147,3 +147,23 @@ class ProjectRiskSignalResponse(BaseModel):
     missing_fields: list[str]
     evidence_summary: RiskSignalEvidenceSummary
     method: str
+
+
+class PredictionDriver(BaseModel):
+    driver: str
+    direction: str
+    weight: float
+    evidence: str
+
+
+class ProjectPredictionResponse(BaseModel):
+    model_version: str
+    prediction_type: str
+    p_delay_6mo: float
+    p_delay_12mo: float
+    p_delay_18mo: float
+    risk_tier: str
+    confidence: str
+    drivers: list[PredictionDriver]
+    missing_inputs: list[str]
+    method_note: str = "This is a deterministic baseline, not a trained ML model."

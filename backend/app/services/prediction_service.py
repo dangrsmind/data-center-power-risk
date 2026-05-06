@@ -8,9 +8,9 @@ from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.enums import ClaimEntityType, ClaimReviewStatus, ClaimType, ReviewerStatus
+from app.core.enums import ClaimEntityType, ClaimReviewStatus, ClaimType
 from app.models.enrichment import ProjectEnrichmentSnapshot
-from app.models.evidence import Claim, Evidence
+from app.models.evidence import Claim
 from app.models.project import Phase, Project
 from app.schemas.analyst import PredictionDriver, ProjectPredictionResponse
 from app.services.risk_signal_service import RiskSignalService
@@ -69,6 +69,7 @@ class PredictionService:
             drivers=drivers,
             missing_inputs=missing_inputs,
             confidence=self._confidence(inputs, missing_inputs),
+            method_note="This is a deterministic baseline, not a trained ML model.",
         )
 
     def _build_inputs(self, project: Project) -> AcceptedInputs:
@@ -76,9 +77,6 @@ class PredictionService:
         phase_ids = [phase.id for phase in phases]
         accepted_claims = self._accepted_project_claims(project.id, phase_ids)
         evidence_ids = {claim.evidence_id for claim in accepted_claims if claim.evidence_id is not None}
-        evidence_rows = []
-        if evidence_ids:
-            evidence_rows = list(self.db.execute(select(Evidence).where(Evidence.id.in_(evidence_ids))).scalars().all())
 
         modeled_load_mw = self._accepted_modeled_load(accepted_claims)
         target_energization_date = self._accepted_target_date(accepted_claims)
@@ -123,8 +121,8 @@ class PredictionService:
             has_substation_or_interconnection_detail=has_substation_or_interconnection_detail,
             has_new_substation_or_transmission_required=has_new_substation_or_transmission_required,
             has_regional_large_load_stress=has_regional_large_load_stress,
-            reviewed_evidence_count=sum(1 for evidence in evidence_rows if evidence.reviewer_status == ReviewerStatus.REVIEWED),
-            evidence_count=len(evidence_rows),
+            reviewed_evidence_count=len(evidence_ids),
+            evidence_count=len(evidence_ids),
             enrichment=enrichment,
         )
 

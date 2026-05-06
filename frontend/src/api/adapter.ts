@@ -23,6 +23,7 @@ import type {
   ProjectStressData,
   ProjectHistoryData,
   ProjectEvidenceData,
+  ProjectPredictionData,
   ProjectRiskSignalData,
   IntakePacketRequest,
   IntakePacketResponse,
@@ -544,6 +545,34 @@ export async function patchProjectCoordinates(
     data_quality_score: Math.round(score.evidence_quality_score * 100),
     latest_update_date: raw.latest_update_date ?? "",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Prediction
+// ---------------------------------------------------------------------------
+
+export async function getProjectPrediction(id: string): Promise<ProjectPredictionData> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      model_version: "deterministic_baseline_v1",
+      prediction_type: "power_delivery_delay",
+      p_delay_6mo: 0.18,
+      p_delay_12mo: 0.32,
+      p_delay_18mo: 0.45,
+      risk_tier: "elevated",
+      confidence: "medium",
+      drivers: [
+        { driver: "baseline prior", direction: "unknown", weight: 0.12, evidence: "Fixed prior for a deterministic baseline; not learned from data." },
+        { driver: "accepted load > 300 MW", direction: "increases", weight: 0.16, evidence: "Accepted modeled load is 500 MW." },
+        { driver: "near-term target without accepted power-path evidence", direction: "increases", weight: 0.18, evidence: "Accepted target energization date is 2026-06-30 (14 months away)." },
+        { driver: "accepted power-path support", direction: "decreases", weight: -0.08, evidence: "Accepted power-path evidence indicates an identified path." },
+      ],
+      missing_inputs: ["utility_named", "region_or_rto_named"],
+      method_note: "This is a deterministic baseline, not a trained ML model.",
+    };
+  }
+  return fetchJson<ProjectPredictionData>(`/projects/${id}/prediction`);
 }
 
 export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {
