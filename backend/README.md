@@ -123,6 +123,8 @@ python scripts/discover_starter_dataset.py --write-projects-csv
 
 Discovery reads `../data/starter_sources/discovery_seeds.yml` and writes reviewable drafts to `../data/starter_sources/discovered_sources_v0_1.csv`. It fetches only explicit URL seeds, rate-limits requests, checks `robots.txt`, records fetch failures as rows with review reasons, and does not touch the database. Search query seeds are preserved as `query:` rows for analyst follow-up rather than broad web scraping.
 
+PDF URL seeds are supported without OCR. The script downloads PDFs up to 25 MB with a 30 second timeout, extracts embedded text with `pypdf` when available, skips encrypted PDFs, and writes `extraction_method`, `extraction_status`, `extraction_error`, and `extracted_character_count` for analyst inspection. Failed PDF extraction still preserves the source URL row for manual review.
+
 Use `--write-projects-csv` only after reviewing the discovered rows. It generates `projects_v0_1.csv` from high-confidence URL rows and still leaves ingestion/claim review to `ingest_starter_dataset.py`.
 
 Ingest reviewed discovered source drafts:

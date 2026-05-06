@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import time
+import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
@@ -33,6 +34,8 @@ DEFAULT_PROJECTS_CSV = REPO_DIR / "data" / "starter_sources" / "projects_v0_1.cs
 USER_AGENT = "data-center-power-risk-starter-discovery/0.1"
 MAX_TEXT_CHARS = 12000
 REQUEST_TIMEOUT_SECONDS = 20
+PDF_TIMEOUT_SECONDS = 30
+PDF_MAX_BYTES = 25 * 1024 * 1024
 RATE_LIMIT_SECONDS = 1.0
 
 DISCOVERY_COLUMNS = [
@@ -46,6 +49,10 @@ DISCOVERY_COLUMNS = [
     "source_date",
     "title",
     "extracted_text",
+    "extraction_method",
+    "extraction_status",
+    "extraction_error",
+    "extracted_character_count",
     "detected_load_mw",
     "detected_region",
     "detected_utility",
@@ -86,6 +93,22 @@ class UrlSeed:
     developer: str | None = None
     state: str | None = None
     county: str | None = None
+
+
+@dataclass
+class ExtractionMeta:
+    method: str | None = None
+    status: str | None = None
+    error: str | None = None
+    character_count: int = 0
+
+
+@dataclass
+class FetchResult:
+    title: str | None
+    text: str | None
+    failure_reason: str | None
+    extraction: ExtractionMeta
 
 
 class ReadableHTMLParser(HTMLParser):
@@ -292,6 +315,38 @@ def curl_fetch(url: str) -> tuple[str | None, str | None]:
     return result.stdout, None
 
 
+def curl_download_pdf(url: str, output_path: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                "curl",
+                "--location",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                str(PDF_TIMEOUT_SECONDS),
+                "--max-filesize",
+                str(PDF_MAX_BYTES),
+                "--user-agent",
+                USER_AGENT,
+                "--output",
+                str(output_path),
+                url,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=PDF_TIMEOUT_SECONDS + 5,
+        )
+    except Exception as exc:
+        return f"curl_pdf_download_failed: {exc}"
+    if result.returncode != 0:
+        error = normalize_space(result.stderr) or f"curl exited {result.returncode}"
+        return f"curl_pdf_download_failed: {error}"
+    return None
+
+
 def parse_html_text(html_text: str) -> tuple[str | None, str | None]:
     parser = ReadableHTMLParser()
     parser.feed(html_text)
@@ -299,37 +354,167 @@ def parse_html_text(html_text: str) -> tuple[str | None, str | None]:
     return parser.title, text or None
 
 
-def fetch_url(url: str) -> tuple[str | None, str | None, str | None]:
+def pdf_title_from_url(url: str) -> str:
+    filename = Path(parse.urlparse(url).path).name
+    return parse.unquote(filename) or "PDF source"
+
+
+def download_pdf(url: str, output_path: Path) -> str | None:
+    req = request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/pdf,*/*;q=0.1"})
+    downloaded = 0
+    try:
+        with request.urlopen(req, timeout=PDF_TIMEOUT_SECONDS) as response:
+            content_length = response.headers.get("content-length")
+            if content_length and int(content_length) > PDF_MAX_BYTES:
+                return f"pdf_too_large: content_length={content_length}"
+            with output_path.open("wb") as handle:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > PDF_MAX_BYTES:
+                        return f"pdf_too_large: downloaded>{PDF_MAX_BYTES}"
+                    handle.write(chunk)
+    except HTTPError as exc:
+        return f"pdf_download_failed_http_{exc.code}"
+    except URLError as exc:
+        if "CERTIFICATE_VERIFY_FAILED" in str(exc.reason):
+            fallback_error = curl_download_pdf(url, output_path)
+            if fallback_error:
+                return f"pdf_download_failed_url_error: {exc.reason}; {fallback_error}"
+            return None
+        return f"pdf_download_failed_url_error: {exc.reason}"
+    except TimeoutError:
+        return "pdf_download_failed_timeout"
+    except Exception as exc:
+        return f"pdf_download_failed: {exc}"
+    return None
+
+
+def extract_pdf_with_pypdf(path: Path) -> tuple[str | None, str | None]:
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except Exception as exc:
+        return None, f"pypdf_unavailable: {exc}"
+    try:
+        reader = PdfReader(str(path))
+        if reader.is_encrypted:
+            return None, "pdf_encrypted_skipped"
+        parts: list[str] = []
+        for page in reader.pages:
+            parts.append(page.extract_text() or "")
+            if sum(len(part) for part in parts) >= MAX_TEXT_CHARS:
+                break
+        text = normalize_space(" ".join(parts))[:MAX_TEXT_CHARS]
+        if not text:
+            return None, "pdf_no_extractable_text"
+        return text, None
+    except Exception as exc:
+        return None, f"pypdf_extract_failed: {exc}"
+
+
+def extract_pdf_with_pdfplumber(path: Path) -> tuple[str | None, str | None]:
+    try:
+        import pdfplumber  # type: ignore
+    except Exception as exc:
+        return None, f"pdfplumber_unavailable: {exc}"
+    try:
+        parts: list[str] = []
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages:
+                parts.append(page.extract_text() or "")
+                if sum(len(part) for part in parts) >= MAX_TEXT_CHARS:
+                    break
+        text = normalize_space(" ".join(parts))[:MAX_TEXT_CHARS]
+        if not text:
+            return None, "pdf_no_extractable_text"
+        return text, None
+    except Exception as exc:
+        return None, f"pdfplumber_extract_failed: {exc}"
+
+
+def fetch_pdf_url(url: str, robots_note: str | None) -> FetchResult:
+    title = pdf_title_from_url(url)
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as handle:
+        pdf_path = Path(handle.name)
+        error = download_pdf(url, pdf_path)
+        if error:
+            print(f"[pdf] failed {url} {error}", file=sys.stderr)
+            return FetchResult(
+                title=title,
+                text=None,
+                failure_reason=append_reason(robots_note, error),
+                extraction=ExtractionMeta(method="pdf_text", status="failed", error=error),
+            )
+        size = pdf_path.stat().st_size
+        if size > PDF_MAX_BYTES:
+            error = f"pdf_too_large: downloaded={size}"
+            print(f"[pdf] failed {url} {error}", file=sys.stderr)
+            return FetchResult(title=title, text=None, failure_reason=append_reason(robots_note, error), extraction=ExtractionMeta(method="pdf_text", status="failed", error=error))
+        print(f"[pdf] downloaded {url} bytes={size}", file=sys.stderr)
+
+        text, error = extract_pdf_with_pypdf(pdf_path)
+        if text is None and error and not error.startswith("pdf_encrypted_skipped"):
+            fallback_text, fallback_error = extract_pdf_with_pdfplumber(pdf_path)
+            if fallback_text is not None:
+                text, error = fallback_text, None
+            elif fallback_error:
+                error = f"{error}; {fallback_error}"
+        if text is None:
+            final_error = error or "pdf_extract_failed"
+            print(f"[pdf] failed {url} {final_error}", file=sys.stderr)
+            return FetchResult(
+                title=title,
+                text=None,
+                failure_reason=append_reason(robots_note, final_error),
+                extraction=ExtractionMeta(method="pdf_text", status="failed", error=final_error),
+            )
+        print(f"[pdf] extracted {url} chars={len(text)}", file=sys.stderr)
+        return FetchResult(
+            title=title,
+            text=text,
+            failure_reason=robots_note,
+            extraction=ExtractionMeta(method="pdf_text", status="succeeded", character_count=len(text)),
+        )
+
+
+def fetch_url(url: str) -> FetchResult:
     allowed, robots_note = can_fetch(url)
     if not allowed:
-        return None, None, robots_note
+        return FetchResult(None, None, robots_note, ExtractionMeta(method=None, status="failed", error=robots_note))
     parsed = parse.urlparse(url)
     if parsed.path.lower().endswith(".pdf"):
-        return None, None, "pdf_text_extraction_not_supported"
+        return fetch_pdf_url(url, robots_note)
     req = request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain;q=0.9,*/*;q=0.1"})
     try:
         with request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             content_type = response.headers.get("content-type", "")
             raw = response.read(2_000_000)
     except HTTPError as exc:
-        return None, None, f"fetch_failed_http_{exc.code}"
+        error = f"fetch_failed_http_{exc.code}"
+        return FetchResult(None, None, error, ExtractionMeta(method="html_text", status="failed", error=error))
     except URLError as exc:
         if "CERTIFICATE_VERIFY_FAILED" in str(exc.reason):
             html_text, curl_error = curl_fetch(url)
             if curl_error:
-                return None, None, f"fetch_failed_url_error: {exc.reason}; {curl_error}"
+                error = f"fetch_failed_url_error: {exc.reason}; {curl_error}"
+                return FetchResult(None, None, error, ExtractionMeta(method="html_text", status="failed", error=error))
             title, text = parse_html_text(html_text or "")
             if not text:
-                return title, None, "no_readable_text_extracted_after_curl_tls_fallback"
-            return title, text, append_reason(robots_note, "urllib_tls_failed_curl_fallback_used")
-        return None, None, f"fetch_failed_url_error: {exc.reason}"
+                error = "no_readable_text_extracted_after_curl_tls_fallback"
+                return FetchResult(title, None, error, ExtractionMeta(method="html_text", status="failed", error=error))
+            return FetchResult(title, text, append_reason(robots_note, "urllib_tls_failed_curl_fallback_used"), ExtractionMeta(method="html_text", status="succeeded", character_count=len(text)))
+        error = f"fetch_failed_url_error: {exc.reason}"
+        return FetchResult(None, None, error, ExtractionMeta(method="html_text", status="failed", error=error))
     except TimeoutError:
-        return None, None, "fetch_failed_timeout"
+        return FetchResult(None, None, "fetch_failed_timeout", ExtractionMeta(method="html_text", status="failed", error="fetch_failed_timeout"))
     except Exception as exc:
-        return None, None, f"fetch_failed: {exc}"
+        error = f"fetch_failed: {exc}"
+        return FetchResult(None, None, error, ExtractionMeta(method="html_text", status="failed", error=error))
 
     if "pdf" in content_type.lower():
-        return None, None, "pdf_text_extraction_not_supported"
+        return fetch_pdf_url(url, robots_note)
     encoding = "utf-8"
     match = re.search(r"charset=([\w.-]+)", content_type, re.IGNORECASE)
     if match:
@@ -337,8 +522,9 @@ def fetch_url(url: str) -> tuple[str | None, str | None, str | None]:
     html_text = raw.decode(encoding, errors="replace")
     title, text = parse_html_text(html_text)
     if not text:
-        return title, None, "no_readable_text_extracted"
-    return title, text, robots_note
+        error = "no_readable_text_extracted"
+        return FetchResult(title, None, error, ExtractionMeta(method="html_text", status="failed", error=error))
+    return FetchResult(title, text, robots_note, ExtractionMeta(method="html_text", status="succeeded", character_count=len(text)))
 
 
 def append_reason(existing: str | None, extra: str) -> str:
@@ -475,10 +661,10 @@ def discovery_id_for(url_or_query: str) -> str:
 
 def discover_url(seed: UrlSeed, retrieved_at: str) -> dict[str, Any]:
     source_type = coerce_source_type(seed.source_type, seed.url)
-    title, text, failure_reason = fetch_url(seed.url)
-    evidence_text = text or ""
+    fetched = fetch_url(seed.url)
+    evidence_text = fetched.text or ""
     claim_values = extract_claim_values(evidence_text, source_type) if evidence_text else {}
-    source_date = detect_date(" ".join(part for part in [title or "", evidence_text[:3000]] if part), seed.url)
+    source_date = detect_date(" ".join(part for part in [fetched.title or "", evidence_text[:3000]] if part), seed.url)
     row: dict[str, Any] = {
         "discovery_id": discovery_id_for(seed.url),
         "candidate_project_name": seed.project_name or claim_values.get("candidate_project_name"),
@@ -488,8 +674,12 @@ def discover_url(seed: UrlSeed, retrieved_at: str) -> dict[str, Any]:
         "source_url": seed.url,
         "source_type": source_type.value,
         "source_date": source_date,
-        "title": title,
+        "title": fetched.title,
         "extracted_text": evidence_text,
+        "extraction_method": fetched.extraction.method,
+        "extraction_status": fetched.extraction.status,
+        "extraction_error": fetched.extraction.error,
+        "extracted_character_count": fetched.extraction.character_count,
         "detected_load_mw": claim_values.get("detected_load_mw"),
         "detected_region": claim_values.get("detected_region"),
         "detected_utility": claim_values.get("detected_utility"),
@@ -498,8 +688,8 @@ def discover_url(seed: UrlSeed, retrieved_at: str) -> dict[str, Any]:
         "discovery_method": "url_seed",
         "retrieved_at": retrieved_at,
     }
-    row["confidence"] = confidence_for(row, failure_reason)
-    row["requires_review_reason"] = review_reason_for(row, failure_reason)
+    row["confidence"] = confidence_for(row, fetched.failure_reason)
+    row["requires_review_reason"] = review_reason_for(row, fetched.failure_reason)
     return {column: clean_string(row.get(column)) for column in DISCOVERY_COLUMNS}
 
 
@@ -515,6 +705,10 @@ def query_seed_row(query: str, retrieved_at: str) -> dict[str, Any]:
         "source_date": None,
         "title": query,
         "extracted_text": "",
+        "extraction_method": None,
+        "extraction_status": "not_fetched",
+        "extraction_error": "query_seed_not_fetched",
+        "extracted_character_count": 0,
         "detected_load_mw": None,
         "detected_region": None,
         "detected_utility": None,
