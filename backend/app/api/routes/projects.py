@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.models.project import Project
 from app.schemas.analyst import (
     ProjectEvidenceResponse,
     ProjectEventsResponse,
@@ -15,7 +17,7 @@ from app.schemas.analyst import (
 )
 from app.schemas.enrichment import ProjectEnrichmentResponse
 from app.schemas.phase import PhaseListItem
-from app.schemas.project import ProjectDetail, ProjectListItem
+from app.schemas.project import ProjectCoordinatesRequest, ProjectDetail, ProjectListItem
 from app.schemas.score import ProjectScoreResponse
 from app.services import EnrichmentService, ProjectService
 
@@ -30,6 +32,34 @@ def list_projects(db: Session = Depends(get_db)) -> list[ProjectListItem]:
 
 @router.get("/{project_id}", response_model=ProjectDetail, response_model_exclude_none=True)
 def get_project(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectDetail:
+    return ProjectService(db).get_project(project_id)
+
+
+@router.patch("/{project_id}/coordinates", response_model=ProjectDetail, response_model_exclude_none=True)
+def patch_project_coordinates(
+    project_id: uuid.UUID,
+    body: ProjectCoordinatesRequest,
+    db: Session = Depends(get_db),
+) -> ProjectDetail:
+    """Manually set latitude/longitude on a project. Does not geocode automatically."""
+    project = db.scalar(select(Project).where(Project.id == project_id))
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
+    if not (-90 <= body.latitude <= 90):
+        raise HTTPException(status_code=422, detail="latitude must be between -90 and 90.")
+    if not (-180 <= body.longitude <= 180):
+        raise HTTPException(status_code=422, detail="longitude must be between -180 and 180.")
+
+    project.latitude = body.latitude
+    project.longitude = body.longitude
+
+    meta = dict(project.candidate_metadata_json) if isinstance(project.candidate_metadata_json, dict) else {}
+    meta["coordinate_source"] = body.coordinate_source or "analyst_manual_entry"
+    meta["coordinate_confidence"] = body.coordinate_confidence or "unknown"
+    project.candidate_metadata_json = meta
+
+    db.commit()
+    db.refresh(project)
     return ProjectService(db).get_project(project_id)
 
 

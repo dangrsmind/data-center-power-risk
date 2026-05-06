@@ -189,6 +189,10 @@ function ManualCaptureModal({
   const [text, setText]         = useState(existing?.manual_extracted_text ?? "");
   const [date, setDate]         = useState(existing?.source_date ?? source.source_date ?? "");
   const [notes, setNotes]       = useState(existing?.notes ?? "");
+  const [latStr, setLatStr]     = useState(existing?.latitude != null ? String(existing.latitude) : "");
+  const [lonStr, setLonStr]     = useState(existing?.longitude != null ? String(existing.longitude) : "");
+  const [coordSource, setCoordSource]       = useState(existing?.coordinate_source ?? "");
+  const [coordConfidence, setCoordConfidence] = useState(existing?.coordinate_confidence ?? "");
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
@@ -208,6 +212,14 @@ function ManualCaptureModal({
 
   async function handleSave() {
     if (!text.trim()) { setError("Please paste the text before saving."); return; }
+    const lat = latStr.trim() !== "" ? parseFloat(latStr) : undefined;
+    const lon = lonStr.trim() !== "" ? parseFloat(lonStr) : undefined;
+    if (lat !== undefined && (isNaN(lat) || lat < -90 || lat > 90)) {
+      setError("Latitude must be a number between -90 and 90."); return;
+    }
+    if (lon !== undefined && (isNaN(lon) || lon < -180 || lon > 180)) {
+      setError("Longitude must be a number between -180 and 180."); return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -217,6 +229,10 @@ function ManualCaptureModal({
         source_date: date.trim(),
         notes: notes.trim(),
         captured_by: "analyst",
+        latitude: lat ?? null,
+        longitude: lon ?? null,
+        coordinate_source: coordSource.trim(),
+        coordinate_confidence: coordConfidence.trim(),
       });
       onSave(result);
     } catch (e) {
@@ -378,6 +394,87 @@ function ManualCaptureModal({
                 }}
               />
             </label>
+          </div>
+
+          {/* ── Coordinates ── */}
+          <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Coordinates
+              <span style={{ fontWeight: 400, color: "var(--text-dim)", marginLeft: 6, textTransform: "none", letterSpacing: 0 }}>
+                — optional, stored with the capture for later ingest
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+              <label style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4 }}>Latitude</div>
+                <input
+                  type="number"
+                  value={latStr}
+                  onChange={e => setLatStr(e.target.value)}
+                  placeholder="e.g. 33.749"
+                  step="any"
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: 4, padding: "6px 10px",
+                    fontSize: 12, color: "var(--text)",
+                  }}
+                />
+              </label>
+              <label style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4 }}>Longitude</div>
+                <input
+                  type="number"
+                  value={lonStr}
+                  onChange={e => setLonStr(e.target.value)}
+                  placeholder="e.g. -84.388"
+                  step="any"
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: 4, padding: "6px 10px",
+                    fontSize: 12, color: "var(--text)",
+                  }}
+                />
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <label style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4 }}>Coordinate source</div>
+                <input
+                  type="text"
+                  value={coordSource}
+                  onChange={e => setCoordSource(e.target.value)}
+                  placeholder="e.g. county parcel map, Google Maps"
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: 4, padding: "6px 10px",
+                    fontSize: 12, color: "var(--text)",
+                  }}
+                />
+              </label>
+              <label style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4 }}>Confidence</div>
+                <select
+                  value={coordConfidence}
+                  onChange={e => setCoordConfidence(e.target.value)}
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: 4, padding: "6px 10px",
+                    fontSize: 12, color: coordConfidence ? "var(--text)" : "var(--text-dim)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">— select —</option>
+                  <option value="parcel">Parcel (high)</option>
+                  <option value="city">City centroid</option>
+                  <option value="county">County centroid</option>
+                  <option value="inferred">Inferred</option>
+                </select>
+              </label>
+            </div>
           </div>
 
           <label style={{ display: "block", marginTop: 12 }}>
@@ -647,7 +744,7 @@ function SourceCard({
         </div>
       )}
 
-      {/* ── Manual text preview ── */}
+      {/* ── Manual text + coordinate preview ── */}
       {capture && (
         <div style={{
           marginBottom: 6,
@@ -661,6 +758,16 @@ function SourceCard({
           <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
             {truncate(capture.manual_extracted_text, 220)}
           </div>
+          {capture.latitude != null && capture.longitude != null && (
+            <div style={{ fontSize: 10, color: "#a78bfa", marginTop: 5, fontFamily: "monospace" }}>
+              📍 {capture.latitude.toFixed(5)}, {capture.longitude.toFixed(5)}
+              {capture.coordinate_confidence && (
+                <span style={{ color: "var(--text-dim)", marginLeft: 6, fontFamily: "inherit" }}>
+                  · {capture.coordinate_confidence}
+                </span>
+              )}
+            </div>
+          )}
           {capture.notes && (
             <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
               Notes: {capture.notes}

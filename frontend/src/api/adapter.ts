@@ -33,6 +33,7 @@ import type {
   ManualCapture,
   ManualCapturesResponse,
   ManualCaptureRequest,
+  ProjectCoordinatesRequest,
   IngestClaimItem,
   IngestClaimsCreateResponse,
   IngestClaimResponse,
@@ -78,6 +79,8 @@ interface RawProjectDetail {
   operator: string | null;
   state: string | null;
   county: string | null;
+  latitude: number | null;
+  longitude: number | null;
   lifecycle_state: string;
   announcement_date: string | null;
   latest_update_date: string | null;
@@ -315,6 +318,8 @@ export async function getProject(id: string): Promise<ProjectDetail> {
     developer: rawProject.developer ?? null,
     state: rawProject.state ?? "",
     county: rawProject.county ?? null,
+    latitude: rawProject.latitude ?? null,
+    longitude: rawProject.longitude ?? null,
     region_or_rto: "",            // region_id UUID only — name lookup not yet available
     utility: null,                // utility_id UUID only — name lookup not yet available
     modeled_primary_load_mw: rawProject.modeled_primary_load_mw ?? 0,
@@ -497,9 +502,48 @@ export async function postManualCapture(req: ManualCaptureRequest): Promise<Manu
       notes: req.notes ?? "",
       captured_at: new Date().toISOString(),
       captured_by: req.captured_by ?? "analyst",
+      latitude: req.latitude ?? null,
+      longitude: req.longitude ?? null,
+      coordinate_source: req.coordinate_source ?? "",
+      coordinate_confidence: req.coordinate_confidence ?? "",
     };
   }
   return postJson<ManualCapture>("/discover/manual-captures", req);
+}
+
+export async function patchProjectCoordinates(
+  projectId: string,
+  req: ProjectCoordinatesRequest,
+): Promise<ProjectDetail> {
+  const raw = await patchJson<RawProjectDetail>(`/projects/${projectId}/coordinates`, req);
+  // Re-fetch score for complete ProjectDetail (coordinates patch returns detail shape)
+  const [rawPhases, rawScore] = await Promise.all([
+    fetchJson<RawPhase[]>(`/projects/${projectId}/phases`),
+    fetchJson<RawScore>(`/projects/${projectId}/score`),
+  ]);
+  const phases = rawPhases.map(transformPhase);
+  const score = transformScore(rawScore);
+  return {
+    project_id: raw.id,
+    project_name: raw.canonical_name,
+    developer: raw.developer ?? null,
+    state: raw.state ?? "",
+    county: raw.county ?? null,
+    latitude: raw.latitude ?? null,
+    longitude: raw.longitude ?? null,
+    region_or_rto: "",
+    utility: null,
+    modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
+    headline_load_mw: null,
+    optional_expansion_mw: null,
+    lifecycle_state: raw.lifecycle_state as LifecycleState,
+    risk_tier: deriveRiskTier(rawScore.deadline_probability),
+    announce_date: raw.announcement_date,
+    phases,
+    score,
+    data_quality_score: Math.round(score.evidence_quality_score * 100),
+    latest_update_date: raw.latest_update_date ?? "",
+  };
 }
 
 export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {

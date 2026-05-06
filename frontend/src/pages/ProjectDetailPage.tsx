@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import type {
   ProjectDetail,
@@ -17,6 +17,7 @@ import {
   getProjectHistory,
   getProjectEvidence,
   getProjectRiskSignal,
+  patchProjectCoordinates,
 } from "../api/adapter";
 import { ProjectDetailPanel } from "../components/detail/ProjectDetailPanel";
 import { PhaseList } from "../components/detail/PhaseList";
@@ -154,6 +155,10 @@ export function ProjectDetailPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 900 }}>
                 <ProjectDetailPanel project={project} />
                 <InfrastructureContextCard enrichment={enrichment} />
+                <CoordinateEditCard
+                  project={project}
+                  onSaved={(updated) => setProject(updated)}
+                />
                 <SectionCard title="Model Score Summary">
                   <QuickScoreRow project={project} />
                   <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
@@ -273,6 +278,175 @@ function SectionCard({ title, children }: { title: string; children: React.React
       </h3>
       {children}
     </div>
+  );
+}
+
+function CoordinateEditCard({
+  project,
+  onSaved,
+}: {
+  project: ProjectDetail;
+  onSaved: (updated: ProjectDetail) => void;
+}) {
+  const [editing, setEditing]   = useState(false);
+  const [latStr, setLatStr]     = useState(project.latitude != null ? String(project.latitude) : "");
+  const [lonStr, setLonStr]     = useState(project.longitude != null ? String(project.longitude) : "");
+  const [coordSource, setCoordSource]         = useState("");
+  const [coordConfidence, setCoordConfidence] = useState("");
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [success, setSuccess]   = useState(false);
+  const latRef = useRef<HTMLInputElement>(null);
+
+  // Reset local form when project changes (e.g. navigating between projects)
+  useEffect(() => {
+    setLatStr(project.latitude != null ? String(project.latitude) : "");
+    setLonStr(project.longitude != null ? String(project.longitude) : "");
+    setEditing(false);
+    setError(null);
+    setSuccess(false);
+  }, [project.project_id]);
+
+  useEffect(() => {
+    if (editing) latRef.current?.focus();
+  }, [editing]);
+
+  async function handleSave() {
+    const lat = parseFloat(latStr);
+    const lon = parseFloat(lonStr);
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      setError("Latitude must be a number between -90 and 90."); return;
+    }
+    if (isNaN(lon) || lon < -180 || lon > 180) {
+      setError("Longitude must be a number between -180 and 180."); return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await patchProjectCoordinates(project.project_id, {
+        latitude: lat,
+        longitude: lon,
+        coordinate_source: coordSource.trim() || "analyst_manual_entry",
+        coordinate_confidence: coordConfidence.trim(),
+      });
+      onSaved(updated);
+      setEditing(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 4000);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const hasCoords = project.latitude != null && project.longitude != null;
+
+  const inp: React.CSSProperties = {
+    boxSizing: "border-box", width: "100%",
+    background: "var(--bg)", border: "1px solid var(--border)",
+    borderRadius: 4, padding: "6px 10px",
+    fontSize: 12, color: "var(--text)",
+  };
+
+  return (
+    <SectionCard title="Coordinates">
+      <div style={{ background: "var(--bg-active)", border: "1px solid var(--border)", borderRadius: 6, padding: "14px 16px" }}>
+        {!editing ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              {hasCoords ? (
+                <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 13, color: "var(--text)" }}>
+                  {project.latitude!.toFixed(6)}, {project.longitude!.toFixed(6)}
+                </div>
+              ) : (
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  No coordinates set — this project will not appear on the map.
+                </span>
+              )}
+              {success && (
+                <div style={{ fontSize: 11, color: "#22c55e", marginTop: 4 }}>✓ Coordinates saved.</div>
+              )}
+            </div>
+            <button
+              onClick={() => { setEditing(true); setError(null); }}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 4,
+                border: "1px solid var(--border)", background: "transparent",
+                color: "var(--accent)", cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              {hasCoords ? "Edit" : "+ Set coordinates"}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Latitude</div>
+                <input ref={latRef} type="number" step="any" value={latStr}
+                  onChange={e => setLatStr(e.target.value)}
+                  placeholder="e.g. 33.749" style={inp} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Longitude</div>
+                <input type="number" step="any" value={lonStr}
+                  onChange={e => setLonStr(e.target.value)}
+                  placeholder="e.g. -84.388" style={inp} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Source</div>
+                <input type="text" value={coordSource}
+                  onChange={e => setCoordSource(e.target.value)}
+                  placeholder="e.g. county parcel map" style={inp} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Confidence</div>
+                <select value={coordConfidence}
+                  onChange={e => setCoordConfidence(e.target.value)}
+                  style={{ ...inp, cursor: "pointer", color: coordConfidence ? "var(--text)" : "var(--text-dim)" }}
+                >
+                  <option value="">— select —</option>
+                  <option value="parcel">Parcel (high)</option>
+                  <option value="city">City centroid</option>
+                  <option value="county">County centroid</option>
+                  <option value="inferred">Inferred</option>
+                </select>
+              </div>
+            </div>
+            {error && (
+              <div style={{ fontSize: 11, color: "#ef4444", background: "rgba(239,68,68,0.08)", borderRadius: 3, padding: "5px 8px", marginBottom: 8 }}>
+                {error}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={handleSave}
+                disabled={saving || !latStr.trim() || !lonStr.trim()}
+                style={{
+                  fontSize: 12, fontWeight: 600, padding: "5px 16px", borderRadius: 4,
+                  background: saving || !latStr.trim() || !lonStr.trim() ? "rgba(34,197,94,0.2)" : "rgba(34,197,94,0.12)",
+                  border: "1px solid rgba(34,197,94,0.45)", color: "#22c55e",
+                  cursor: saving || !latStr.trim() || !lonStr.trim() ? "default" : "pointer",
+                }}
+              >
+                {saving ? "Saving…" : "Save coordinates"}
+              </button>
+              <button
+                onClick={() => { setEditing(false); setError(null); }}
+                style={{
+                  fontSize: 12, padding: "5px 14px", borderRadius: 4,
+                  background: "transparent", border: "1px solid var(--border)",
+                  color: "var(--text-muted)", cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </SectionCard>
   );
 }
 

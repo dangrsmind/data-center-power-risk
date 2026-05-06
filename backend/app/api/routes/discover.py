@@ -60,6 +60,10 @@ class ManualCaptureItem(BaseModel):
     notes: str
     captured_at: str
     captured_by: str
+    latitude: float | None = None
+    longitude: float | None = None
+    coordinate_source: str = ""
+    coordinate_confidence: str = ""
 
 
 class ManualCaptureRequest(BaseModel):
@@ -68,6 +72,10 @@ class ManualCaptureRequest(BaseModel):
     source_date: str = ""
     notes: str = ""
     captured_by: str = "analyst"
+    latitude: float | None = None
+    longitude: float | None = None
+    coordinate_source: str = ""
+    coordinate_confidence: str = ""
 
 
 class ManualCapturesResponse(BaseModel):
@@ -117,23 +125,28 @@ def _write_manual_capture(
     source_date: str,
     notes: str,
     captured_by: str,
+    latitude: float | None,
+    longitude: float | None,
+    coordinate_source: str,
+    coordinate_confidence: str,
 ) -> ManualCaptureItem:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     captures = _read_manual_captures()
     now = datetime.now(timezone.utc).isoformat()
-    entry = {
+    entry: dict = {
         "manual_extracted_text": manual_extracted_text,
         "source_date": source_date,
         "notes": notes,
         "captured_at": now,
         "captured_by": captured_by,
+        "latitude": latitude,
+        "longitude": longitude,
+        "coordinate_source": coordinate_source,
+        "coordinate_confidence": coordinate_confidence,
     }
     captures[discovery_id] = entry
     _MAN_PATH.write_text(json.dumps(captures, indent=2, ensure_ascii=False), encoding="utf-8")
-    return ManualCaptureItem(
-        discovery_id=discovery_id,
-        **entry,
-    )
+    return ManualCaptureItem(discovery_id=discovery_id, **entry)
 
 
 # ---------------------------------------------------------------------------
@@ -217,10 +230,19 @@ def save_manual_capture(body: ManualCaptureRequest) -> ManualCaptureItem:
     """Persist a single manual text capture for a discovery row."""
     if not body.manual_extracted_text.strip():
         raise HTTPException(status_code=422, detail="manual_extracted_text must not be empty.")
+    # Validate coordinates if provided
+    if body.latitude is not None and not (-90 <= body.latitude <= 90):
+        raise HTTPException(status_code=422, detail="latitude must be between -90 and 90.")
+    if body.longitude is not None and not (-180 <= body.longitude <= 180):
+        raise HTTPException(status_code=422, detail="longitude must be between -180 and 180.")
     return _write_manual_capture(
         discovery_id=body.discovery_id,
         manual_extracted_text=body.manual_extracted_text.strip(),
         source_date=body.source_date.strip(),
         notes=body.notes.strip(),
         captured_by=body.captured_by or "analyst",
+        latitude=body.latitude,
+        longitude=body.longitude,
+        coordinate_source=body.coordinate_source.strip(),
+        coordinate_confidence=body.coordinate_confidence.strip(),
     )

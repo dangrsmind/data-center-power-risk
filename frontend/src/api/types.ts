@@ -90,6 +90,8 @@ export interface ProjectDetail {
   developer: string | null;
   state: string;
   county: string | null;
+  latitude: number | null;
+  longitude: number | null;
   region_or_rto: string;
   utility: string | null;
   modeled_primary_load_mw: number;
@@ -388,6 +390,10 @@ export interface ManualCapture {
   notes: string;
   captured_at: string;
   captured_by: string;
+  latitude: number | null;
+  longitude: number | null;
+  coordinate_source: string;
+  coordinate_confidence: string;
 }
 
 export interface ManualCapturesResponse {
@@ -401,6 +407,17 @@ export interface ManualCaptureRequest {
   source_date?: string;
   notes?: string;
   captured_by?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_source?: string;
+  coordinate_confidence?: string;
+}
+
+export interface ProjectCoordinatesRequest {
+  latitude: number;
+  longitude: number;
+  coordinate_source?: string;
+  coordinate_confidence?: string;
 }
 
 export interface DiscoveredSource {

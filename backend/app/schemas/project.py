@@ -37,6 +37,8 @@ class ProjectDetail(BaseModel):
     operator: str | None
     state: str | None
     county: str | None
+    latitude: float | None
+    longitude: float | None
     lifecycle_state: str
     announcement_date: date | None
     latest_update_date: date | None
@@ -44,6 +46,13 @@ class ProjectDetail(BaseModel):
     utility_id: uuid.UUID | None
     modeled_primary_load_mw: int | float | None
     phase_count: int
+
+
+class ProjectCoordinatesRequest(BaseModel):
+    latitude: float
+    longitude: float
+    coordinate_source: str = ""
+    coordinate_confidence: str = ""
 
 
 class ProjectEnrichmentResponse(BaseModel):

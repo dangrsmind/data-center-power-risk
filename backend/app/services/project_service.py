@@ -121,6 +121,8 @@ class ProjectService:
             operator=project.operator,
             state=project.state,
             county=project.county,
+            latitude=project.latitude,
+            longitude=project.longitude,
             lifecycle_state=project.lifecycle_state.value,
             announcement_date=project.announcement_date,
             latest_update_date=project.latest_update_date,

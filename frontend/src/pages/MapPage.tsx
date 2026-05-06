@@ -564,20 +564,25 @@ export function MapPage() {
             {offMap.length === 0 ? (
               <div style={{ fontSize: 11, color: "var(--text-dim)" }}>All projects are mapped.</div>
             ) : (
-              offMap.map(d => (
-                <Link
-                  key={d.project.project_id}
-                  to={`/projects/${d.project.project_id}`}
-                  style={{ display: "block", textDecoration: "none", marginBottom: 8 }}
-                >
-                  <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, lineHeight: 1.3 }}>
-                    {d.project.project_name}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                    {d.project.county ? `${d.project.county} Co., ` : ""}{d.project.state}
-                  </div>
-                </Link>
-              ))
+              <>
+                <div style={{ fontSize: 10, color: "var(--text-dim)", fontStyle: "italic", marginBottom: 8, lineHeight: 1.4 }}>
+                  Add coordinates in Discover (manual capture) or on the Project Detail overview.
+                </div>
+                {offMap.map(d => (
+                  <Link
+                    key={d.project.project_id}
+                    to={`/projects/${d.project.project_id}`}
+                    style={{ display: "block", textDecoration: "none", marginBottom: 8 }}
+                  >
+                    <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, lineHeight: 1.3 }}>
+                      {d.project.project_name}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                      {d.project.county ? `${d.project.county} Co., ` : ""}{d.project.state}
+                    </div>
+                  </Link>
+                ))}
+              </>
             )}
           </div>
 

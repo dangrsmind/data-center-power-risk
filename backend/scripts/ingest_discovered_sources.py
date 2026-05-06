@@ -83,6 +83,10 @@ class DiscoveredRow:
     requires_review_reason: str | None
     discovery_method: str | None
     retrieved_at: str | None
+    latitude: float | None = None
+    longitude: float | None = None
+    coordinate_source: str | None = None
+    coordinate_confidence: str | None = None
 
     @property
     def canonical_name_for_ingest(self) -> str:
@@ -244,24 +248,41 @@ def load_manual_captures(path: Path) -> dict[str, dict]:
 
 
 def apply_manual_captures(rows: list[DiscoveredRow], captures: dict[str, dict]) -> list[DiscoveredRow]:
-    """Patch extracted_text from manual captures where the CSV field is empty."""
+    """Patch extracted_text, source_date, and lat/lon from manual captures where missing."""
     if not captures:
         return rows
     patched: list[DiscoveredRow] = []
     for row in rows:
         cap = captures.get(row.discovery_id)
-        if cap and not row.extracted_text:
-            manual_text = (cap.get("manual_extracted_text") or "").strip()
-            if manual_text:
-                row.extracted_text = manual_text
-                # Override source_date if analyst provided one
-                manual_date = (cap.get("source_date") or "").strip()
-                if manual_date and not row.source_date:
-                    try:
-                        from datetime import date as _date
-                        row.source_date = _date.fromisoformat(manual_date)
-                    except ValueError:
-                        pass
+        if cap:
+            # Patch extracted_text
+            if not row.extracted_text:
+                manual_text = (cap.get("manual_extracted_text") or "").strip()
+                if manual_text:
+                    row.extracted_text = manual_text
+            # Patch source_date
+            manual_date = (cap.get("source_date") or "").strip()
+            if manual_date and not row.source_date:
+                try:
+                    from datetime import date as _date
+                    row.source_date = _date.fromisoformat(manual_date)
+                except ValueError:
+                    pass
+            # Patch lat/lon
+            if row.latitude is None and cap.get("latitude") is not None:
+                try:
+                    row.latitude = float(cap["latitude"])
+                except (TypeError, ValueError):
+                    pass
+            if row.longitude is None and cap.get("longitude") is not None:
+                try:
+                    row.longitude = float(cap["longitude"])
+                except (TypeError, ValueError):
+                    pass
+            if cap.get("coordinate_source"):
+                row.coordinate_source = str(cap["coordinate_source"])
+            if cap.get("coordinate_confidence"):
+                row.coordinate_confidence = str(cap["coordinate_confidence"])
         patched.append(row)
     return patched
 
@@ -372,8 +393,8 @@ def create_or_update_project(db, row: DiscoveredRow) -> tuple[Project, str]:
             operator=None,
             state=None,
             county=None,
-            latitude=None,
-            longitude=None,
+            latitude=row.latitude,
+            longitude=row.longitude,
             lifecycle_state=LifecycleState.CANDIDATE_UNVERIFIED,
             candidate_metadata_json=incoming_metadata,
         )
@@ -381,9 +402,21 @@ def create_or_update_project(db, row: DiscoveredRow) -> tuple[Project, str]:
         db.flush()
         return project, "created"
 
+    changed = False
+    # Update lat/lon only if currently null and row provides them
+    if project.latitude is None and row.latitude is not None:
+        project.latitude = row.latitude
+        changed = True
+    if project.longitude is None and row.longitude is not None:
+        project.longitude = row.longitude
+        changed = True
+
     merged_metadata = merge_metadata(project.candidate_metadata_json, incoming_metadata)
     if merged_metadata != (project.candidate_metadata_json or None):
         project.candidate_metadata_json = merged_metadata
+        changed = True
+
+    if changed:
         db.flush()
         return project, "updated"
     return project, "skipped"
