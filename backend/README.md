@@ -101,6 +101,35 @@ python scripts/export_dataset.py
 
 The starter ingest reads `../data/starter_sources/projects_v0_1.csv`. Add only real source-backed rows to that CSV; do not use `example.com`, placeholder evidence, or demo text. The script creates or updates projects, creates one evidence record per row, generates claims through the existing automation packet, and auto-accepts only `developer_named`, `location_state`, and `location_county`. Project-name, modeled-load, utility, region, date, phase, and power-path claims remain in the review queue.
 
+### Source/config data vs runtime data
+
+Tracked starter source/config files live under `../data/starter_sources/`:
+
+- `discovery_seeds.yml`
+- `projects_v0_1.csv`
+
+Mutable discovery review state lives under `runtime_data/starter_sources/` and is intentionally ignored by Git:
+
+- `discovered_sources_v0_1.csv`
+- `discovery_decisions_v0_1.json`
+- `manual_source_captures_v0_1.json`
+
+This keeps source-controlled seed/config data separate from generated review output and local analyst approvals. To check the local repo state:
+
+```bash
+python scripts/doctor_repo_state.py
+```
+
+To preserve local runtime state manually before cleaning the worktree or switching machines, copy `runtime_data/starter_sources/` somewhere durable and restore it to the same path later. These files are local operating state, not part of the committed source dataset.
+
+To export the database-backed dataset for sharing or backup:
+
+```bash
+python scripts/export_dataset.py
+```
+
+Exports are written under `data/exports/YYYYMMDD/` in the backend directory unless `--output-dir` is provided.
+
 Useful starter ingest options:
 
 ```bash
@@ -121,11 +150,11 @@ python scripts/discover_starter_dataset.py --seed-file ../data/starter_sources/d
 python scripts/discover_starter_dataset.py --write-projects-csv
 ```
 
-Discovery reads `../data/starter_sources/discovery_seeds.yml` and writes reviewable drafts to `../data/starter_sources/discovered_sources_v0_1.csv`. It fetches only explicit URL seeds, rate-limits requests, checks `robots.txt`, records fetch failures as rows with review reasons, and does not touch the database. Search query seeds are preserved as `query:` rows for analyst follow-up rather than broad web scraping.
+Discovery reads `../data/starter_sources/discovery_seeds.yml` and writes reviewable drafts to `runtime_data/starter_sources/discovered_sources_v0_1.csv`. It fetches only explicit URL seeds, rate-limits requests, checks `robots.txt`, records fetch failures as rows with review reasons, and does not touch the database. Search query seeds are preserved as `query:` rows for analyst follow-up rather than broad web scraping.
 
 PDF URL seeds are supported without OCR. The script downloads PDFs up to 25 MB with a 30 second timeout, extracts embedded text with `pypdf` when available, skips encrypted PDFs, and writes `extraction_method`, `extraction_status`, `extraction_error`, and `extracted_character_count` for analyst inspection. Failed PDF extraction still preserves the source URL row for manual review.
 
-Use `--write-projects-csv` only after reviewing the discovered rows. It generates `projects_v0_1.csv` from high-confidence URL rows and still leaves ingestion/claim review to `ingest_starter_dataset.py`.
+Use `--write-projects-csv` only after reviewing the discovered rows. It generates the tracked `../data/starter_sources/projects_v0_1.csv` from high-confidence URL rows and still leaves ingestion/claim review to `ingest_starter_dataset.py`.
 
 Ingest reviewed discovered source drafts:
 
@@ -135,7 +164,7 @@ python scripts/ingest_discovered_sources.py --limit 10
 python scripts/ingest_discovered_sources.py --allow-existing
 ```
 
-This reads `../data/starter_sources/discovered_sources_v0_1.csv`, creates candidate projects and evidence records, generates suggested claims, and auto-accepts only `developer_named`, `location_state`, and `location_county`. Project names, load, utility, region, dates, phase, and power-path claims remain queued for UI/manual review. Rows missing project name or state are skipped unless `--allow-partial` is used.
+This reads `runtime_data/starter_sources/discovered_sources_v0_1.csv`, creates candidate projects and evidence records, generates suggested claims, and auto-accepts only `developer_named`, `location_state`, and `location_county`. Project names, load, utility, region, dates, phase, and power-path claims remain queued for UI/manual review. Rows missing project name or state are skipped unless `--allow-partial` is used.
 
 ## Baseline prediction model card
 

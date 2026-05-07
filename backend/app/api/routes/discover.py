@@ -10,9 +10,8 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/discover", tags=["discover"])
 
-# Workspace root = parents[4] of this file
-# backend/app/api/routes/discover.py → parents[4] = workspace root
-_DATA_DIR   = Path(__file__).parents[4] / "data" / "starter_sources"
+# backend/app/api/routes/discover.py -> parents[3] = backend/
+_DATA_DIR   = Path(__file__).resolve().parents[3] / "runtime_data" / "starter_sources"
 _CSV_PATH   = _DATA_DIR / "discovered_sources_v0_1.csv"
 _DEC_PATH   = _DATA_DIR / "discovery_decisions_v0_1.json"
 _MAN_PATH   = _DATA_DIR / "manual_source_captures_v0_1.json"

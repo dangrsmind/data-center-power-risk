@@ -33,9 +33,10 @@ from app.services.automation_service import AutomationService
 from app.services.ingestion_service import IngestionService
 
 
-DEFAULT_CSV_PATH            = REPO_DIR / "data" / "starter_sources" / "discovered_sources_v0_1.csv"
-DEFAULT_DECISIONS_PATH      = REPO_DIR / "data" / "starter_sources" / "discovery_decisions_v0_1.json"
-DEFAULT_MANUAL_CAPTURES_PATH = REPO_DIR / "data" / "starter_sources" / "manual_source_captures_v0_1.json"
+DEFAULT_RUNTIME_DIR = BACKEND_DIR / "runtime_data" / "starter_sources"
+DEFAULT_CSV_PATH = DEFAULT_RUNTIME_DIR / "discovered_sources_v0_1.csv"
+DEFAULT_DECISIONS_PATH = DEFAULT_RUNTIME_DIR / "discovery_decisions_v0_1.json"
+DEFAULT_MANUAL_CAPTURES_PATH = DEFAULT_RUNTIME_DIR / "manual_source_captures_v0_1.json"
 REQUIRED_COLUMNS = [
     "discovery_id",
     "candidate_project_name",

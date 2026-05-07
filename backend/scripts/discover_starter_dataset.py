@@ -29,7 +29,8 @@ from app.services.automation_service import AutomationService
 
 
 DEFAULT_SEED_FILE = REPO_DIR / "data" / "starter_sources" / "discovery_seeds.yml"
-DEFAULT_OUTPUT_CSV = REPO_DIR / "data" / "starter_sources" / "discovered_sources_v0_1.csv"
+DEFAULT_RUNTIME_DIR = BACKEND_DIR / "runtime_data" / "starter_sources"
+DEFAULT_OUTPUT_CSV = DEFAULT_RUNTIME_DIR / "discovered_sources_v0_1.csv"
 DEFAULT_PROJECTS_CSV = REPO_DIR / "data" / "starter_sources" / "projects_v0_1.csv"
 USER_AGENT = "data-center-power-risk-starter-discovery/0.1"
 MAX_TEXT_CHARS = 12000
@@ -791,7 +792,7 @@ def main() -> None:
     if not args.dry_run:
         write_csv(args.output_csv, DISCOVERY_COLUMNS, rows)
         if args.write_projects_csv:
-            write_csv(args.output_csv.parent / DEFAULT_PROJECTS_CSV.name, PROJECT_COLUMNS, [project_row_from_discovery(row) for row in high_confidence_rows])
+            write_csv(DEFAULT_PROJECTS_CSV, PROJECT_COLUMNS, [project_row_from_discovery(row) for row in high_confidence_rows])
 
     failure_count = sum(1 for row in rows if "fetch_failed" in (row.get("requires_review_reason") or "") or "blocked_by_robots" in (row.get("requires_review_reason") or "") or "not_supported" in (row.get("requires_review_reason") or ""))
     print(
@@ -801,7 +802,7 @@ def main() -> None:
                 f"high_confidence_rows={len(high_confidence_rows)}",
                 f"failure_or_unfetched_rows={failure_count + sum(1 for row in rows if row.get('discovery_method') == 'query_seed')}",
                 f"output_csv={'not_written_dry_run' if args.dry_run else args.output_csv}",
-                f"projects_csv={'not_written' if args.dry_run or not args.write_projects_csv else args.output_csv.parent / DEFAULT_PROJECTS_CSV.name}",
+                f"projects_csv={'not_written' if args.dry_run or not args.write_projects_csv else DEFAULT_PROJECTS_CSV}",
             ]
         )
     )
