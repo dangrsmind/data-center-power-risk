@@ -163,7 +163,13 @@ class ProjectPredictionResponse(BaseModel):
     p_delay_12mo: float
     p_delay_18mo: float
     risk_tier: str
+<<<<<<< HEAD
     confidence: str
     drivers: list[PredictionDriver]
     missing_inputs: list[str]
     method_note: str = "This is a deterministic baseline, not a trained ML model."
+=======
+    drivers: list[PredictionDriver]
+    missing_inputs: list[str]
+    confidence: str
+>>>>>>> 054fe5e (Finalize prediction response schema exports)
