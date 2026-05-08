@@ -78,9 +78,12 @@ function stateBoundaryStyle() {
 
 function shouldRenderCoordinate(p: ProjectListItem, showApproximate: boolean): boolean {
   if (p.latitude == null || p.longitude == null) return false;
-  const precision = p.coordinate_precision ?? "unknown";
+  const lat = Number(p.latitude);
+  const lng = Number(p.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
   const status = p.coordinate_status ?? "unverified";
-  if (status === "missing" || precision === "unknown") return false;
+  if (status === "missing") return false;
+  const precision = p.coordinate_precision ?? null;
   if (precision === "state_centroid" || precision === "approximate") return showApproximate;
   return true;
 }
@@ -699,6 +702,8 @@ export function MapPage() {
           {/* Project markers */}
           {onMap.map((mp) => {
             const { project: p } = mp;
+            const lat    = Number(p.latitude);
+            const lng    = Number(p.longitude);
             const color  = markerColor(colorMode, mp);
             const radius = markerRadius(p.modeled_primary_load_mw);
             const isLoading = colorMode === "evidence" && !mp.enriched;
@@ -706,7 +711,7 @@ export function MapPage() {
             return (
               <CircleMarker
                 key={p.project_id}
-                center={[p.latitude!, p.longitude!]}
+                center={[lat, lng]}
                 radius={radius}
                 pathOptions={{
                   fillColor: color,
