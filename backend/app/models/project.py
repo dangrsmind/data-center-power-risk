@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Date, Enum, Float, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.enums import LifecycleState, LoadKind, enum_values
@@ -21,6 +21,14 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     county: Mapped[str | None] = mapped_column(String(255))
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    coordinate_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    coordinate_precision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    coordinate_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    coordinate_source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    coordinate_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    coordinate_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    coordinate_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    coordinate_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     announcement_date: Mapped[date | None] = mapped_column(Date)
     latest_update_date: Mapped[date | None] = mapped_column(Date)
     lifecycle_state: Mapped[LifecycleState] = mapped_column(
@@ -33,6 +41,26 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     utility_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), ForeignKey("utilities.id"), nullable=True
     )
+
+
+class ProjectCoordinateHistory(Base):
+    __tablename__ = "project_coordinate_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("projects.id"), nullable=False, index=True)
+    old_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    old_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    old_coordinate_precision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    new_coordinate_precision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    old_coordinate_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    new_coordinate_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_by: Mapped[str | None] = mapped_column(String(255), nullable=True, default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class ProjectAlias(UUIDPrimaryKeyMixin, TimestampMixin, Base):
