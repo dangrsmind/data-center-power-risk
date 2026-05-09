@@ -51,7 +51,7 @@ def upgrade() -> None:
             sa.Column("source_url", sa.String(length=1024), nullable=True),
             sa.Column("notes", sa.Text(), nullable=True),
             sa.Column("changed_by", sa.String(length=255), nullable=True, server_default="manual"),
-            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         )
     history_indexes = {
         index["name"]
