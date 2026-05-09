@@ -17,6 +17,25 @@ export type LifecycleState =
   | "downsized";
 
 export type RiskTier = "high" | "elevated" | "medium" | "moderate" | "low" | "unknown";
+export type CoordinateStatus = "missing" | "unverified" | "verified" | "needs_review";
+export type CoordinatePrecision =
+  | "exact_site"
+  | "parcel"
+  | "campus"
+  | "city_centroid"
+  | "county_centroid"
+  | "state_centroid"
+  | "approximate"
+  | "unknown";
+export type CoordinateSource =
+  | "manual_review"
+  | "project_announcement"
+  | "utility_filing"
+  | "county_record"
+  | "company_website"
+  | "inferred_from_city"
+  | "imported_dataset"
+  | "other";
 
 export type PhaseStatus =
   | "planning"
@@ -37,11 +56,19 @@ export type SourceType =
 export interface ProjectListItem {
   project_id: string;
   project_name: string;
-  developer: string | null;
+  developer?: string | null;
   state: string;
-  county: string | null;
-  latitude: number | null;
-  longitude: number | null;
+  county?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_status?: CoordinateStatus | null;
+  coordinate_precision?: CoordinatePrecision | null;
+  coordinate_source?: CoordinateSource | null;
+  coordinate_source_url?: string | null;
+  coordinate_notes?: string | null;
+  coordinate_confidence?: number | null;
+  coordinate_updated_at?: string | null;
+  coordinate_verified_at?: string | null;
   region_or_rto: string;
   modeled_primary_load_mw: number;
   lifecycle_state: LifecycleState;
@@ -50,6 +77,7 @@ export interface ProjectListItem {
   deadline_probability: number;
   latest_update_date: string;
   phase_count: number;
+  data_quality_score?: number;
 }
 
 export interface Phase {
@@ -87,11 +115,19 @@ export interface Score {
 export interface ProjectDetail {
   project_id: string;
   project_name: string;
-  developer: string | null;
+  developer?: string | null;
   state: string;
-  county: string | null;
-  latitude: number | null;
-  longitude: number | null;
+  county?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_status?: CoordinateStatus | null;
+  coordinate_precision?: CoordinatePrecision | null;
+  coordinate_source?: CoordinateSource | null;
+  coordinate_source_url?: string | null;
+  coordinate_notes?: string | null;
+  coordinate_confidence?: number | null;
+  coordinate_updated_at?: string | null;
+  coordinate_verified_at?: string | null;
   region_or_rto: string;
   utility: string | null;
   modeled_primary_load_mw: number;
@@ -439,8 +475,47 @@ export interface ManualCaptureRequest {
 export interface ProjectCoordinatesRequest {
   latitude: number;
   longitude: number;
-  coordinate_source?: string;
-  coordinate_confidence?: string;
+  coordinate_precision: CoordinatePrecision;
+  coordinate_status: CoordinateStatus;
+  coordinate_source?: CoordinateSource | null;
+  coordinate_source_url?: string | null;
+  coordinate_notes?: string | null;
+  coordinate_confidence?: number | null;
+  changed_by?: string | null;
+}
+
+export interface MissingCoordinateProject {
+  id: string;
+  name: string;
+  developer: string | null;
+  utility: string | null;
+  state: string | null;
+  county: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  coordinate_status: CoordinateStatus | null;
+  coordinate_precision: CoordinatePrecision | null;
+  coordinate_source: CoordinateSource | null;
+  coordinate_confidence: number | null;
+}
+
+export interface ProjectCoordinateHistoryItem {
+  id: number;
+  project_id: string;
+  old_latitude: number | null;
+  old_longitude: number | null;
+  new_latitude: number | null;
+  new_longitude: number | null;
+  old_coordinate_precision: CoordinatePrecision | null;
+  new_coordinate_precision: CoordinatePrecision | null;
+  old_coordinate_status: CoordinateStatus | null;
+  new_coordinate_status: CoordinateStatus | null;
+  source: CoordinateSource | null;
+  source_url: string | null;
+  notes: string | null;
+  changed_by: string | null;
+  created_at: string;
 }
 
 export interface DiscoveredSource {

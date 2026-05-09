@@ -1,9 +1,11 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON } from "react-leaflet";
+import { useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
-import type { ProjectListItem } from "../api/types";
+import type { ProjectDetail, ProjectListItem } from "../api/types";
 import { getProjects, getProjectRiskSignal, getProjectEnrichment } from "../api/adapter";
+import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,6 +74,26 @@ function markerColor(mode: ColorMode, mp: MapProject): string {
 
 function stateBoundaryStyle() {
   return { color: "#334155", weight: 0.9, fillOpacity: 0, opacity: 0.65 };
+}
+
+function shouldRenderCoordinate(p: ProjectListItem, showApproximate: boolean): boolean {
+  if (p.latitude == null || p.longitude == null) return false;
+  const lat = Number(p.latitude);
+  const lng = Number(p.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  const status = p.coordinate_status ?? "unverified";
+  if (status === "missing") return false;
+  const precision = p.coordinate_precision ?? null;
+  if (precision === "state_centroid" || precision === "approximate") return showApproximate;
+  return true;
+}
+
+function precisionNote(precision: string | null | undefined): string | null {
+  if (precision === "city_centroid") return "city-level coordinate";
+  if (precision === "county_centroid") return "county-level coordinate";
+  if (precision === "state_centroid") return "state-level approximate coordinate";
+  if (precision === "approximate") return "approximate coordinate";
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +169,16 @@ function PopupField({
   );
 }
 
+function MapClickCapture({ enabled, onPick }: { enabled: boolean; onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click: (event) => {
+      if (!enabled) return;
+      onPick(event.latlng.lat, event.latlng.lng);
+    },
+  });
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -156,11 +188,13 @@ export function MapPage() {
   const [mapProjects, setMapProjects] = useState<MapProject[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
-  const [stateGeoJSON, setStateGeoJSON] = useState<unknown>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [stateGeoJSON, setStateGeoJSON] = useState<any | null>(null);
   const [geoError, setGeoError]       = useState(false);
 
   // Layer toggles
   const [showStates, setShowStates] = useState(true);
+  const [showApproximate, setShowApproximate] = useState(false);
 
   // Color mode
   const [colorMode, setColorMode] = useState<ColorMode>("evidence");
@@ -171,6 +205,9 @@ export function MapPage() {
   const [filterSignalTier, setFilterSignalTier] = useState("all");
   const [filterLoadMin,    setFilterLoadMin]    = useState("");
   const [filterLoadMax,    setFilterLoadMax]    = useState("");
+  const [editingProject, setEditingProject] = useState<ProjectListItem | null>(null);
+  const [pickMode, setPickMode] = useState(false);
+  const [pickedCoordinates, setPickedCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Fetch US state boundaries
   useEffect(() => {
@@ -234,8 +271,30 @@ export function MapPage() {
     return true;
   }), [mapProjects, filterState, filterModelTier, filterSignalTier, filterLoadMin, filterLoadMax]);
 
-  const onMap  = filtered.filter(d => d.project.latitude != null && d.project.longitude != null);
+  const onMap  = filtered.filter(d => shouldRenderCoordinate(d.project, showApproximate));
   const offMap = mapProjects.filter(d => d.project.latitude == null || d.project.longitude == null);
+  const hiddenApproximateCount = filtered.filter(
+    d => d.project.latitude != null && d.project.longitude != null && !shouldRenderCoordinate(d.project, showApproximate),
+  ).length;
+
+  const applyUpdatedProject = useCallback((updated: ProjectDetail) => {
+    setMapProjects(prev => prev.map(item => item.project.project_id !== updated.project_id ? item : {
+      ...item,
+      project: {
+        ...item.project,
+        latitude: updated.latitude,
+        longitude: updated.longitude,
+        coordinate_status: updated.coordinate_status,
+        coordinate_precision: updated.coordinate_precision,
+        coordinate_source: updated.coordinate_source,
+        coordinate_source_url: updated.coordinate_source_url,
+        coordinate_notes: updated.coordinate_notes,
+        coordinate_confidence: updated.coordinate_confidence,
+        coordinate_updated_at: updated.coordinate_updated_at,
+        coordinate_verified_at: updated.coordinate_verified_at,
+      },
+    }));
+  }, []);
 
   // Stats (always from full filtered set, not just onMap)
   const stateCounts = useMemo(() => {
@@ -307,6 +366,12 @@ export function MapPage() {
               checked={showStates}
               onChange={setShowStates}
               note={geoError ? "Failed to load — check network" : !stateGeoJSON && showStates ? "Loading…" : undefined}
+            />
+            <LayerRow
+              label="Show approximate coordinates"
+              checked={showApproximate}
+              onChange={setShowApproximate}
+              note={hiddenApproximateCount ? `${hiddenApproximateCount} approximate or unknown marker${hiddenApproximateCount !== 1 ? "s" : ""} hidden` : undefined}
             />
             <LayerRow
               label="Utility territory polygons"
@@ -622,10 +687,23 @@ export function MapPage() {
               style={stateBoundaryStyle}
             />
           )}
+          <MapClickCapture
+            enabled={pickMode}
+            onPick={(latitude, longitude) => setPickedCoordinates({ latitude, longitude })}
+          />
+          {pickedCoordinates && (
+            <CircleMarker
+              center={[pickedCoordinates.latitude, pickedCoordinates.longitude]}
+              radius={8}
+              pathOptions={{ fillColor: "#60a5fa", fillOpacity: 0.45, color: "#bfdbfe", weight: 2 }}
+            />
+          )}
 
           {/* Project markers */}
           {onMap.map((mp) => {
             const { project: p } = mp;
+            const lat    = Number(p.latitude);
+            const lng    = Number(p.longitude);
             const color  = markerColor(colorMode, mp);
             const radius = markerRadius(p.modeled_primary_load_mw);
             const isLoading = colorMode === "evidence" && !mp.enriched;
@@ -633,7 +711,7 @@ export function MapPage() {
             return (
               <CircleMarker
                 key={p.project_id}
-                center={[p.latitude!, p.longitude!]}
+                center={[lat, lng]}
                 radius={radius}
                 pathOptions={{
                   fillColor: color,
@@ -693,6 +771,21 @@ export function MapPage() {
                       </div>
                     )}
 
+                    <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8, marginBottom: 8 }}>
+                      {precisionNote(p.coordinate_precision) && (
+                        <div style={{ color: "#fbbf24", fontSize: 11, marginBottom: 6 }}>
+                          {precisionNote(p.coordinate_precision)}
+                        </div>
+                      )}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 10px" }}>
+                        <PopupField label="Coord status" value={(p.coordinate_status ?? "unverified").replace(/_/g, " ")} />
+                        <PopupField label="Precision" value={(p.coordinate_precision ?? "unknown").replace(/_/g, " ")} />
+                        <PopupField label="Confidence" value={p.coordinate_confidence != null ? p.coordinate_confidence.toFixed(2) : "—"} mono />
+                        <PopupField label="Source" value={(p.coordinate_source ?? "—").replace(/_/g, " ")} />
+                        <PopupField label="Updated" value={p.coordinate_updated_at ? new Date(p.coordinate_updated_at).toLocaleDateString() : "—"} />
+                      </div>
+                    </div>
+
                     {/* Which tier is coloring this marker */}
                     <div style={{
                       fontSize: 10, color: "#64748b", marginBottom: 8, fontStyle: "italic",
@@ -701,13 +794,23 @@ export function MapPage() {
                     </div>
 
                     {/* Detail link */}
-                    <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8 }}>
+                    <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8, display: "flex", justifyContent: "space-between", gap: 10 }}>
                       <a
                         href={`/projects/${p.project_id}`}
                         style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}
                       >
                         Open project detail →
                       </a>
+                      <button
+                        onClick={() => {
+                          setEditingProject(p);
+                          setPickMode(false);
+                          setPickedCoordinates(null);
+                        }}
+                        style={{ fontSize: 11, color: "#60a5fa", background: "transparent", border: 0, padding: 0, cursor: "pointer", fontWeight: 600 }}
+                      >
+                        Edit coordinates
+                      </button>
                     </div>
                   </div>
                 </Popup>
@@ -715,6 +818,56 @@ export function MapPage() {
             );
           })}
         </MapContainer>
+        {editingProject && (
+          <div style={{
+            position: "absolute",
+            right: 16,
+            top: 16,
+            zIndex: 1000,
+            width: 420,
+            maxWidth: "calc(100% - 32px)",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+            padding: 16,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{editingProject.project_name}</div>
+                <div style={{ fontSize: 11, color: pickMode ? "var(--accent)" : "var(--text-dim)", marginTop: 2 }}>
+                  {pickMode ? "Click the map to fill latitude and longitude." : "Coordinate editor"}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingProject(null);
+                  setPickMode(false);
+                  setPickedCoordinates(null);
+                }}
+                style={{ background: "transparent", border: 0, color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
+              >
+                x
+              </button>
+            </div>
+            <ProjectCoordinateEditor
+              project={editingProject}
+              pickedCoordinates={pickedCoordinates}
+              onStartPick={() => setPickMode(true)}
+              onCancel={() => {
+                setEditingProject(null);
+                setPickMode(false);
+                setPickedCoordinates(null);
+              }}
+              onSaved={(updated) => {
+                applyUpdatedProject(updated);
+                setEditingProject(null);
+                setPickMode(false);
+                setPickedCoordinates(null);
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

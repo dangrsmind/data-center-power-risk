@@ -20,6 +20,7 @@ import type {
   LifecycleState,
   PhaseStatus,
   ProjectEventsData,
+  ProjectEnrichmentData,
   ProjectStressData,
   ProjectHistoryData,
   ProjectEvidenceData,
@@ -35,6 +36,8 @@ import type {
   ManualCapturesResponse,
   ManualCaptureRequest,
   ProjectCoordinatesRequest,
+  MissingCoordinateProject,
+  ProjectCoordinateHistoryItem,
   IngestClaimItem,
   IngestClaimsCreateResponse,
   IngestClaimResponse,
@@ -62,6 +65,14 @@ interface RawProjectListItem {
   county: string | null;
   latitude: number | null;
   longitude: number | null;
+  coordinate_status: ProjectListItem["coordinate_status"] | null;
+  coordinate_precision: ProjectListItem["coordinate_precision"] | null;
+  coordinate_source: ProjectListItem["coordinate_source"] | null;
+  coordinate_source_url: string | null;
+  coordinate_notes: string | null;
+  coordinate_confidence: number | null;
+  coordinate_updated_at: string | null;
+  coordinate_verified_at: string | null;
   lifecycle_state: string;
   announcement_date: string | null;
   latest_update_date: string | null;
@@ -82,6 +93,14 @@ interface RawProjectDetail {
   county: string | null;
   latitude: number | null;
   longitude: number | null;
+  coordinate_status: ProjectDetail["coordinate_status"] | null;
+  coordinate_precision: ProjectDetail["coordinate_precision"] | null;
+  coordinate_source: ProjectDetail["coordinate_source"] | null;
+  coordinate_source_url: string | null;
+  coordinate_notes: string | null;
+  coordinate_confidence: number | null;
+  coordinate_updated_at: string | null;
+  coordinate_verified_at: string | null;
   lifecycle_state: string;
   announcement_date: string | null;
   latest_update_date: string | null;
@@ -179,6 +198,14 @@ function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
     county: raw.county ?? null,
     latitude: raw.latitude ?? null,
     longitude: raw.longitude ?? null,
+    coordinate_status: raw.coordinate_status ?? null,
+    coordinate_precision: raw.coordinate_precision ?? null,
+    coordinate_source: raw.coordinate_source ?? null,
+    coordinate_source_url: raw.coordinate_source_url ?? null,
+    coordinate_notes: raw.coordinate_notes ?? null,
+    coordinate_confidence: raw.coordinate_confidence ?? null,
+    coordinate_updated_at: raw.coordinate_updated_at ?? null,
+    coordinate_verified_at: raw.coordinate_verified_at ?? null,
     region_or_rto: "",
     modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
     lifecycle_state: raw.lifecycle_state as LifecycleState,
@@ -278,6 +305,15 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function deleteJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, { method: "DELETE" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${res.status} ${res.statusText} — ${path}${text ? `: ${text}` : ""}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 function delay(ms = 120): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -321,6 +357,14 @@ export async function getProject(id: string): Promise<ProjectDetail> {
     county: rawProject.county ?? null,
     latitude: rawProject.latitude ?? null,
     longitude: rawProject.longitude ?? null,
+    coordinate_status: rawProject.coordinate_status ?? null,
+    coordinate_precision: rawProject.coordinate_precision ?? null,
+    coordinate_source: rawProject.coordinate_source ?? null,
+    coordinate_source_url: rawProject.coordinate_source_url ?? null,
+    coordinate_notes: rawProject.coordinate_notes ?? null,
+    coordinate_confidence: rawProject.coordinate_confidence ?? null,
+    coordinate_updated_at: rawProject.coordinate_updated_at ?? null,
+    coordinate_verified_at: rawProject.coordinate_verified_at ?? null,
     region_or_rto: "",            // region_id UUID only — name lookup not yet available
     utility: null,                // utility_id UUID only — name lookup not yet available
     modeled_primary_load_mw: rawProject.modeled_primary_load_mw ?? 0,
@@ -532,6 +576,14 @@ export async function patchProjectCoordinates(
     county: raw.county ?? null,
     latitude: raw.latitude ?? null,
     longitude: raw.longitude ?? null,
+    coordinate_status: raw.coordinate_status ?? null,
+    coordinate_precision: raw.coordinate_precision ?? null,
+    coordinate_source: raw.coordinate_source ?? null,
+    coordinate_source_url: raw.coordinate_source_url ?? null,
+    coordinate_notes: raw.coordinate_notes ?? null,
+    coordinate_confidence: raw.coordinate_confidence ?? null,
+    coordinate_updated_at: raw.coordinate_updated_at ?? null,
+    coordinate_verified_at: raw.coordinate_verified_at ?? null,
     region_or_rto: "",
     utility: null,
     modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
@@ -545,6 +597,61 @@ export async function patchProjectCoordinates(
     data_quality_score: Math.round(score.evidence_quality_score * 100),
     latest_update_date: raw.latest_update_date ?? "",
   };
+}
+
+export async function clearProjectCoordinates(projectId: string): Promise<ProjectDetail> {
+  const raw = await deleteJson<RawProjectDetail>(`/projects/${projectId}/coordinates`);
+  const [rawPhases, rawScore] = await Promise.all([
+    fetchJson<RawPhase[]>(`/projects/${projectId}/phases`),
+    fetchJson<RawScore>(`/projects/${projectId}/score`),
+  ]);
+  const phases = rawPhases.map(transformPhase);
+  const score = transformScore(rawScore);
+  return {
+    project_id: raw.id,
+    project_name: raw.canonical_name,
+    developer: raw.developer ?? null,
+    state: raw.state ?? "",
+    county: raw.county ?? null,
+    latitude: raw.latitude ?? null,
+    longitude: raw.longitude ?? null,
+    coordinate_status: raw.coordinate_status ?? null,
+    coordinate_precision: raw.coordinate_precision ?? null,
+    coordinate_source: raw.coordinate_source ?? null,
+    coordinate_source_url: raw.coordinate_source_url ?? null,
+    coordinate_notes: raw.coordinate_notes ?? null,
+    coordinate_confidence: raw.coordinate_confidence ?? null,
+    coordinate_updated_at: raw.coordinate_updated_at ?? null,
+    coordinate_verified_at: raw.coordinate_verified_at ?? null,
+    region_or_rto: "",
+    utility: null,
+    modeled_primary_load_mw: raw.modeled_primary_load_mw ?? 0,
+    headline_load_mw: null,
+    optional_expansion_mw: null,
+    lifecycle_state: raw.lifecycle_state as LifecycleState,
+    risk_tier: deriveRiskTier(rawScore.deadline_probability),
+    announce_date: raw.announcement_date,
+    phases,
+    score,
+    data_quality_score: Math.round(score.evidence_quality_score * 100),
+    latest_update_date: raw.latest_update_date ?? "",
+  };
+}
+
+export async function getMissingCoordinateProjects(): Promise<MissingCoordinateProject[]> {
+  if (USE_MOCK) {
+    await delay();
+    return [];
+  }
+  return fetchJson<MissingCoordinateProject[]>("/projects/missing-coordinates");
+}
+
+export async function getProjectCoordinateHistory(projectId: string): Promise<ProjectCoordinateHistoryItem[]> {
+  if (USE_MOCK) {
+    await delay();
+    return [];
+  }
+  return fetchJson<ProjectCoordinateHistoryItem[]>(`/projects/${projectId}/coordinates/history`);
 }
 
 // ---------------------------------------------------------------------------
