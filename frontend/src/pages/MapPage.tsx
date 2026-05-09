@@ -195,7 +195,7 @@ export function MapPage() {
 
   // Layer toggles
   const [showStates, setShowStates] = useState(true);
-  const [showApproximate, setShowApproximate] = useState(false);
+  const [showApproximate, setShowApproximate] = useState(true);
 
   // Color mode
   const [colorMode, setColorMode] = useState<ColorMode>("evidence");
