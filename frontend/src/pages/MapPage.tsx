@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 import type { ProjectDetail, ProjectListItem } from "../api/types";
 import { getProjects, getProjectRiskSignal, getProjectEnrichment } from "../api/adapter";
 import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
+import { PredictionSummary } from "../components/shared/PredictionSummary";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -721,7 +722,7 @@ export function MapPage() {
                   opacity: 0.55,
                 }}
               >
-                <Popup minWidth={248} maxWidth={300} className="power-risk-popup">
+                <Popup minWidth={280} maxWidth={340} className="power-risk-popup">
                   <div style={{
                     fontFamily: "system-ui, -apple-system, sans-serif",
                     color: "#e2e8f0", padding: "2px 0", minWidth: 240,
@@ -786,9 +787,12 @@ export function MapPage() {
                       </div>
                     </div>
 
+                    {/* Prediction section */}
+                    <PredictionSummary projectId={p.project_id} />
+
                     {/* Which tier is coloring this marker */}
                     <div style={{
-                      fontSize: 10, color: "#64748b", marginBottom: 8, fontStyle: "italic",
+                      fontSize: 10, color: "#64748b", margin: "8px 0", fontStyle: "italic",
                     }}>
                       Marker color: {colorMode === "evidence" ? "evidence signal tier" : "model risk tier"}
                     </div>

@@ -1,0 +1,137 @@
+We are continuing the data-center-power-risk project.
+
+Current branch:
+demo-real-data-v0
+
+Current latest commit should be:
+e23fd75
+
+Current status:
+- Demo data loader works.
+- Demo prediction runner works.
+- /projects returns demo projects.
+- /map shows project markers.
+- Coordinate editing works.
+- The coordinate_source 422 bug is fixed.
+
+Goal:
+Make prediction results visible in the UI so the demo story is clear.
+
+The demo should show:
+real data → map marker → prediction result → human-readable drivers.
+
+Do not redesign the app.
+Do not merge to main.
+Make the smallest useful UI enhancement.
+
+Start by confirming branch:
+
+git branch --show-current
+git rev-parse --short HEAD
+git status --short
+
+Expected branch:
+demo-real-data-v0
+
+Expected commit:
+e23fd75 or newer
+
+Then run backend:
+
+cd backend
+source .venv/bin/activate
+DATABASE_URL=sqlite:///local.db alembic upgrade head
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
+DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
+
+Then run frontend:
+
+cd frontend
+npm run dev
+
+Frontend URL:
+http://localhost:5000/map
+
+Task:
+
+1. Inspect the current /map marker popup.
+
+2. Add a visible Prediction section to the marker popup or project card.
+
+For each project marker, show:
+- risk_tier
+- p_delay_6mo
+- p_delay_12mo
+- p_delay_18mo
+- confidence
+- top 3 drivers
+- model name/version
+
+Use:
+GET /projects/{project_id}/prediction
+
+3. If the project list or marker popup already has risk_tier from /projects, keep it.
+But fetch /projects/{id}/prediction to get the full prediction details and drivers.
+
+4. Add a small reusable frontend component if useful:
+
+PredictionSummary
+
+It should:
+- accept projectId
+- fetch /projects/{projectId}/prediction
+- show loading state
+- show error state
+- show prediction values
+- show top drivers
+
+5. Label the model clearly:
+
+"Deterministic baseline — not yet statistically calibrated"
+
+6. Preserve existing map behavior:
+- markers still render
+- marker coloring still works
+- coordinate edit button still works
+- saving coordinates still works
+- no coordinate_source 422 regression
+
+7. Do not make broad layout changes.
+
+Acceptance criteria:
+- Open /map.
+- Click AVAIO Farmville marker.
+- Popup shows prediction section.
+- Popup shows 6/12/18 month delay risk.
+- Popup shows risk tier.
+- Popup shows at least one human-readable driver.
+- Popup shows model/version.
+- Coordinate edit still works.
+- No runtime files committed.
+
+Before committing, run:
+
+git status --short
+
+Do not commit:
+- local.db
+- node_modules
+- runtime CSV files
+- runtime JSON files
+- geocoding caches
+- backend/data/exports
+- attached_assets
+
+Commit message:
+Show demo prediction results in map UI
+
+Push to:
+demo-real-data-v0
+
+Report back:
+- final commit hash
+- files changed
+- whether prediction appears in marker popup
+- whether coordinate editing still works
+- any remaining issues
