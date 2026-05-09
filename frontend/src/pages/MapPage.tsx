@@ -799,12 +799,12 @@ export function MapPage() {
 
                     {/* Detail link */}
                     <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8, display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <a
-                        href={`/projects/${p.project_id}`}
+                      <Link
+                        to={`/projects/${p.project_id}`}
                         style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}
                       >
-                        Open project detail →
-                      </a>
+                        View project details →
+                      </Link>
                       <button
                         onClick={() => {
                           setEditingProject(p);
