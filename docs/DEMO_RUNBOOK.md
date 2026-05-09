@@ -30,6 +30,23 @@ Expected summary fields:
 - `rows_skipped`
 - `validation_errors`
 
+## Run Demo Predictions
+
+From the backend directory:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
+```
+
+The runner scores demo-marked projects with `baseline_power_delay_v0_2` and stores one prediction row per project/model/version. Re-running it is safe; existing prediction rows are updated in place when the deterministic output changes.
+
+Expected summary fields:
+
+- `projects_scored`
+- `predictions_created`
+- `predictions_updated`
+- `errors`
+
 ## Start The Backend
 
 From the backend directory:
@@ -54,6 +71,16 @@ Confirm the response includes the demo projects:
 - `CleanArc VA1`
 
 Both records should include latitude, longitude, and coordinate metadata.
+
+## Verify Predictions
+
+Use any project ID from `/projects`:
+
+```bash
+curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/prediction
+```
+
+Confirm the response uses `baseline_power_delay_v0_2`, includes `p_delay_6mo`, `p_delay_12mo`, `p_delay_18mo`, `risk_tier`, `confidence`, and human-readable `drivers`.
 
 ## Start The Frontend
 
@@ -85,6 +112,7 @@ To check idempotency without deleting demo rows first:
 
 ```bash
 python scripts/load_demo_dataset.py
+python scripts/run_demo_predictions.py
 ```
 
-The second command should report skipped rows or updates, not newly duplicated projects.
+The loader command should report skipped rows or updates, not newly duplicated projects. The prediction command should update existing stored predictions instead of creating duplicates.
