@@ -1,0 +1,140 @@
+We are continuing the data-center-power-risk project.
+
+Current branch:
+demo-real-data-v0
+
+Latest known commits include:
+4239e39 Make project markers visible by default on the map page
+8d65dd2 Fix error preventing evidence from being displayed on project details
+63878a4 Update map popup link for project details
+a288a50 Show demo prediction results in map UI
+
+Observed bug:
+On /map, project markers are visible by default now, which is good.
+
+However, immediately after page load, clicking a visible marker does not open the popup.
+
+If I uncheck "Show approximate coordinates" and then re-check it, the markers re-render and then clicking markers opens the popup correctly.
+
+This suggests the markers are visible on initial render but not correctly interactive/bound to Leaflet popup state until the marker layer is toggled.
+
+Goal:
+Fix marker interactivity on initial /map load.
+
+Do not redesign the map.
+Do not change backend behavior.
+Do not remove the "Show approximate coordinates" toggle.
+Make the smallest reliable fix.
+
+Steps:
+
+1. Confirm branch and clean state:
+
+git branch --show-current
+git rev-parse --short HEAD
+git status --short
+
+Expected branch:
+demo-real-data-v0
+
+2. Run the demo path:
+
+cd backend
+source .venv/bin/activate
+DATABASE_URL=sqlite:///local.db alembic upgrade head
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
+DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
+
+Frontend:
+
+cd frontend
+npm run dev
+
+Open:
+http://localhost:5000/map
+
+3. Reproduce the bug:
+- Open /map fresh.
+- Confirm markers are visible immediately.
+- Click marker.
+- Popup does not open.
+- Toggle "Show approximate coordinates" off and back on.
+- Click marker again.
+- Popup opens.
+
+4. Inspect frontend map implementation, likely:
+frontend/src/pages/MapPage.tsx
+
+Look for:
+- Leaflet Marker components
+- layer groups
+- marker keys
+- conditional rendering around showApproximate
+- map initialization timing
+- custom marker icon setup
+- CSS overlays that may intercept pointer events
+- marker pane/z-index issues
+- stale memoization of filtered markers
+
+Likely causes to check:
+A. Markers are being rendered before the map is fully initialized.
+B. Marker keys are unstable or reused incorrectly.
+C. A transparent overlay/control is sitting above markers until toggle forces rerender.
+D. Marker layer/pane has pointer-events disabled on initial render.
+E. The filtered marker list is memoized without showApproximate/projects dependencies.
+F. React-Leaflet Popup is not mounted/bound until rerender.
+G. Marker icon configuration is incomplete until after first render.
+
+5. Implement the smallest fix.
+
+Possible acceptable fixes:
+- Ensure each Marker has a stable key that changes when marker data changes:
+  key={`${p.project_id}-${p.latitude}-${p.longitude}-${p.coordinate_precision ?? "unknown"}`}
+- Ensure Popup is a direct child of Marker.
+- Ensure the map marker layer is not wrapped in an overlay with pointer-events disabled.
+- If needed, force Leaflet to invalidate size after project markers load:
+  map.invalidateSize()
+- If marker layer needs a mounted-state guard, add one cleanly.
+- If the issue is caused by approximate toggle state initialization, make sure initial state and rendered marker list are consistent.
+
+Do not use a hacky timeout unless there is no cleaner Leaflet/React-Leaflet fix. If a timeout is used, explain why.
+
+6. Acceptance criteria:
+- Fresh load of /map shows markers by default.
+- Clicking a marker immediately opens its popup.
+- No need to toggle "Show approximate coordinates" first.
+- Prediction section appears in popup.
+- "View project details" link works.
+- Coordinate edit button still works.
+- Unchecking "Show approximate coordinates" hides approximate markers.
+- Re-checking it shows markers and clicking still works.
+- No backend regressions.
+- No runtime files committed.
+
+Before committing:
+
+git status --short
+
+Do not commit:
+- local.db
+- node_modules
+- runtime CSV files
+- runtime JSON files
+- geocoding caches
+- backend/data/exports
+- attached_assets
+
+Commit message:
+Fix initial map marker popup interaction
+
+Push to:
+demo-real-data-v0
+
+Report back:
+- final commit hash
+- files changed
+- root cause
+- fix applied
+- whether fresh-load marker click now opens popup
+- whether prediction popup and coordinate editing still work

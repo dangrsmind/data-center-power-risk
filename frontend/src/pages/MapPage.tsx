@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, useMap } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
@@ -180,6 +180,15 @@ function MapClickCapture({ enabled, onPick }: { enabled: boolean; onPick: (lat: 
   return null;
 }
 
+function MapReadySignal({ onReady }: { onReady: () => void }) {
+  const map = useMap();
+  useEffect(() => {
+    map.whenReady(onReady);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -192,6 +201,9 @@ export function MapPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stateGeoJSON, setStateGeoJSON] = useState<any | null>(null);
   const [geoError, setGeoError]       = useState(false);
+
+  // Map initialization gate — markers must not mount until Leaflet is ready
+  const [mapReady, setMapReady] = useState(false);
 
   // Layer toggles
   const [showStates, setShowStates] = useState(true);
@@ -688,6 +700,7 @@ export function MapPage() {
               style={stateBoundaryStyle}
             />
           )}
+          <MapReadySignal onReady={() => setMapReady(true)} />
           <MapClickCapture
             enabled={pickMode}
             onPick={(latitude, longitude) => setPickedCoordinates({ latitude, longitude })}
@@ -700,8 +713,8 @@ export function MapPage() {
             />
           )}
 
-          {/* Project markers */}
-          {onMap.map((mp) => {
+          {/* Project markers — rendered only after Leaflet map is fully ready */}
+          {mapReady && onMap.map((mp) => {
             const { project: p } = mp;
             const lat    = Number(p.latitude);
             const lng    = Number(p.longitude);
