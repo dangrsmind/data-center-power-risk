@@ -50,7 +50,10 @@ def deserialize_value(column: Any, value: Any) -> Any:
     return value
 
 
-_LEGACY_COORD_SOURCE: dict[str, str] = {"starter_dataset": "imported_dataset"}
+_LEGACY_COORD_SOURCE: dict[str, str] = {
+    "starter_dataset": "imported_dataset",
+    "manual_capture": "manual_review",
+}
 
 
 def deserialize_row(model: Any, row: dict[str, Any]) -> dict[str, Any]:
