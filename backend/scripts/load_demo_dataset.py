@@ -130,6 +130,18 @@ def clean_string(value: Any) -> str | None:
     return text or None
 
 
+_COORDINATE_SOURCE_ALIASES: dict[str, str] = {
+    "manual_capture": "manual_review",
+    "starter_dataset": "imported_dataset",
+}
+
+
+def _normalize_coordinate_source(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _COORDINATE_SOURCE_ALIASES.get(value, value)
+
+
 def parse_float(value: Any, field_name: str) -> float | None:
     text = clean_string(value)
     if text is None:
@@ -213,7 +225,7 @@ def parse_row(row_number: int, raw: dict[str, Any]) -> DemoRow:
         longitude=longitude,
         coordinate_status=clean_string(raw.get("coordinate_status")),
         coordinate_precision=clean_string(raw.get("coordinate_precision")),
-        coordinate_source=clean_string(raw.get("coordinate_source")),
+        coordinate_source=_normalize_coordinate_source(clean_string(raw.get("coordinate_source"))),
         coordinate_confidence=coordinate_confidence,
         coordinate_notes=clean_string(raw.get("coordinate_notes")),
     )

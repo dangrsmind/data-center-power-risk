@@ -31,6 +31,7 @@ CoordinateSource = Literal[
 
 _LEGACY_COORDINATE_SOURCE: dict[str, str] = {
     "starter_dataset": "imported_dataset",
+    "manual_capture": "manual_review",
 }
 
 

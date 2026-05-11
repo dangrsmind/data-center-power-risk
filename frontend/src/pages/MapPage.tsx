@@ -724,7 +724,7 @@ export function MapPage() {
 
             return (
               <CircleMarker
-                key={p.project_id}
+                key={`project-${p.project_id}-${p.latitude}-${p.longitude}-${p.coordinate_precision ?? "unknown"}`}
                 center={[lat, lng]}
                 radius={radius}
                 pathOptions={{
@@ -733,6 +733,9 @@ export function MapPage() {
                   color: "#fff",
                   weight: 1.2,
                   opacity: 0.55,
+                }}
+                eventHandlers={{
+                  click: (e) => { e.target.openPopup(); },
                 }}
               >
                 <Popup minWidth={280} maxWidth={340} className="power-risk-popup">
