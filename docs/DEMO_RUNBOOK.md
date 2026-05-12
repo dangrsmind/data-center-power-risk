@@ -2,9 +2,12 @@
 
 This runbook creates a reproducible local demo from a clean SQLite database. The demo data is loaded from the committed CSV at `data/demo/demo_projects_v0_1.csv`; it does not scrape live sources at demo time.
 
-## Update The DB Schema
+## Prerequisites
 
-From the backend directory:
+- Python virtualenv created and activated under `backend/.venv`
+- Node.js / npm available for the frontend
+
+## 1. Update the DB Schema
 
 ```bash
 cd backend
@@ -12,15 +15,13 @@ source .venv/bin/activate
 DATABASE_URL=sqlite:///local.db alembic upgrade head
 ```
 
-## Load Demo Data
-
-From the backend directory:
+## 2. Load Demo Data
 
 ```bash
-python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_dataset.py --reset
 ```
 
-The loader upserts by `canonical_name` plus `state`. Running it repeatedly is safe and will not create duplicate projects. The `--reset` flag removes only demo-owned project rows for this dataset before reloading them.
+The loader upserts by `canonical_name` + `state`. Running it repeatedly is safe. `--reset` removes only demo-owned rows before reloading them.
 
 Expected summary fields:
 
@@ -30,15 +31,13 @@ Expected summary fields:
 - `rows_skipped`
 - `validation_errors`
 
-## Run Demo Predictions
-
-From the backend directory:
+## 3. Run Demo Predictions
 
 ```bash
 DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
 ```
 
-The runner scores demo-marked projects with `baseline_power_delay_v0_2` and stores one prediction row per project/model/version. Re-running it is safe; existing prediction rows are updated in place when the deterministic output changes.
+Scores demo-marked projects with `baseline_power_delay_v0_2` and stores one prediction row per project/model/version. Re-running is safe; existing rows are updated in place.
 
 Expected summary fields:
 
@@ -47,66 +46,70 @@ Expected summary fields:
 - `predictions_updated`
 - `errors`
 
-## Run Backend Healthcheck
-
-From the backend directory:
+## 4. Run Backend Healthcheck
 
 ```bash
 DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
 ```
 
-The healthcheck validates the demo database, project API service path, stored/computed predictions, coordinate metadata, and evidence endpoint behavior. It exits non-zero only when the summary includes errors.
+Validates the demo database, project API service path, stored/computed predictions, coordinate metadata, and evidence endpoint behavior. Exits non-zero only when the summary includes errors.
 
-## Start The Backend
+Expected output (all zeros for errors and warnings):
 
-From the backend directory:
-
-```bash
-uvicorn app.main:app --reload
+```json
+{
+  "errors": [],
+  "predictions_checked": 8,
+  "projects_checked": 8,
+  "projects_with_coordinates": 8,
+  "warnings": []
+}
 ```
 
-The API should be available at `http://127.0.0.1:8000`.
+## 5. Start the Backend
 
-## Verify Projects
+```bash
+DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
+```
 
-In another terminal:
+The API is available at `http://127.0.0.1:8000`.
+
+## 6. Start the Frontend
+
+In a separate terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open `http://localhost:5000/map`.
+
+## 7. Verify Projects
 
 ```bash
 curl http://127.0.0.1:8000/projects
 ```
 
-Confirm the response includes the demo projects:
+Confirm the response includes demo projects (e.g. `AVAIO Farmville`, `CleanArc VA1`). Both records should include `latitude`, `longitude`, and `coordinate_source`. Confirm `coordinate_source` values are **not** `manual_capture` or `starter_dataset` (legacy values) — they should be `manual_review` or `imported_dataset`.
 
-- `AVAIO Farmville`
-- `CleanArc VA1`
-
-Both records should include latitude, longitude, and coordinate metadata.
-
-## Verify Predictions
-
-Use any project ID from `/projects`:
+## 8. Verify Predictions
 
 ```bash
 curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/prediction
 ```
 
-Confirm the response uses `baseline_power_delay_v0_2`, includes `p_delay_6mo`, `p_delay_12mo`, `p_delay_18mo`, `risk_tier`, `confidence`, and human-readable `drivers`.
+Confirm the response uses `baseline_power_delay_v0_2` and includes `p_delay_6mo`, `p_delay_12mo`, `p_delay_18mo`, `risk_tier`, `confidence`, and human-readable `drivers`.
 
-## Start The Frontend
+## 9. Verify the Map
 
-From the frontend directory:
+Open `/map` in the frontend. Markers should be visible immediately (no toggle required). Click any marker without toggling any filter first. Confirm:
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open the Vite URL printed by `npm run dev`.
-
-## Verify The Map
-
-Open `/map` in the frontend. The map should show markers for demo projects with valid coordinates. Click each marker and confirm the popup shows project and coordinate metadata.
+- Popup opens on the first click
+- Prediction section appears with delay probabilities and drivers
+- "View project details →" link works
+- Evidence tab on the detail page loads without a backend 500
+- "Edit coordinates" opens the coordinate editor
 
 ## Rerun Safely
 
@@ -115,14 +118,9 @@ To reload the demo data after editing the curated CSV:
 ```bash
 cd backend
 source .venv/bin/activate
-python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
+DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
 ```
 
-To check idempotency without deleting demo rows first:
-
-```bash
-python scripts/load_demo_dataset.py
-python scripts/run_demo_predictions.py
-```
-
-The loader command should report skipped rows or updates, not newly duplicated projects. The prediction command should update existing stored predictions instead of creating duplicates.
+To check idempotency without deleting demo rows first, omit `--reset`. The loader should report skipped rows or updates, not newly duplicated projects.

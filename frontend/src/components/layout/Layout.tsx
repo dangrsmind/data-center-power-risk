@@ -66,7 +66,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           fontSize: 11,
           color: "var(--text-dim)",
         }}>
-          <div>v1 — mock data</div>
+          <div>Demo dataset</div>
           <div style={{ marginTop: 2 }}>as of 2026-Q1</div>
         </div>
       </aside>
