@@ -25,6 +25,7 @@ class DiscoveredSource(BaseModel):
     discovery_method: str
     content_hash: str | None = None
     confidence: DiscoveryConfidence
+    notes: str | None = None
 
 
 class ExtractedClaim(BaseModel):
@@ -58,5 +59,6 @@ class DiscoveryRunSummary(BaseModel):
     project_candidates_created: int = 0
     claims_extracted: int = 0
     quarantined_items: int = 0
+    output_path: str | None = None
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)

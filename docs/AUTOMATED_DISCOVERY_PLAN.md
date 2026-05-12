@@ -57,6 +57,14 @@ Initial registry categories:
 - `data_center_news`
 - `grid_context`
 
+## First Adapter: Virginia SCC
+
+Virginia SCC docket discovery is the first implemented adapter. In dry-run mode it plans searches for the registry terms `data center`, `large load`, `electric service agreement`, and `transmission interconnection` without fetching public pages.
+
+In non-dry-run mode the adapter only attempts to discover public source records. It does not create project records, extract project candidates, resolve entities, or infer facts. If the SCC public search or docket pages cannot be parsed reliably, the adapter returns warnings and no discovered source records rather than fabricating results.
+
+Extraction, claim parsing, entity resolution, coordinate enrichment, utility/ISO enrichment, confidence scoring, and publication remain later pipeline stages. The public discoverability rule remains unchanged: no source, no project.
+
 ## Generated Data Policy
 
 Generated discovery output is runtime data and is not committed:
