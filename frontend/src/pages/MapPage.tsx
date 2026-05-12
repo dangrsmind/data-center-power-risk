@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, Fragment } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, useMap } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
@@ -205,6 +205,9 @@ export function MapPage() {
   // Map initialization gate — markers must not mount until Leaflet is ready
   const [mapReady, setMapReady] = useState(false);
 
+  // Incremented once after mapReady + data arrive (see effect below, after onMap).
+  const [markerLayerVersion, setMarkerLayerVersion] = useState(0);
+
   // Layer toggles
   const [showStates, setShowStates] = useState(true);
   const [showApproximate, setShowApproximate] = useState(true);
@@ -289,6 +292,26 @@ export function MapPage() {
   const hiddenApproximateCount = filtered.filter(
     d => d.project.latitude != null && d.project.longitude != null && !shouldRenderCoordinate(d.project, showApproximate),
   ).length;
+
+  // Double-rAF remount: fires once when mapReady + markers are first available.
+  // Keying the marker Fragment on markerLayerVersion forces a full Leaflet layer
+  // remount after both the map SVG and the project data have settled, which
+  // ensures popup click binding works on the very first user click.
+  useEffect(() => {
+    if (!mapReady || onMap.length === 0) return;
+    let frame1: number | null = null;
+    let frame2: number | null = null;
+    frame1 = window.requestAnimationFrame(() => {
+      frame2 = window.requestAnimationFrame(() => {
+        setMarkerLayerVersion((v) => v + 1);
+      });
+    });
+    return () => {
+      if (frame1 !== null) window.cancelAnimationFrame(frame1);
+      if (frame2 !== null) window.cancelAnimationFrame(frame2);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, onMap.length > 0]);
 
   const applyUpdatedProject = useCallback((updated: ProjectDetail) => {
     setMapProjects(prev => prev.map(item => item.project.project_id !== updated.project_id ? item : {
@@ -713,8 +736,12 @@ export function MapPage() {
             />
           )}
 
-          {/* Project markers — rendered only after Leaflet map is fully ready */}
-          {mapReady && onMap.map((mp) => {
+          {/* Project markers — rendered only after Leaflet map is fully ready.
+              markerLayerVersion forces a full remount once after initial load
+              so Leaflet popup binding completes on a settled SVG layer. */}
+          {mapReady && (
+          <Fragment key={`project-marker-layer-${markerLayerVersion}`}>
+          {onMap.map((mp) => {
             const { project: p } = mp;
             const lat    = Number(p.latitude);
             const lng    = Number(p.longitude);
@@ -837,6 +864,8 @@ export function MapPage() {
               </CircleMarker>
             );
           })}
+          </Fragment>
+          )}
         </MapContainer>
         {editingProject && (
           <div style={{
