@@ -47,6 +47,16 @@ Expected summary fields:
 - `predictions_updated`
 - `errors`
 
+## Run Backend Healthcheck
+
+From the backend directory:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
+```
+
+The healthcheck validates the demo database, project API service path, stored/computed predictions, coordinate metadata, and evidence endpoint behavior. It exits non-zero only when the summary includes errors.
+
 ## Start The Backend
 
 From the backend directory:
