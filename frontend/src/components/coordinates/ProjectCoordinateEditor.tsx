@@ -44,6 +44,15 @@ const SOURCE_OPTIONS: CoordinateSource[] = [
   "other",
 ];
 
+const VALID_SOURCES = new Set<string>(SOURCE_OPTIONS);
+
+function sanitizeSource(raw: string | null | undefined): CoordinateSource {
+  if (raw && VALID_SOURCES.has(raw)) return raw as CoordinateSource;
+  if (raw && (raw.includes("dataset") || raw.includes("import"))) return "imported_dataset";
+  if (raw) return "other";
+  return "manual_review";
+}
+
 function label(value: string): string {
   return value.replace(/_/g, " ");
 }
@@ -72,7 +81,7 @@ export function ProjectCoordinateEditor({
   const [longitude, setLongitude] = useState(project.longitude != null ? String(project.longitude) : "");
   const [status, setStatus] = useState<CoordinateStatus>(project.coordinate_status ?? "verified");
   const [precision, setPrecision] = useState<CoordinatePrecision>(project.coordinate_precision ?? "exact_site");
-  const [source, setSource] = useState<CoordinateSource>(project.coordinate_source ?? "manual_review");
+  const [source, setSource] = useState<CoordinateSource>(sanitizeSource(project.coordinate_source));
   const [sourceUrl, setSourceUrl] = useState(project.coordinate_source_url ?? "");
   const [confidence, setConfidence] = useState(
     project.coordinate_confidence != null ? String(project.coordinate_confidence) : "0.8",

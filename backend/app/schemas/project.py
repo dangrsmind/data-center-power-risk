@@ -29,6 +29,11 @@ CoordinateSource = Literal[
     "other",
 ]
 
+_LEGACY_COORDINATE_SOURCE: dict[str, str] = {
+    "starter_dataset": "imported_dataset",
+    "manual_capture": "manual_review",
+}
+
 
 class ProjectCoordinateFields(BaseModel):
     latitude: float | None
@@ -111,6 +116,13 @@ class ProjectCoordinatesRequest(BaseModel):
     coordinate_notes: str | None = None
     coordinate_confidence: float | None = Field(default=None, ge=0, le=1)
     changed_by: str | None = "manual"
+
+    @field_validator("coordinate_source", mode="before")
+    @classmethod
+    def normalize_coordinate_source(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _LEGACY_COORDINATE_SOURCE.get(str(value), value)
 
     @field_validator("coordinate_source_url", "coordinate_notes", "changed_by", mode="before")
     @classmethod

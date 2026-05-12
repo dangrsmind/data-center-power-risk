@@ -1,11 +1,13 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, CircleMarker, Popup, GeoJSON, useMap } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import type { ProjectDetail, ProjectListItem } from "../api/types";
 import { getProjects, getProjectRiskSignal, getProjectEnrichment } from "../api/adapter";
 import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
+import { PredictionSummary } from "../components/shared/PredictionSummary";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +72,18 @@ function markerColor(mode: ColorMode, mp: MapProject): string {
     return SIGNAL_COLOR[mp.signalTier] ?? "#475569";
   }
   return MODEL_COLOR[mp.project.risk_tier] ?? MODEL_COLOR.unknown;
+}
+
+function createProjectIcon(color: string, mw: number): L.DivIcon {
+  const r    = markerRadius(mw);
+  const size = r * 2;
+  return L.divIcon({
+    className:   "project-marker-icon",
+    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid rgba(255,255,255,0.85);box-shadow:0 1px 6px rgba(0,0,0,0.45);"></div>`,
+    iconSize:    [size, size],
+    iconAnchor:  [r, r],
+    popupAnchor: [0, -r - 2],
+  });
 }
 
 function stateBoundaryStyle() {
@@ -179,6 +193,15 @@ function MapClickCapture({ enabled, onPick }: { enabled: boolean; onPick: (lat: 
   return null;
 }
 
+function MapReadySignal({ onReady }: { onReady: () => void }) {
+  const map = useMap();
+  useEffect(() => {
+    map.whenReady(onReady);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -192,9 +215,12 @@ export function MapPage() {
   const [stateGeoJSON, setStateGeoJSON] = useState<any | null>(null);
   const [geoError, setGeoError]       = useState(false);
 
+  // Map initialization gate — markers must not mount until Leaflet is ready
+  const [mapReady, setMapReady] = useState(false);
+
   // Layer toggles
   const [showStates, setShowStates] = useState(true);
-  const [showApproximate, setShowApproximate] = useState(false);
+  const [showApproximate, setShowApproximate] = useState(true);
 
   // Color mode
   const [colorMode, setColorMode] = useState<ColorMode>("evidence");
@@ -687,6 +713,7 @@ export function MapPage() {
               style={stateBoundaryStyle}
             />
           )}
+          <MapReadySignal onReady={() => setMapReady(true)} />
           <MapClickCapture
             enabled={pickMode}
             onPick={(latitude, longitude) => setPickedCoordinates({ latitude, longitude })}
@@ -699,29 +726,23 @@ export function MapPage() {
             />
           )}
 
-          {/* Project markers */}
-          {onMap.map((mp) => {
+          {/* Project markers — rendered only after Leaflet map is fully ready.
+              Using Marker + DivIcon instead of CircleMarker for reliable
+              popup binding on first click after fresh page load. */}
+          {mapReady && onMap.map((mp) => {
             const { project: p } = mp;
-            const lat    = Number(p.latitude);
-            const lng    = Number(p.longitude);
-            const color  = markerColor(colorMode, mp);
-            const radius = markerRadius(p.modeled_primary_load_mw);
-            const isLoading = colorMode === "evidence" && !mp.enriched;
+            const lat   = Number(p.latitude);
+            const lng   = Number(p.longitude);
+            const color = markerColor(colorMode, mp);
+            const icon  = createProjectIcon(color, p.modeled_primary_load_mw);
 
             return (
-              <CircleMarker
-                key={p.project_id}
-                center={[lat, lng]}
-                radius={radius}
-                pathOptions={{
-                  fillColor: color,
-                  fillOpacity: isLoading ? 0.4 : 0.82,
-                  color: "#fff",
-                  weight: 1.2,
-                  opacity: 0.55,
-                }}
+              <Marker
+                key={`project-${p.project_id}-${p.latitude}-${p.longitude}-${p.coordinate_precision ?? "unknown"}`}
+                position={[lat, lng]}
+                icon={icon}
               >
-                <Popup minWidth={248} maxWidth={300} className="power-risk-popup">
+                <Popup minWidth={280} maxWidth={340} className="power-risk-popup">
                   <div style={{
                     fontFamily: "system-ui, -apple-system, sans-serif",
                     color: "#e2e8f0", padding: "2px 0", minWidth: 240,
@@ -786,21 +807,24 @@ export function MapPage() {
                       </div>
                     </div>
 
+                    {/* Prediction section */}
+                    <PredictionSummary projectId={p.project_id} />
+
                     {/* Which tier is coloring this marker */}
                     <div style={{
-                      fontSize: 10, color: "#64748b", marginBottom: 8, fontStyle: "italic",
+                      fontSize: 10, color: "#64748b", margin: "8px 0", fontStyle: "italic",
                     }}>
                       Marker color: {colorMode === "evidence" ? "evidence signal tier" : "model risk tier"}
                     </div>
 
                     {/* Detail link */}
                     <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8, display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <a
-                        href={`/projects/${p.project_id}`}
+                      <Link
+                        to={`/projects/${p.project_id}`}
                         style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}
                       >
-                        Open project detail →
-                      </a>
+                        View project details →
+                      </Link>
                       <button
                         onClick={() => {
                           setEditingProject(p);
@@ -814,7 +838,7 @@ export function MapPage() {
                     </div>
                   </div>
                 </Popup>
-              </CircleMarker>
+              </Marker>
             );
           })}
         </MapContainer>

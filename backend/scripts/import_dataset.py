@@ -50,9 +50,18 @@ def deserialize_value(column: Any, value: Any) -> Any:
     return value
 
 
+_LEGACY_COORD_SOURCE: dict[str, str] = {
+    "starter_dataset": "imported_dataset",
+    "manual_capture": "manual_review",
+}
+
+
 def deserialize_row(model: Any, row: dict[str, Any]) -> dict[str, Any]:
     columns = model.__table__.columns
-    return {column.name: deserialize_value(column, row[column.name]) for column in columns if column.name in row}
+    result = {column.name: deserialize_value(column, row[column.name]) for column in columns if column.name in row}
+    if result.get("coordinate_source") in _LEGACY_COORD_SOURCE:
+        result["coordinate_source"] = _LEGACY_COORD_SOURCE[result["coordinate_source"]]
+    return result
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:

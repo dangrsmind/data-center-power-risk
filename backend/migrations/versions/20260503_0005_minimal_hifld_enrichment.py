@@ -24,8 +24,8 @@ def _uuid() -> sa.UUID:
 
 def _timestamps() -> list[sa.Column]:
     return [
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
     ]
 
 
@@ -46,7 +46,7 @@ def upgrade() -> None:
         "project_enrichment_snapshot",
         sa.Column("id", _uuid(), primary_key=True, nullable=False),
         sa.Column("project_id", _uuid(), sa.ForeignKey("projects.id"), nullable=False),
-        sa.Column("computed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column("computed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("retail_utility_name", sa.String(length=255), nullable=True),
         sa.Column("confidence", sa.String(length=32), nullable=True),
         sa.Column("source", sa.String(length=64), nullable=True),
