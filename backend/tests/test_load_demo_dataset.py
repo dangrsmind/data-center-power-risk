@@ -63,7 +63,7 @@ class DemoDatasetLoaderTest(unittest.TestCase):
             self.assertEqual(project.longitude, -78.2)
             self.assertEqual(project.coordinate_status, "unverified")
             self.assertEqual(project.coordinate_precision, "approximate")
-            self.assertEqual(project.coordinate_source, "manual_capture")
+            self.assertEqual(project.coordinate_source, "manual_review")
             self.assertEqual(project.coordinate_confidence, 0.6)
             self.assertEqual(project.candidate_metadata_json["demo_dataset_id"], "demo_projects_v0_1")
         finally:

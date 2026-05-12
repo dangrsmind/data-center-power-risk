@@ -30,6 +30,8 @@ LEGACY_COORDINATE_SOURCES = {"manual_capture", "starter_dataset"}
 class HealthcheckSummary:
     projects_checked: int = 0
     projects_with_coordinates: int = 0
+    projects_with_evidence: int = 0
+    evidence_checked: int = 0
     predictions_checked: int = 0
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -222,14 +224,33 @@ def run_healthcheck() -> HealthcheckSummary:
                 summary.errors.extend(validate_prediction_payload(prediction, label=label))
 
             project_service = ProjectService(db)
+            demo_project_ids = {project.id for project in demo_projects}
             for project in projects:
                 label = project_label(project)
                 try:
                     evidence_response = project_service.get_project_evidence(project.id)
                     if not isinstance(evidence_response.evidence, list):
                         summary.errors.append(f"{label}: evidence endpoint did not return a list payload")
+                        continue
+                    if project.id in demo_project_ids and evidence_response.evidence:
+                        summary.projects_with_evidence += 1
+                    for evidence in evidence_response.evidence:
+                        summary.evidence_checked += 1
+                        has_source_url = clean_text(getattr(evidence, "source_url", None)) is not None
+                        has_excerpt = clean_text(getattr(evidence, "excerpt", None)) is not None
+                        if not has_source_url and not has_excerpt:
+                            summary.errors.append(
+                                f"{label}: evidence {evidence.evidence_id} is missing both source_url and excerpt"
+                            )
                 except Exception as exc:
                     summary.errors.append(f"{label}: evidence endpoint failed: {exc}")
+
+            if demo_projects and summary.projects_with_evidence == 0:
+                summary.warnings.append("no demo projects have linked evidence records")
+            elif demo_projects and summary.projects_with_evidence < len(demo_projects):
+                summary.warnings.append(
+                    f"{len(demo_projects) - summary.projects_with_evidence} demo project(s) have no linked evidence records"
+                )
     except Exception as exc:
         summary.errors.append(f"database connection failed for {DATABASE_URL!r}: {exc}")
 

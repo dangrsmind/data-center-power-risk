@@ -1,6 +1,6 @@
 # Demo Runbook
 
-This runbook creates a reproducible local demo from a clean SQLite database. The demo data is loaded from the committed CSV at `data/demo/demo_projects_v0_1.csv`; it does not scrape live sources at demo time.
+This runbook creates a reproducible local demo from a clean SQLite database. The demo data is loaded from committed CSVs under `data/demo/`; it does not scrape live sources at demo time.
 
 ## Prerequisites
 
@@ -31,7 +31,23 @@ Expected summary fields:
 - `rows_skipped`
 - `validation_errors`
 
-## 3. Run Demo Predictions
+## 3. Load Demo Evidence
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_evidence.py
+```
+
+Loads curated source-backed evidence from `data/demo/demo_evidence_v0_1.csv` and links it to demo projects for the Project Detail Evidence tab. Re-running is safe; existing evidence and claim links are updated in place.
+
+Expected summary fields:
+
+- `rows_read`
+- `evidence_created`
+- `evidence_updated`
+- `rows_skipped`
+- `validation_errors`
+
+## 4. Run Demo Predictions
 
 ```bash
 DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
@@ -46,7 +62,7 @@ Expected summary fields:
 - `predictions_updated`
 - `errors`
 
-## 4. Run Backend Healthcheck
+## 5. Run Backend Healthcheck
 
 ```bash
 DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
@@ -59,14 +75,16 @@ Expected output (all zeros for errors and warnings):
 ```json
 {
   "errors": [],
+  "evidence_checked": 2,
   "predictions_checked": 8,
   "projects_checked": 8,
   "projects_with_coordinates": 8,
+  "projects_with_evidence": 2,
   "warnings": []
 }
 ```
 
-## 5. Start the Backend
+## 6. Start the Backend
 
 ```bash
 DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
@@ -74,7 +92,7 @@ DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
 
 The API is available at `http://127.0.0.1:8000`.
 
-## 6. Start the Frontend
+## 7. Start the Frontend
 
 In a separate terminal:
 
@@ -85,7 +103,7 @@ npm run dev
 
 Open `http://localhost:5000/map`.
 
-## 7. Verify Projects
+## 8. Verify Projects
 
 ```bash
 curl http://127.0.0.1:8000/projects
@@ -93,7 +111,7 @@ curl http://127.0.0.1:8000/projects
 
 Confirm the response includes demo projects (e.g. `AVAIO Farmville`, `CleanArc VA1`). Both records should include `latitude`, `longitude`, and `coordinate_source`. Confirm `coordinate_source` values are **not** `manual_capture` or `starter_dataset` (legacy values) — they should be `manual_review` or `imported_dataset`.
 
-## 8. Verify Predictions
+## 9. Verify Predictions
 
 ```bash
 curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/prediction
@@ -101,7 +119,15 @@ curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/prediction
 
 Confirm the response uses `baseline_power_delay_v0_2` and includes `p_delay_6mo`, `p_delay_12mo`, `p_delay_18mo`, `risk_tier`, `confidence`, and human-readable `drivers`.
 
-## 9. Verify the Map
+## 10. Verify Evidence
+
+```bash
+curl http://127.0.0.1:8000/projects/<PROJECT_UUID>/evidence
+```
+
+Confirm the response is HTTP 200 and includes an `evidence` list. Demo evidence rows should include a source URL or excerpt and accepted field names.
+
+## 11. Verify the Map
 
 Open `/map` in the frontend. Markers should be visible immediately (no toggle required). Click any marker without toggling any filter first. Confirm:
 
@@ -119,6 +145,7 @@ To reload the demo data after editing the curated CSV:
 cd backend
 source .venv/bin/activate
 DATABASE_URL=sqlite:///local.db python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_evidence.py
 DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
 DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
 ```
