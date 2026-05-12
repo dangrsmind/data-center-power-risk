@@ -1,3 +1,9 @@
+/* Leaflet DivIcon wrapper — reset default white-box styling */
+.project-marker-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;

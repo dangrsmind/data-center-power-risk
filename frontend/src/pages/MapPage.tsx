@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo, useCallback, Fragment } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, useMap } from "react-leaflet";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { MapContainer, TileLayer, Marker, CircleMarker, Popup, GeoJSON, useMap } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import type { ProjectDetail, ProjectListItem } from "../api/types";
 import { getProjects, getProjectRiskSignal, getProjectEnrichment } from "../api/adapter";
 import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
@@ -71,6 +72,18 @@ function markerColor(mode: ColorMode, mp: MapProject): string {
     return SIGNAL_COLOR[mp.signalTier] ?? "#475569";
   }
   return MODEL_COLOR[mp.project.risk_tier] ?? MODEL_COLOR.unknown;
+}
+
+function createProjectIcon(color: string, mw: number): L.DivIcon {
+  const r    = markerRadius(mw);
+  const size = r * 2;
+  return L.divIcon({
+    className:   "project-marker-icon",
+    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid rgba(255,255,255,0.85);box-shadow:0 1px 6px rgba(0,0,0,0.45);"></div>`,
+    iconSize:    [size, size],
+    iconAnchor:  [r, r],
+    popupAnchor: [0, -r - 2],
+  });
 }
 
 function stateBoundaryStyle() {
@@ -205,9 +218,6 @@ export function MapPage() {
   // Map initialization gate — markers must not mount until Leaflet is ready
   const [mapReady, setMapReady] = useState(false);
 
-  // Incremented once after mapReady + data arrive (see effect below, after onMap).
-  const [markerLayerVersion, setMarkerLayerVersion] = useState(0);
-
   // Layer toggles
   const [showStates, setShowStates] = useState(true);
   const [showApproximate, setShowApproximate] = useState(true);
@@ -292,26 +302,6 @@ export function MapPage() {
   const hiddenApproximateCount = filtered.filter(
     d => d.project.latitude != null && d.project.longitude != null && !shouldRenderCoordinate(d.project, showApproximate),
   ).length;
-
-  // Double-rAF remount: fires once when mapReady + markers are first available.
-  // Keying the marker Fragment on markerLayerVersion forces a full Leaflet layer
-  // remount after both the map SVG and the project data have settled, which
-  // ensures popup click binding works on the very first user click.
-  useEffect(() => {
-    if (!mapReady || onMap.length === 0) return;
-    let frame1: number | null = null;
-    let frame2: number | null = null;
-    frame1 = window.requestAnimationFrame(() => {
-      frame2 = window.requestAnimationFrame(() => {
-        setMarkerLayerVersion((v) => v + 1);
-      });
-    });
-    return () => {
-      if (frame1 !== null) window.cancelAnimationFrame(frame1);
-      if (frame2 !== null) window.cancelAnimationFrame(frame2);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, onMap.length > 0]);
 
   const applyUpdatedProject = useCallback((updated: ProjectDetail) => {
     setMapProjects(prev => prev.map(item => item.project.project_id !== updated.project_id ? item : {
@@ -737,33 +727,20 @@ export function MapPage() {
           )}
 
           {/* Project markers — rendered only after Leaflet map is fully ready.
-              markerLayerVersion forces a full remount once after initial load
-              so Leaflet popup binding completes on a settled SVG layer. */}
-          {mapReady && (
-          <Fragment key={`project-marker-layer-${markerLayerVersion}`}>
-          {onMap.map((mp) => {
+              Using Marker + DivIcon instead of CircleMarker for reliable
+              popup binding on first click after fresh page load. */}
+          {mapReady && onMap.map((mp) => {
             const { project: p } = mp;
-            const lat    = Number(p.latitude);
-            const lng    = Number(p.longitude);
-            const color  = markerColor(colorMode, mp);
-            const radius = markerRadius(p.modeled_primary_load_mw);
-            const isLoading = colorMode === "evidence" && !mp.enriched;
+            const lat   = Number(p.latitude);
+            const lng   = Number(p.longitude);
+            const color = markerColor(colorMode, mp);
+            const icon  = createProjectIcon(color, p.modeled_primary_load_mw);
 
             return (
-              <CircleMarker
+              <Marker
                 key={`project-${p.project_id}-${p.latitude}-${p.longitude}-${p.coordinate_precision ?? "unknown"}`}
-                center={[lat, lng]}
-                radius={radius}
-                pathOptions={{
-                  fillColor: color,
-                  fillOpacity: isLoading ? 0.4 : 0.82,
-                  color: "#fff",
-                  weight: 1.2,
-                  opacity: 0.55,
-                }}
-                eventHandlers={{
-                  click: (e) => { e.target.openPopup(); },
-                }}
+                position={[lat, lng]}
+                icon={icon}
               >
                 <Popup minWidth={280} maxWidth={340} className="power-risk-popup">
                   <div style={{
@@ -861,11 +838,9 @@ export function MapPage() {
                     </div>
                   </div>
                 </Popup>
-              </CircleMarker>
+              </Marker>
             );
           })}
-          </Fragment>
-          )}
         </MapContainer>
         {editingProject && (
           <div style={{
