@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 const NAV = [
   { path: "/",         label: "Projects", icon: "▤" },
   { path: "/map",      label: "Map",      icon: "◎" },
+  { path: "/coordinates", label: "Coordinates", icon: "⌖" },
   { path: "/discover", label: "Discover", icon: "⊘" },
   { path: "/ingest",   label: "Ingest",   icon: "⊕" },
 ];
@@ -65,7 +66,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           fontSize: 11,
           color: "var(--text-dim)",
         }}>
-          <div>v1 — mock data</div>
+          <div>Demo dataset</div>
           <div style={{ marginTop: 2 }}>as of 2026-Q1</div>
         </div>
       </aside>

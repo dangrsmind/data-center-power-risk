@@ -1,0 +1,188 @@
+We are continuing the data-center-power-risk project.
+
+Current branch:
+demo-real-data-v0
+
+Latest known commit:
+a288a50
+
+Current working demo status:
+- Demo data loader works.
+- Demo prediction runner works.
+- /projects returns demo projects.
+- /map shows markers.
+- Marker popup shows prediction results and drivers.
+- Coordinate editing works.
+
+Goal:
+Add a simple project detail page that makes the demo more credible by showing evidence, project metadata, coordinate metadata, and prediction details in one place.
+
+Do not redesign the app.
+Do not merge to main.
+Make the smallest useful implementation.
+
+Start by syncing/checking:
+
+git branch --show-current
+git rev-parse --short HEAD
+git status --short
+
+Expected branch:
+demo-real-data-v0
+
+Expected commit:
+a288a50 or newer
+
+Then run backend:
+
+cd backend
+source .venv/bin/activate
+DATABASE_URL=sqlite:///local.db alembic upgrade head
+DATABASE_URL=sqlite:///local.db python scripts/load_demo_dataset.py --reset
+DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py
+DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
+
+Then run frontend:
+
+cd frontend
+npm run dev
+
+Frontend:
+http://localhost:5000/map
+
+Task:
+
+1. Inspect existing frontend routing.
+   Determine whether React Router or another route system is already used.
+
+2. Add a project detail route:
+
+/projects/:projectId
+
+3. Add links to the detail page from map marker popup.
+
+In the map marker popup, add a visible link/button:
+
+View project details
+
+It should navigate to:
+
+/projects/<project_id>
+
+Use the project ID already used for prediction calls.
+
+4. Create a simple ProjectDetail page.
+
+The page should fetch:
+
+GET /projects
+
+Then find the project by ID, unless a better existing endpoint already exists.
+
+Also fetch:
+
+GET /projects/{project_id}/prediction
+
+If a backend project-detail endpoint already exists, use it instead.
+
+5. The ProjectDetail page should show these sections:
+
+A. Project summary
+- canonical_name
+- developer
+- lifecycle_state
+- project type, if available
+- state
+- county
+- city, if available
+- utility, if available
+- iso_region, if available
+- load_mw or load_bucket, if available
+
+B. Evidence
+Show available evidence fields from the project record:
+- source_url
+- source_title
+- source_type
+- evidence_excerpt
+
+If these fields are blank, show:
+"No evidence excerpt available in demo dataset."
+
+If source_url exists, render it as an external link.
+
+C. Coordinate metadata
+- latitude
+- longitude
+- coordinate_status
+- coordinate_precision
+- coordinate_source
+- coordinate_confidence
+- coordinate_notes, if available
+
+Also include an Edit coordinates button if the coordinate editor can be reused safely.
+If reuse is too large, leave edit on the map for now.
+
+D. Prediction
+Show:
+- model name/version
+- risk_tier
+- p_delay_6mo
+- p_delay_12mo
+- p_delay_18mo
+- confidence
+- drivers
+
+Include the label:
+"Deterministic baseline — not yet statistically calibrated"
+
+6. Add basic loading and error states.
+
+7. Preserve existing behavior:
+- /map still loads
+- markers still render
+- marker popup prediction still works
+- coordinate editing still works
+- no coordinate_source 422 regression
+
+8. Keep styling simple and consistent with the existing app.
+
+Acceptance criteria:
+- Open /map.
+- Click a project marker.
+- Click "View project details".
+- Project detail page opens.
+- It shows project metadata.
+- It shows evidence/source fields if available.
+- It shows coordinate metadata.
+- It shows prediction results and drivers.
+- Browser back button returns to map.
+- Existing map popup prediction still works.
+- Coordinate editing still works.
+
+Before committing, run:
+
+git status --short
+
+Do not commit:
+- local.db
+- node_modules
+- runtime CSV files
+- runtime JSON files
+- geocoding caches
+- backend/data/exports
+- attached_assets
+
+Commit message:
+Add project detail evidence page
+
+Push to:
+demo-real-data-v0
+
+Report back:
+- final commit hash
+- files changed
+- whether /projects/:projectId works
+- whether map links work
+- whether prediction and evidence sections display
+- anything incomplete

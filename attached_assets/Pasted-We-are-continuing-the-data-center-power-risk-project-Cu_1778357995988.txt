@@ -1,0 +1,76 @@
+We are continuing the data-center-power-risk project.
+
+Current branch:
+demo-real-data-v0
+
+Current status:
+- Map works.
+- Prediction popup works.
+- Project detail page exists.
+- Map popup links to project detail page.
+- Project detail page renders project metadata, coordinates, prediction, and tabs.
+- But backend logs show the evidence endpoint fails because evidence.reviewed_at is missing from the database/schema.
+
+Goal:
+Fix the evidence endpoint/schema gap so the Evidence tab works cleanly for the demo.
+
+Observed issue:
+GET /projects/{project_id}/evidence returns 500 or logs an error involving missing column:
+evidence.reviewed_at
+
+Task:
+Inspect the backend evidence model, schema, migration history, and evidence endpoint.
+
+Determine whether:
+1. The SQLAlchemy Evidence model expects reviewed_at but the database migration never added it.
+2. The Pydantic/API schema expects reviewed_at but the table does not have it.
+3. The query references reviewed_at incorrectly.
+4. The demo DB simply needs a migration.
+
+Implement the smallest correct fix.
+
+Preferred fix:
+- If reviewed_at is intended, add an Alembic migration adding reviewed_at as nullable DateTime to the evidence table.
+- If reviewed_at is not needed, remove it from the query/schema/model consistently.
+- Do not silently hide backend errors unless the endpoint can still return useful evidence data.
+
+Also check for similar missing evidence columns:
+- reviewed_by
+- review_status
+- created_at
+- updated_at
+- source_url
+- evidence_excerpt
+- project_id
+
+Acceptance criteria:
+- DATABASE_URL=sqlite:///local.db alembic upgrade head succeeds.
+- GET /projects/{project_id}/evidence returns 200, not 500.
+- If no evidence exists, endpoint returns an empty list or useful empty response.
+- Project detail Evidence tab does not trigger backend 500.
+- Existing project detail, map markers, predictions, and coordinate editing still work.
+- No runtime files committed.
+
+Before committing:
+git status --short
+
+Do not commit:
+- local.db
+- node_modules
+- runtime CSV/JSON files
+- geocoding caches
+- backend/data/exports
+- attached_assets
+
+Commit message:
+Fix project evidence endpoint schema
+
+Push to:
+demo-real-data-v0
+
+Report:
+- final commit hash
+- files changed
+- migration revision if added
+- whether /projects/{id}/evidence now returns 200
+- anything still incomplete

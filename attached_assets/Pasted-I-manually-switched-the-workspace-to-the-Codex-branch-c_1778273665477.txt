@@ -1,0 +1,136 @@
+I manually switched the workspace to the Codex branch:
+
+codex-coordinate-capture-correction
+
+Current commit:
+
+5cfba9a
+
+Please verify with:
+
+git branch --show-current
+git rev-parse --short HEAD
+
+Now debug the current issue.
+
+Observed:
+- /map loads
+- no project markers appear
+- coordinate edit features are not visible
+
+But backend data exists. GET /projects returns:
+
+[
+  {
+    "id": "b12eefac-7c77-42df-8444-6d1c06ed801d",
+    "canonical_name": "AVAIO Farmville",
+    "developer": "AVAIO Digital",
+    "state": "VA",
+    "county": "Prince Edward",
+    "latitude": 37.3021,
+    "longitude": -78.3919,
+    "coordinate_status": "unverified",
+    "lifecycle_state": "candidate_unverified",
+    "phase_count": 0,
+    "current_hazard": 0.0655,
+    "deadline_probability": 0.2464,
+    "risk_tier": "low"
+  },
+  {
+    "id": "37515520-bd3f-48bc-83e8-35cc5aa44cfb",
+    "canonical_name": "CleanArc VA1",
+    "developer": "CleanArc Data Centers",
+    "state": "VA",
+    "county": "Caroline",
+    "latitude": 38.03,
+    "longitude": -77.35,
+    "coordinate_status": "unverified",
+    "lifecycle_state": "candidate_unverified",
+    "phase_count": 0,
+    "current_hazard": 0.0655,
+    "deadline_probability": 0.2464,
+    "risk_tier": "low"
+  }
+]
+
+Likely issue:
+The frontend map is expecting a different data shape, such as:
+- name instead of canonical_name
+- lat instead of latitude
+- lng/lon instead of longitude
+- risk instead of risk_tier
+
+Task:
+Inspect the frontend map code and fix the smallest issue so /map renders markers from the actual backend response.
+
+Specific requirements:
+1. Confirm what endpoint the map calls.
+2. Confirm the frontend receives the project records.
+3. Use these fields:
+   - project.id
+   - project.canonical_name
+   - project.developer
+   - project.state
+   - project.county
+   - project.latitude
+   - project.longitude
+   - project.coordinate_status
+   - project.risk_tier
+   - project.deadline_probability
+4. Convert coordinates before passing to Leaflet:
+   const lat = Number(project.latitude)
+   const lng = Number(project.longitude)
+5. Render marker only when:
+   - project.latitude is not null
+   - project.longitude is not null
+   - Number.isFinite(lat)
+   - Number.isFinite(lng)
+6. Do not filter out coordinates just because coordinate_status is "unverified".
+7. Marker popup should show:
+   - canonical_name
+   - developer
+   - county/state
+   - risk_tier
+   - deadline_probability
+   - coordinate_status
+   - latitude/longitude
+8. Marker popup should include an Edit coordinates button.
+9. If editing is only reachable from marker popups, add a visible fallback entry point for projects without markers:
+   - either a /coordinates route
+   - or a Coordinate Review panel on /map using GET /projects/missing-coordinates.
+
+Acceptance criteria:
+- AVAIO Farmville appears near 37.3021, -78.3919.
+- CleanArc VA1 appears near 38.03, -77.35.
+- Clicking a marker opens a popup.
+- Popup shows project and coordinate metadata.
+- Popup includes Edit coordinates.
+- Saving edited coordinates moves the marker.
+- Do not redesign the feature.
+- Do not merge to main.
+- Commit fixes to the same branch only.
+
+Before committing:
+git status --short
+
+Do not commit:
+- local.db
+- node_modules
+- runtime CSV files
+- runtime JSON files
+- geocoding caches
+- backend/data/exports/20260508/
+
+Commit message:
+Fix map rendering for coordinate workflow
+
+Then:
+git pull --rebase origin codex-coordinate-capture-correction
+git push origin codex-coordinate-capture-correction
+
+Report:
+- final commit hash
+- files changed
+- whether markers now appear
+- whether coordinate editing works
+- anything still incomplete

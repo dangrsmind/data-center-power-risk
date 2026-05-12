@@ -3,44 +3,34 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import ClaimEntityType, ClaimReviewStatus, ClaimType
-from app.models.enrichment import ProjectEnrichmentSnapshot
-from app.models.evidence import Claim
-from app.models.project import Phase, Project
+from app.models.prediction import ProjectPrediction
+from app.models.project import Project
 from app.schemas.analyst import PredictionDriver, ProjectPredictionResponse
-from app.services.risk_signal_service import RiskSignalService
 
 
-MODEL_VERSION = "baseline_power_delay_v0"
+MODEL_NAME = "baseline_power_delay"
+MODEL_VERSION = "baseline_power_delay_v0_2"
 PREDICTION_TYPE = "power_delivery_delay"
-POWER_PATH_CLAIM_TYPES = {
-    ClaimType.POWER_PATH_IDENTIFIED_FLAG,
-    ClaimType.NEW_SUBSTATION_REQUIRED_FLAG,
-    ClaimType.NEW_TRANSMISSION_REQUIRED_FLAG,
-}
 
 
 @dataclass
-class AcceptedInputs:
+class PredictionInputs:
     project: Project
-    accepted_claims: list[Claim]
-    phase_ids: list[uuid.UUID]
-    modeled_load_mw: float | None
-    target_energization_date: date | None
-    has_accepted_utility: bool
-    has_accepted_region: bool
-    has_power_path_support: bool
-    has_substation_or_interconnection_detail: bool
-    has_new_substation_or_transmission_required: bool
-    has_regional_large_load_stress: bool
-    reviewed_evidence_count: int
-    evidence_count: int
-    enrichment: ProjectEnrichmentSnapshot | None
+    load_mw: float | None
+    load_bucket: str | None
+    utility: str | None
+    iso_region: str | None
+    expected_online_date: date | None
+    source_url: str | None
+    source_title: str | None
+    source_type: str | None
+    evidence_excerpt: str | None
 
 
 class PredictionService:
@@ -52,215 +42,258 @@ class PredictionService:
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
 
+        stored = self.get_stored_prediction(project_id)
+        if stored is not None:
+            return self._response_from_stored(stored)
+        return self.compute_project_prediction(project)
+
+    def get_stored_prediction(self, project_id: uuid.UUID) -> ProjectPrediction | None:
+        return self.db.scalar(
+            select(ProjectPrediction)
+            .where(
+                ProjectPrediction.project_id == project_id,
+                ProjectPrediction.model_name == MODEL_NAME,
+                ProjectPrediction.model_version == MODEL_VERSION,
+            )
+            .order_by(ProjectPrediction.created_at.desc())
+        )
+
+    def upsert_project_prediction(self, project: Project) -> tuple[ProjectPrediction, str]:
+        response = self.compute_project_prediction(project)
+        stored = self.get_stored_prediction(project.id)
+        drivers_json = [driver.model_dump() for driver in response.drivers]
+
+        if stored is None:
+            stored = ProjectPrediction(
+                project_id=project.id,
+                model_name=response.model_name,
+                model_version=response.model_version,
+                p_delay_6mo=response.p_delay_6mo,
+                p_delay_12mo=response.p_delay_12mo,
+                p_delay_18mo=response.p_delay_18mo,
+                risk_tier=response.risk_tier,
+                confidence=response.confidence,
+                drivers_json=drivers_json,
+            )
+            self.db.add(stored)
+            self.db.flush()
+            return stored, "created"
+
+        changed = False
+        for attr, value in [
+            ("p_delay_6mo", response.p_delay_6mo),
+            ("p_delay_12mo", response.p_delay_12mo),
+            ("p_delay_18mo", response.p_delay_18mo),
+            ("risk_tier", response.risk_tier),
+            ("confidence", response.confidence),
+            ("drivers_json", drivers_json),
+        ]:
+            if getattr(stored, attr) != value:
+                setattr(stored, attr, value)
+                changed = True
+
+        if changed:
+            self.db.flush()
+            return stored, "updated"
+        return stored, "skipped"
+
+    def compute_project_prediction(self, project: Project) -> ProjectPredictionResponse:
         inputs = self._build_inputs(project)
-        risk_signal = RiskSignalService(self.db).get_project_risk_signal(project_id)
-        score, drivers, missing_inputs = self._score(inputs, risk_signal.risk_signal_tier, risk_signal.risk_signal_score)
-        p6 = self._clamp(score * 0.55)
-        p12 = self._clamp(score * 0.80)
-        p18 = self._clamp(score)
+        score, drivers, missing_inputs = self._score(inputs)
+        p6 = round(self._clamp(score * 0.58), 3)
+        p12 = round(self._clamp(score * 0.82), 3)
+        p18 = round(self._clamp(score), 3)
+        p6, p12, p18 = sorted([p6, p12, p18])
 
         return ProjectPredictionResponse(
+            model_name=MODEL_NAME,
             model_version=MODEL_VERSION,
             prediction_type=PREDICTION_TYPE,
-            p_delay_6mo=round(p6, 3),
-            p_delay_12mo=round(p12, 3),
-            p_delay_18mo=round(p18, 3),
+            p_delay_6mo=p6,
+            p_delay_12mo=p12,
+            p_delay_18mo=p18,
             risk_tier=self._tier(p18),
+            confidence=self._confidence(missing_inputs),
             drivers=drivers,
             missing_inputs=missing_inputs,
-            confidence=self._confidence(inputs, missing_inputs),
-            method_note="This is a deterministic baseline, not a trained ML model.",
+            method_note="This is a deterministic demo baseline using project fields and curated metadata; it is not a trained ML model.",
         )
 
-    def _build_inputs(self, project: Project) -> AcceptedInputs:
-        phases = list(self.db.execute(select(Phase).where(Phase.project_id == project.id)).scalars().all())
-        phase_ids = [phase.id for phase in phases]
-        accepted_claims = self._accepted_project_claims(project.id, phase_ids)
-        evidence_ids = {claim.evidence_id for claim in accepted_claims if claim.evidence_id is not None}
-
-        modeled_load_mw = self._accepted_modeled_load(accepted_claims)
-        target_energization_date = self._accepted_target_date(accepted_claims)
-        has_accepted_utility = any(claim.claim_type == ClaimType.UTILITY_NAMED for claim in accepted_claims)
-        has_accepted_region = any(claim.claim_type == ClaimType.REGION_OR_RTO_NAMED for claim in accepted_claims)
-        has_power_path_support = any(
-            claim.claim_type == ClaimType.POWER_PATH_IDENTIFIED_FLAG and self._claim_bool(claim) is True
-            for claim in accepted_claims
-        )
-        has_substation_or_interconnection_detail = any(
-            claim.claim_type in POWER_PATH_CLAIM_TYPES and self._claim_bool(claim) is True
-            for claim in accepted_claims
-        )
-        has_new_substation_or_transmission_required = any(
-            claim.claim_type in {ClaimType.NEW_SUBSTATION_REQUIRED_FLAG, ClaimType.NEW_TRANSMISSION_REQUIRED_FLAG}
-            and self._claim_bool(claim) is True
-            for claim in accepted_claims
-        )
-        has_regional_large_load_stress = any(
-            claim.claim_type == ClaimType.EVENT_SUPPORT_E3
-            or (
-                claim.claim_type == ClaimType.TIMELINE_DISRUPTION_SIGNAL
-                and "large_load" in str(claim.claim_value_json or {}).lower()
-            )
-            for claim in accepted_claims
-        )
-        enrichment = self.db.scalar(
-            select(ProjectEnrichmentSnapshot)
-            .where(ProjectEnrichmentSnapshot.project_id == project.id)
-            .order_by(ProjectEnrichmentSnapshot.computed_at.desc())
-        )
-
-        return AcceptedInputs(
+    def _build_inputs(self, project: Project) -> PredictionInputs:
+        metadata = project.candidate_metadata_json if isinstance(project.candidate_metadata_json, dict) else {}
+        return PredictionInputs(
             project=project,
-            accepted_claims=accepted_claims,
-            phase_ids=phase_ids,
-            modeled_load_mw=modeled_load_mw,
-            target_energization_date=target_energization_date,
-            has_accepted_utility=has_accepted_utility,
-            has_accepted_region=has_accepted_region,
-            has_power_path_support=has_power_path_support,
-            has_substation_or_interconnection_detail=has_substation_or_interconnection_detail,
-            has_new_substation_or_transmission_required=has_new_substation_or_transmission_required,
-            has_regional_large_load_stress=has_regional_large_load_stress,
-            reviewed_evidence_count=len(evidence_ids),
-            evidence_count=len(evidence_ids),
-            enrichment=enrichment,
+            load_mw=self._metadata_float(metadata, "load_mw"),
+            load_bucket=self._metadata_string(metadata, "load_bucket"),
+            utility=self._metadata_string(metadata, "utility"),
+            iso_region=self._metadata_string(metadata, "iso_region"),
+            expected_online_date=self._metadata_date(metadata, "expected_online_date"),
+            source_url=self._metadata_string(metadata, "source_url"),
+            source_title=self._metadata_string(metadata, "source_title"),
+            source_type=self._metadata_string(metadata, "source_type"),
+            evidence_excerpt=self._metadata_string(metadata, "evidence_excerpt"),
         )
 
-    def _accepted_project_claims(self, project_id: uuid.UUID, phase_ids: list[uuid.UUID]) -> list[Claim]:
-        filters = [and_(Claim.entity_type == ClaimEntityType.PROJECT, Claim.entity_id == project_id)]
-        if phase_ids:
-            filters.append(and_(Claim.entity_type == ClaimEntityType.PHASE, Claim.entity_id.in_(phase_ids)))
-        stmt = (
-            select(Claim)
-            .where(or_(*filters), Claim.review_status == ClaimReviewStatus.ACCEPTED)
-            .order_by(Claim.created_at.asc())
-        )
-        return list(self.db.execute(stmt).scalars().all())
-
-    def _score(self, inputs: AcceptedInputs, risk_tier: str, risk_score: float) -> tuple[float, list[PredictionDriver], list[str]]:
-        score = 0.12
+    def _score(self, inputs: PredictionInputs) -> tuple[float, list[PredictionDriver], list[str]]:
+        score = 0.14
         drivers = [
-            PredictionDriver(
-                driver="baseline prior",
-                direction="unknown",
-                weight=0.12,
-                evidence="Fixed prior for an evidence-backed deterministic baseline; not learned from data.",
+            self._driver(
+                "Deterministic demo prior",
+                "increases",
+                0.14,
+                "Fixed transparent prior for the reproducible demo path.",
             )
         ]
-        missing_inputs = self._missing_inputs(inputs)
+        missing_inputs: list[str] = []
 
-        if inputs.modeled_load_mw is not None:
-            if inputs.modeled_load_mw > 800:
-                score += 0.28
-                drivers.append(self._driver("accepted load > 800 MW", "increases", 0.28, f"Accepted modeled load is {inputs.modeled_load_mw:g} MW."))
-            elif inputs.modeled_load_mw > 300:
-                score += 0.16
-                drivers.append(self._driver("accepted load > 300 MW", "increases", 0.16, f"Accepted modeled load is {inputs.modeled_load_mw:g} MW."))
+        if inputs.load_mw is None:
+            missing_inputs.append("load_mw")
+            drivers.append(self._missing_driver("Load size unknown"))
+        elif inputs.load_mw >= 800:
+            score += 0.24
+            drivers.append(self._driver("Large load size", "increases", 0.24, f"Curated load is {inputs.load_mw:g} MW."))
+        elif inputs.load_mw >= 300:
+            score += 0.14
+            drivers.append(self._driver("Moderate load size", "increases", 0.14, f"Curated load is {inputs.load_mw:g} MW."))
+        elif inputs.load_mw > 0:
+            score += 0.06
+            drivers.append(self._driver("Known load size", "increases", 0.06, f"Curated load is {inputs.load_mw:g} MW."))
 
-        if inputs.target_energization_date is not None:
-            months = self._months_to_target(inputs.target_energization_date)
-            if months is not None and months < 24 and not inputs.has_power_path_support:
-                score += 0.18
+        if not inputs.load_bucket:
+            missing_inputs.append("load_bucket")
+        elif "900" in inputs.load_bucket or "800" in inputs.load_bucket or "large" in inputs.load_bucket.lower():
+            score += 0.04
+            drivers.append(self._driver("Large load bucket", "increases", 0.04, f"Load bucket is {inputs.load_bucket}."))
+
+        if not inputs.utility:
+            missing_inputs.append("utility")
+            drivers.append(self._missing_driver("Utility not confirmed"))
+        else:
+            drivers.append(self._driver("Utility confirmed", "decreases", -0.03, f"Utility is {inputs.utility}."))
+            score -= 0.03
+
+        if not inputs.iso_region:
+            missing_inputs.append("iso_region")
+            drivers.append(self._missing_driver("ISO/RTO region not confirmed"))
+        else:
+            drivers.append(self._driver("ISO/RTO region available", "decreases", -0.02, f"Region is {inputs.iso_region}."))
+            score -= 0.02
+
+        lifecycle_state = self._enum_value(inputs.project.lifecycle_state)
+        if lifecycle_state == "candidate_unverified":
+            score += 0.08
+            drivers.append(self._driver("Lifecycle state is candidate_unverified", "increases", 0.08, "Early candidate records have less resolved power-path evidence."))
+        elif lifecycle_state in {"monitoring_ready", "production_ready"}:
+            score -= 0.05
+            drivers.append(self._driver("Lifecycle state is mature", "decreases", -0.05, f"Lifecycle state is {lifecycle_state}."))
+
+        coordinate_status = inputs.project.coordinate_status
+        if not coordinate_status:
+            missing_inputs.append("coordinate_status")
+            drivers.append(self._missing_driver("Coordinate status unknown"))
+        elif coordinate_status == "verified":
+            score -= 0.03
+            drivers.append(self._driver("Coordinate status is verified", "decreases", -0.03, "Verified coordinates reduce siting uncertainty."))
+        elif coordinate_status == "unverified":
+            score += 0.04
+            drivers.append(self._driver("Coordinate status is unverified", "increases", 0.04, "Unverified coordinates keep site-level power-path uncertainty open."))
+        elif coordinate_status in {"missing", "needs_review"}:
+            score += 0.06
+            drivers.append(self._driver(f"Coordinate status is {coordinate_status}", "increases", 0.06, "Missing or review-needed coordinates reduce demo confidence."))
+
+        coordinate_precision = inputs.project.coordinate_precision
+        if not coordinate_precision:
+            missing_inputs.append("coordinate_precision")
+            drivers.append(self._missing_driver("Coordinate precision unknown"))
+        elif coordinate_precision in {"approximate", "county", "city"}:
+            score += 0.03
+            drivers.append(self._driver("Only approximate coordinate precision", "increases", 0.03, f"Coordinate precision is {coordinate_precision}."))
+        elif coordinate_precision == "exact_site":
+            score -= 0.02
+            drivers.append(self._driver("Exact site coordinate precision", "decreases", -0.02, "Exact site coordinates reduce uncertainty."))
+
+        if inputs.expected_online_date is None:
+            missing_inputs.append("expected_online_date")
+            drivers.append(self._missing_driver("No expected online date available"))
+        else:
+            months = self._months_to_target(inputs.expected_online_date)
+            if months is not None and months <= 18:
+                score += 0.10
                 drivers.append(
                     self._driver(
-                        "near-term target without accepted power-path evidence",
+                        "Near-term expected online date",
                         "increases",
-                        0.18,
-                        f"Accepted target energization date is {inputs.target_energization_date.isoformat()} ({months} months away).",
+                        0.10,
+                        f"Expected online date is {inputs.expected_online_date.isoformat()}.",
                     )
                 )
 
-        if inputs.has_new_substation_or_transmission_required:
-            score += 0.12
-            drivers.append(self._driver("accepted substation/transmission requirement", "increases", 0.12, "Accepted evidence indicates new substation or transmission work."))
-
-        if inputs.has_regional_large_load_stress:
-            score += 0.10
-            drivers.append(self._driver("regional large-load stress evidence", "increases", 0.10, "Accepted E3 or large-load stress evidence is linked to the project."))
-
-        if risk_tier == "high":
-            score += 0.12
-            drivers.append(self._driver("risk signal tier is high", "increases", 0.12, f"Evidence Signal returned {risk_tier} at score {risk_score:.3f}."))
-        elif risk_tier == "moderate":
-            score += 0.06
-            drivers.append(self._driver("risk signal tier is moderate", "increases", 0.06, f"Evidence Signal returned {risk_tier} at score {risk_score:.3f}."))
-
-        if inputs.has_power_path_support:
-            score -= 0.08
-            drivers.append(self._driver("accepted power-path support", "decreases", -0.08, "Accepted power-path evidence indicates an identified path."))
-
-        if inputs.has_substation_or_interconnection_detail:
-            score -= 0.04
-            drivers.append(self._driver("accepted substation/interconnection detail", "decreases", -0.04, "Accepted power infrastructure detail reduces uncertainty."))
-
-        if inputs.enrichment and inputs.enrichment.retail_utility_name and not inputs.has_accepted_utility:
-            drivers.append(
-                self._driver(
-                    "enrichment utility context available",
-                    "unknown",
-                    0.0,
-                    f"Enrichment suggests {inputs.enrichment.retail_utility_name}; not treated as accepted utility evidence.",
-                )
-            )
-
-        for missing in missing_inputs:
-            drivers.append(self._driver(f"missing {missing}", "unknown", 0.0, "Missing input lowers confidence but does not increase risk by itself."))
+        if not inputs.source_url:
+            missing_inputs.append("source_url")
+            drivers.append(self._missing_driver("No source URL available"))
+        if not inputs.evidence_excerpt:
+            missing_inputs.append("evidence_excerpt")
+            drivers.append(self._missing_driver("No source evidence excerpt available"))
+        elif len(inputs.evidence_excerpt) >= 40:
+            score -= 0.02
+            drivers.append(self._driver("Source evidence excerpt available", "decreases", -0.02, "Curated source excerpt supports the record."))
 
         return self._clamp(score), drivers, missing_inputs
 
-    def _missing_inputs(self, inputs: AcceptedInputs) -> list[str]:
-        missing = []
-        if inputs.modeled_load_mw is None:
-            missing.append("modeled_load_mw")
-        if not inputs.has_accepted_utility:
-            missing.append("utility_named")
-        if not inputs.has_accepted_region:
-            missing.append("region_or_rto_named")
-        if inputs.target_energization_date is None:
-            missing.append("target_energization_date")
-        if not inputs.has_power_path_support:
-            missing.append("power_path_support")
-        return missing
+    def _response_from_stored(self, stored: ProjectPrediction) -> ProjectPredictionResponse:
+        raw_drivers = stored.drivers_json if isinstance(stored.drivers_json, list) else []
+        drivers = [PredictionDriver(**driver) for driver in raw_drivers if isinstance(driver, dict)]
+        if not drivers:
+            drivers = [self._missing_driver("Stored prediction has no driver details")]
+        return ProjectPredictionResponse(
+            model_name=stored.model_name,
+            model_version=stored.model_version,
+            prediction_type=PREDICTION_TYPE,
+            p_delay_6mo=stored.p_delay_6mo,
+            p_delay_12mo=stored.p_delay_12mo,
+            p_delay_18mo=stored.p_delay_18mo,
+            risk_tier=stored.risk_tier,
+            confidence=stored.confidence,
+            drivers=drivers,
+            missing_inputs=[],
+            method_note="Stored deterministic demo prediction.",
+        )
 
-    def _confidence(self, inputs: AcceptedInputs, missing_inputs: list[str]) -> str:
-        if len(missing_inputs) >= 3 or inputs.reviewed_evidence_count == 0:
-            return "low"
-        if len(missing_inputs) <= 1 and inputs.reviewed_evidence_count >= 2 and len(inputs.accepted_claims) >= 4:
-            return "high"
-        return "medium"
+    def _metadata_string(self, metadata: dict[str, Any], key: str) -> str | None:
+        value = metadata.get(key)
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
-    def _accepted_modeled_load(self, claims: list[Claim]) -> float | None:
-        values = []
-        for claim in claims:
-            if claim.claim_type != ClaimType.MODELED_LOAD_MW:
-                continue
-            raw = (claim.claim_value_json or {}).get("modeled_primary_load_mw")
-            if isinstance(raw, int | float):
-                values.append(float(raw))
-        return sum(values) if values else None
+    def _metadata_float(self, metadata: dict[str, Any], key: str) -> float | None:
+        value = metadata.get(key)
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
-    def _accepted_target_date(self, claims: list[Claim]) -> date | None:
-        dates = []
-        for claim in claims:
-            if claim.claim_type != ClaimType.TARGET_ENERGIZATION_DATE:
-                continue
-            raw = (claim.claim_value_json or {}).get("target_energization_date")
-            if isinstance(raw, date):
-                dates.append(raw)
-            elif isinstance(raw, str):
-                try:
-                    dates.append(date.fromisoformat(raw))
-                except ValueError:
-                    continue
-        return min(dates) if dates else None
-
-    def _claim_bool(self, claim: Claim) -> bool | None:
-        raw = (claim.claim_value_json or {}).get("value")
-        return raw if isinstance(raw, bool) else None
+    def _metadata_date(self, metadata: dict[str, Any], key: str) -> date | None:
+        value = self._metadata_string(metadata, key)
+        if value is None:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
 
     def _months_to_target(self, target: date) -> int:
         today = date.today()
         return (target.year - today.year) * 12 + (target.month - today.month)
+
+    def _confidence(self, missing_inputs: list[str]) -> str:
+        if len(missing_inputs) >= 5:
+            return "low"
+        if len(missing_inputs) <= 2:
+            return "high"
+        return "medium"
 
     def _tier(self, p_delay_18mo: float) -> str:
         if p_delay_18mo >= 0.55:
@@ -272,5 +305,11 @@ class PredictionService:
     def _driver(self, driver: str, direction: str, weight: float, evidence: str) -> PredictionDriver:
         return PredictionDriver(driver=driver, direction=direction, weight=round(weight, 3), evidence=evidence)
 
+    def _missing_driver(self, driver: str) -> PredictionDriver:
+        return self._driver(driver, "unknown", 0.0, "Missing input lowers confidence but does not increase risk by itself.")
+
     def _clamp(self, value: float) -> float:
         return max(0.01, min(0.95, value))
+
+    def _enum_value(self, value: Any) -> str:
+        return getattr(value, "value", str(value))
