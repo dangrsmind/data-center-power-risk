@@ -1,0 +1,199 @@
+version: source_registry_v0_1
+sources:
+  - id: virginia_scc_data_center_large_load_dockets
+    name: Virginia SCC data center and large-load docket discovery
+    source_type: state_regulatory_dockets
+    geography: Virginia
+    base_url: https://scc.virginia.gov/
+    discovery_method: docket_search
+    enabled: true
+    priority: high
+    search_terms:
+      - data center
+      - large load
+      - electric service agreement
+      - transmission interconnection
+    notes: >
+      Discovery seed for Virginia State Corporation Commission dockets that may
+      mention data centers or large-load electric service. Docket records are
+      project evidence only when the docket or filing identifies a project,
+      customer, location, or facility-specific load.
+
+  - id: generic_county_planning_data_center_search
+    name: Generic county planning data center search pattern
+    source_type: county_city_planning
+    geography: United States counties
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - 'site:county.gov "data center" planning'
+      - '"planning commission" "data center"'
+      - '"special use permit" "data center"'
+      - '"rezoning" "data center"'
+    notes: >
+      Pattern entry for county planning agendas, staff reports, and permit
+      packets. Individual county records can be project evidence when they
+      identify a data center applicant, parcel, site, or public hearing item.
+
+  - id: generic_city_planning_data_center_search
+    name: Generic city planning data center search pattern
+    source_type: county_city_planning
+    geography: United States cities
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:city.gov "data center" planning'
+      - '"city council" "data center"'
+      - '"planning agenda" "data center"'
+      - '"conditional use permit" "data center"'
+    notes: >
+      Pattern entry for city planning records. City records are project evidence
+      only when they identify a specific project, applicant, location, or public
+      action tied to a data center.
+
+  - id: generic_utility_large_load_filing_search
+    name: Generic utility large-load filing search pattern
+    source_type: utility_large_load_filings
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - '"large load" "data center" "utility"'
+      - '"electric service agreement" "data center"'
+      - '"load interconnection" "data center"'
+      - '"special contract" "data center" "utility"'
+    notes: >
+      Pattern entry for utility filings, service agreements, tariffs, and large
+      load requests. These can be project evidence when a filing identifies a
+      customer, facility, location, load, or project-specific electric service
+      requirement.
+
+  - id: generic_economic_development_announcement_search
+    name: Generic economic development announcement search pattern
+    source_type: economic_development_announcements
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"economic development" "data center"'
+      - '"data center" "jobs" "investment" "county"'
+      - '"governor" "data center" "investment"'
+      - '"industrial development authority" "data center"'
+    notes: >
+      Pattern entry for state, regional, and local economic development
+      announcements. These can be project evidence when they identify a specific
+      data center project, developer, site, investment, jobs announcement, or
+      public incentive action.
+
+  - id: generic_company_press_release_search
+    name: Generic company press release pattern
+    source_type: company_press_releases
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center" "press release" "MW"'
+      - '"hyperscale campus" "press release"'
+      - '"breaks ground" "data center"'
+      - '"announces" "data center campus"'
+    notes: >
+      Pattern entry for developer, operator, and company announcements. Press
+      releases can be project evidence when they name a project, campus, site,
+      developer, phase, load, schedule, or location.
+
+  - id: generic_developer_website_project_pages
+    name: Generic developer website project page pattern
+    source_type: developer_websites
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center campus" "developer"'
+      - '"data center" "available capacity" "campus"'
+      - '"hyperscale" "campus" "MW"'
+      - '"our campuses" "data center"'
+    notes: >
+      Pattern entry for developer-owned project pages. Developer pages can be
+      project evidence when they identify a specific campus, location, capacity,
+      schedule, or utility/region context.
+
+  - id: generic_data_center_news_search
+    name: Generic data center news search pattern
+    source_type: data_center_news
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: low
+    search_terms:
+      - '"data center" "MW" "county"'
+      - '"data center" "campus" "county"'
+      - '"data center" "planning commission"'
+      - '"data center" "utility"'
+    notes: >
+      News can help discover project candidates but should be corroborated with
+      primary records where possible. It can be project evidence when the article
+      cites or reports specific public project facts with source attribution.
+
+  - id: eia_861_grid_context
+    name: EIA/EIA-861 utility and sales context
+    source_type: grid_context
+    geography: United States
+    base_url: https://www.eia.gov/electricity/data/eia861/
+    discovery_method: public_dataset
+    enabled: true
+    priority: medium
+    search_terms:
+      - EIA-861
+      - utility sales
+      - balancing authority
+      - service territory context
+    notes: >
+      Context-only source for utility and grid background. EIA/EIA-861 does not
+      create data center project records by itself.
+
+  - id: hifld_utility_territories_context
+    name: HIFLD utility territories context
+    source_type: grid_context
+    geography: United States
+    base_url: https://hifld-geoplatform.hub.arcgis.com/
+    discovery_method: public_dataset
+    enabled: true
+    priority: medium
+    search_terms:
+      - electric retail service territories
+      - utility territory
+      - HIFLD
+    notes: >
+      Context-only source for geographic utility territory enrichment. HIFLD
+      utility territories do not create project records by themselves.
+
+  - id: lbnl_interconnection_queue_context
+    name: LBNL interconnection queue context
+    source_type: grid_context
+    geography: United States
+    base_url: https://emp.lbl.gov/queues
+    discovery_method: public_dataset
+    enabled: true
+    priority: low
+    search_terms:
+      - interconnection queue
+      - LBNL queues
+      - generator interconnection
+    notes: >
+      Context-only grid source. Interconnection queues are useful for grid and
+      power-path context, but they are not data center project discovery records
+      unless a public queue entry or related document specifically identifies a
+      data center project.

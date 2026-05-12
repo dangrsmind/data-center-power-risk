@@ -14,6 +14,13 @@ backend/.mypy_cache/
 backend/.ruff_cache/
 backend/build/
 backend/dist/
+data/generated/
+data/cache/
+data/source_fetches/
+data/discovery_runs/
+data/geocoding_cache/
+data/geocoding_caches/
+runtime_data/
 *.sqlite
 *.db
 frontend/node_modules/
