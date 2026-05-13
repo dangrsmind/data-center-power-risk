@@ -1,0 +1,44 @@
+{
+  "response": {
+    "numFound": 2,
+    "start": 0,
+    "docs": [
+      {
+        "dctitle_t": "SCC Data Center Initiatives Facts and Figures Feb2026",
+        "id": "https://www.scc.virginia.gov/media/sccvirginiagov-home/about-the-scc/fact-sheets/scc-data-center-initiatives-02-2026.pdf",
+        "type_s": "pdf",
+        "url": [
+          "https://www.scc.virginia.gov/media/sccvirginiagov-home/about-the-scc/fact-sheets/scc-data-center-initiatives-02-2026.pdf"
+        ],
+        "DocumentType_s": "pdf",
+        "content": [
+          "SCC Data Center Initiatives ENSURING DATA CENTERS PAY THEIR OWN COSTS"
+        ]
+      },
+      {
+        "dctitle_t": "Virginia SCC - Cases: Application of Virginia Electric and Power Company",
+        "id": "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00022.html",
+        "type_s": "web page",
+        "url": [
+          "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00022.html"
+        ],
+        "sectionType_s": "case",
+        "CaseNumberPrefix_t": "PUR",
+        "CaseNumberCaseNumber_t": "2026-00022",
+        "LongName_txt_en": "Application of Virginia Electric and Power Company for revision of a rate adjustment clause"
+      }
+    ]
+  },
+  "highlighting": {
+    "https://www.scc.virginia.gov/media/sccvirginiagov-home/about-the-scc/fact-sheets/scc-data-center-initiatives-02-2026.pdf": {
+      "content": [
+        "SCC <em>Data</em> <em>Center</em> Initiatives ENSURING DATA CENTERS PAY THEIR OWN COSTS"
+      ]
+    },
+    "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00022.html": {
+      "LongName_txt_en": [
+        "Application of Virginia Electric and Power Company for revision of a rate adjustment clause"
+      ]
+    }
+  }
+}

@@ -57,11 +57,11 @@ class PublicFetchClient:
         self.max_bytes = max_bytes
         self.allow_insecure_fetch = allow_insecure_fetch
 
-    def fetch(self, url: str) -> FetchResult:
+    def fetch(self, url: str, *, headers: dict[str, str] | None = None) -> FetchResult:
         attempts = self.max_retries + 1
         last_result: FetchResult | None = None
         for attempt in range(1, attempts + 1):
-            result = self._fetch_once(url, attempt=attempt)
+            result = self._fetch_once(url, attempt=attempt, headers=headers)
             if result.ok or not self._should_retry(result):
                 return result
             last_result = result
@@ -69,8 +69,9 @@ class PublicFetchClient:
                 time.sleep(self.retry_backoff_seconds * attempt)
         return last_result or self._error_result(url, "unknown_error", "fetch did not run", attempts=0)
 
-    def _fetch_once(self, url: str, *, attempt: int) -> FetchResult:
-        req = request.Request(url, headers={"User-Agent": self.user_agent})
+    def _fetch_once(self, url: str, *, attempt: int, headers: dict[str, str] | None = None) -> FetchResult:
+        request_headers = {"User-Agent": self.user_agent, **(headers or {})}
+        req = request.Request(url, headers=request_headers)
         context = self._ssl_context()
         try:
             with request.urlopen(req, timeout=self.timeout_seconds, context=context) as response:
