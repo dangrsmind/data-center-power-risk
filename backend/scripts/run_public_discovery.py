@@ -26,6 +26,7 @@ from app.services.source_registry import (  # noqa: E402
 
 
 DEFAULT_DISCOVERY_RUNS_DIR = REPO_DIR / "data" / "discovery_runs"
+DEFAULT_SOURCE_FETCHES_DIR = REPO_DIR / "data" / "source_fetches"
 IMPLEMENTED_ADAPTERS = {
     VIRGINIA_SCC_SOURCE_ID: VirginiaSccDiscoveryAdapter,
 }
@@ -44,6 +45,22 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DISCOVERY_RUNS_DIR,
         help="Runtime discovery output directory. Ignored by Git.",
     )
+    parser.add_argument(
+        "--allow-insecure-fetch",
+        action="store_true",
+        help="DEV ONLY: disable SSL certificate verification for public fetches.",
+    )
+    parser.add_argument(
+        "--write-fetch-cache",
+        action="store_true",
+        help="Write fetched content and metadata under an ignored runtime fetch cache.",
+    )
+    parser.add_argument(
+        "--fetch-cache-dir",
+        type=Path,
+        default=DEFAULT_SOURCE_FETCHES_DIR,
+        help="Runtime fetch cache directory. Ignored by Git.",
+    )
     return parser.parse_args()
 
 
@@ -60,14 +77,21 @@ def source_preview(source: Any) -> dict[str, Any]:
     }
 
 
-def adapter_for_source(source: Any) -> Any | None:
+def adapter_for_source(source: Any, *, fetch_cache_dir: Path | None = None) -> Any | None:
     adapter_cls = IMPLEMENTED_ADAPTERS.get(source.id)
     if adapter_cls is None:
         return None
-    return adapter_cls(source)
+    return adapter_cls(source, fetch_cache_dir=fetch_cache_dir)
 
 
-def run_sources(*, dry_run: bool, output_dir: Path = DEFAULT_DISCOVERY_RUNS_DIR) -> dict[str, Any]:
+def run_sources(
+    *,
+    dry_run: bool,
+    output_dir: Path = DEFAULT_DISCOVERY_RUNS_DIR,
+    allow_insecure_fetch: bool = False,
+    write_fetch_cache: bool = False,
+    fetch_cache_dir: Path = DEFAULT_SOURCE_FETCHES_DIR,
+) -> dict[str, Any]:
     registry = load_source_registry(DEFAULT_REGISTRY_PATH)
     enabled_sources = registry.enabled_sources
     warnings: list[str] = []
@@ -77,13 +101,19 @@ def run_sources(*, dry_run: bool, output_dir: Path = DEFAULT_DISCOVERY_RUNS_DIR)
 
     if dry_run:
         warnings.append("dry_run_only: no web content was fetched and no runtime data was written")
+    if allow_insecure_fetch:
+        warnings.append(
+            "INSECURE FETCH ENABLED: SSL certificate verification is disabled for local debugging only"
+        )
+    if write_fetch_cache:
+        warnings.append(f"fetch cache writing enabled: fetched content/metadata will be written under {fetch_cache_dir}")
 
     for source in enabled_sources:
-        adapter = adapter_for_source(source)
+        adapter = adapter_for_source(source, fetch_cache_dir=fetch_cache_dir if write_fetch_cache else None)
         if adapter is None:
             warnings.append(f"no adapter implemented for source {source.id}; skipped")
             continue
-        result = adapter.run(dry_run=dry_run)
+        result = adapter.run(dry_run=dry_run, allow_insecure_fetch=allow_insecure_fetch)
         adapter_results.append(result.to_dict())
         warnings.extend(result.warnings)
         errors.extend(result.errors)
@@ -103,6 +133,9 @@ def run_sources(*, dry_run: bool, output_dir: Path = DEFAULT_DISCOVERY_RUNS_DIR)
     return {
         **summary.model_dump(),
         "dry_run": dry_run,
+        "allow_insecure_fetch": allow_insecure_fetch,
+        "write_fetch_cache": write_fetch_cache,
+        "fetch_cache_dir": str(fetch_cache_dir) if write_fetch_cache else None,
         "registry_path": str(DEFAULT_REGISTRY_PATH),
         "enabled_sources": [source_preview(source) for source in enabled_sources],
         "implemented_adapters": sorted(IMPLEMENTED_ADAPTERS),
@@ -130,13 +163,21 @@ def write_discovery_output(output_dir: Path, discovered_sources: list[dict[str, 
 def main() -> None:
     args = parse_args()
     try:
-        payload = run_sources(dry_run=args.dry_run, output_dir=args.output_dir)
+        payload = run_sources(
+            dry_run=args.dry_run,
+            output_dir=args.output_dir,
+            allow_insecure_fetch=args.allow_insecure_fetch,
+            write_fetch_cache=args.write_fetch_cache,
+            fetch_cache_dir=args.fetch_cache_dir,
+        )
     except SourceRegistryValidationError as exc:
         print(
             json.dumps(
                 {
                     "errors": exc.errors,
                     "dry_run": args.dry_run,
+                    "allow_insecure_fetch": args.allow_insecure_fetch,
+                    "write_fetch_cache": args.write_fetch_cache,
                     "enabled_sources": [],
                     "adapter_results": [],
                     "would_run": [],

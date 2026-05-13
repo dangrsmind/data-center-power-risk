@@ -65,6 +65,14 @@ In non-dry-run mode the adapter only attempts to discover public source records.
 
 Extraction, claim parsing, entity resolution, coordinate enrichment, utility/ISO enrichment, confidence scoring, and publication remain later pipeline stages. The public discoverability rule remains unchanged: no source, no project.
 
+## Public Fetch Policy
+
+Discovery fetches use SSL certificate verification by default. SSL failures are reported as structured diagnostics and must not crash discovery runs or silently hide the problem.
+
+An explicit `--allow-insecure-fetch` flag exists for local debugging only. When used, discovery output must warn loudly and mark fetch results with `insecure_fetch=true`. This flag must not be used for published datasets.
+
+Fetched content and metadata are runtime data. If persisted for debugging or review, they belong under ignored paths such as `data/source_fetches/` or `data/discovery_runs/`, not in committed source control.
+
 ## Generated Data Policy
 
 Generated discovery output is runtime data and is not committed:

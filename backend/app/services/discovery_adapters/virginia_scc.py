@@ -3,18 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
-from urllib import parse, request
-from urllib.error import HTTPError, URLError
+from urllib import parse
 
 from pydantic import ValidationError
 
 from app.schemas.discovery import DiscoveredSource
+from app.services.public_fetch import FetchResult, PublicFetchClient, write_fetch_result
 from app.services.source_registry import SourceRegistryEntry
 
 
-USER_AGENT = "data-center-power-risk-public-discovery/0.1"
-REQUEST_TIMEOUT_SECONDS = 20
 SCC_SEARCH_URL = "https://www.scc.virginia.gov/search/"
 SCC_DOCKET_SEARCH_URL = "https://www.scc.virginia.gov/docketsearch/"
 SCC_PUBLISHER = "Virginia State Corporation Commission"
@@ -30,6 +29,8 @@ class DiscoveryAdapterResult:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     fetched_urls: list[str] = field(default_factory=list)
+    fetch_results: list[FetchResult] = field(default_factory=list)
+    fetch_cache_paths: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,6 +41,8 @@ class DiscoveryAdapterResult:
             "warnings": self.warnings,
             "errors": self.errors,
             "fetched_urls": self.fetched_urls,
+            "fetch_results": [result.to_dict() for result in self.fetch_results],
+            "fetch_cache_paths": self.fetch_cache_paths,
         }
 
 
@@ -77,12 +80,20 @@ class VirginiaSccDiscoveryAdapter:
     adapter_id = "virginia_scc"
     source_id = VIRGINIA_SCC_SOURCE_ID
 
-    def __init__(self, source: SourceRegistryEntry):
+    def __init__(
+        self,
+        source: SourceRegistryEntry,
+        *,
+        fetch_client: PublicFetchClient | None = None,
+        fetch_cache_dir: Path | None = None,
+    ):
         if source.id != self.source_id:
             raise ValueError(f"Virginia SCC adapter cannot run source {source.id!r}")
         self.source = source
+        self.fetch_client = fetch_client or PublicFetchClient()
+        self.fetch_cache_dir = fetch_cache_dir
 
-    def run(self, *, dry_run: bool) -> DiscoveryAdapterResult:
+    def run(self, *, dry_run: bool, allow_insecure_fetch: bool = False) -> DiscoveryAdapterResult:
         result = DiscoveryAdapterResult(
             adapter_id=self.adapter_id,
             source_id=self.source.id,
@@ -91,6 +102,8 @@ class VirginiaSccDiscoveryAdapter:
         if dry_run:
             result.warnings.append("dry_run_only: Virginia SCC adapter did not fetch public pages")
             return result
+        if allow_insecure_fetch and not self.fetch_client.allow_insecure_fetch:
+            self.fetch_client = PublicFetchClient(allow_insecure_fetch=True)
         self._probe_public_pages(result)
         return result
 
@@ -106,45 +119,46 @@ class VirginiaSccDiscoveryAdapter:
         ]
 
     def _probe_public_pages(self, result: DiscoveryAdapterResult) -> None:
-        search_html = self._fetch_text(SCC_SEARCH_URL, result)
-        if search_html is None:
+        search_result = self._fetch(SCC_SEARCH_URL, result)
+        if not search_result.ok or search_result.text is None:
             return
+        search_html = search_result.text
         if "doesn't work properly without JavaScript enabled" in search_html:
             result.warnings.append(
                 "Virginia SCC search page is JavaScript-rendered; automated result parsing is not reliable yet"
             )
 
-        docket_html = self._fetch_text(SCC_DOCKET_SEARCH_URL, result)
-        if docket_html is None:
+        docket_result = self._fetch(SCC_DOCKET_SEARCH_URL, result)
+        if not docket_result.ok or docket_result.text is None:
             return
-        discovered = self._extract_relevant_links(docket_html)
+        discovered = self._extract_relevant_links(docket_result.text)
         if not discovered:
             result.warnings.append(
                 "Virginia SCC docket page probe completed, but no parseable data-center or large-load result links were found"
             )
         result.discovered_sources.extend(discovered)
 
-    def _fetch_text(self, url: str, result: DiscoveryAdapterResult) -> str | None:
-        req = request.Request(url, headers={"User-Agent": USER_AGENT})
-        try:
-            with request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-                content_type = response.headers.get("Content-Type", "")
-                raw = response.read(500_000)
-        except HTTPError as exc:
-            result.warnings.append(f"Virginia SCC fetch failed for {url}: HTTP {exc.code}")
-            return None
-        except URLError as exc:
-            result.warnings.append(f"Virginia SCC fetch failed for {url}: {exc.reason}")
-            return None
-        except TimeoutError:
-            result.warnings.append(f"Virginia SCC fetch timed out for {url}")
-            return None
+    def _fetch(self, url: str, result: DiscoveryAdapterResult) -> FetchResult:
+        fetch_result = self.fetch_client.fetch(url)
+        result.fetch_results.append(fetch_result)
+        if self.fetch_cache_dir is not None:
+            result.fetch_cache_paths.append(str(write_fetch_result(self.fetch_cache_dir, fetch_result)))
+        if fetch_result.ok:
+            result.fetched_urls.append(fetch_result.final_url or url)
+            return fetch_result
 
-        result.fetched_urls.append(url)
-        charset = "utf-8"
-        if "charset=" in content_type:
-            charset = content_type.rsplit("charset=", 1)[-1].split(";", 1)[0].strip()
-        return raw.decode(charset or "utf-8", errors="replace")
+        if fetch_result.error_type == "ssl_certificate_error":
+            result.warnings.append(
+                f"Virginia SCC fetch failed for {url}: ssl_certificate_error; "
+                "SSL verification is enabled. Install/update local CA certificates or use "
+                "--allow-insecure-fetch for local debugging only."
+            )
+        else:
+            result.warnings.append(
+                f"Virginia SCC fetch failed for {url}: {fetch_result.error_type or 'fetch_error'}; "
+                f"{fetch_result.error_message or 'no detail'}"
+            )
+        return fetch_result
 
     def _extract_relevant_links(self, html: str) -> list[DiscoveredSource]:
         parser = LinkParser()
