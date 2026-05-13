@@ -18,6 +18,28 @@ SCC_SEARCH_URL = "https://www.scc.virginia.gov/search/"
 SCC_DOCKET_SEARCH_URL = "https://www.scc.virginia.gov/docketsearch/"
 SCC_PUBLISHER = "Virginia State Corporation Commission"
 VIRGINIA_SCC_SOURCE_ID = "virginia_scc_data_center_large_load_dockets"
+RELEVANCE_TERMS = {
+    "data center",
+    "datacenter",
+    "large load",
+    "electric service agreement",
+    "service agreement",
+    "transmission interconnection",
+    "interconnection",
+    "public utility",
+    "case",
+    "docket",
+}
+SCC_URL_MARKERS = {
+    "scc.virginia.gov",
+    "/docketsearch",
+    "/case",
+    "/news",
+    "/pages",
+    "/docs",
+    "/document",
+    ".pdf",
+}
 
 
 @dataclass
@@ -76,6 +98,97 @@ class LinkParser(HTMLParser):
         self._current_text = []
 
 
+@dataclass
+class ParsedSearchResult:
+    source_url: str
+    source_title: str | None
+    snippet: str | None
+    source_query: str
+
+
+class SearchResultParser(HTMLParser):
+    def __init__(self, *, query: str):
+        super().__init__()
+        self.query = query
+        self.results: list[ParsedSearchResult] = []
+        self._in_result = False
+        self._result_depth = 0
+        self._current_href: str | None = None
+        self._current_title: list[str] = []
+        self._current_text: list[str] = []
+        self._in_anchor = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_dict = dict(attrs)
+        class_tokens = set(attrs_dict.get("class", "").lower().split())
+        data_attr_names = {name for name, _value in attrs}
+        is_result_container = (
+            tag in {"li", "article", "div"}
+            and (
+                {"result", "search-result", "search-result-item"} & class_tokens
+                or "data-search-result" in data_attr_names
+            )
+        )
+        if is_result_container and not self._in_result:
+            self._in_result = True
+            self._result_depth = 1
+            self._current_href = None
+            self._current_title = []
+            self._current_text = []
+            self._in_anchor = False
+        elif self._in_result:
+            self._result_depth += 1
+
+        if tag == "a" and attrs_dict.get("href"):
+            if self._in_result:
+                self._current_href = attrs_dict["href"]
+                self._in_anchor = True
+
+    def handle_data(self, data: str) -> None:
+        if not self._in_result:
+            return
+        text = " ".join(data.split())
+        if not text:
+            return
+        self._current_text.append(text)
+        if self._in_anchor:
+            self._current_title.append(text)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self._in_result:
+            return
+        self._result_depth -= 1
+        if tag == "a" and self._current_href is not None:
+            self._in_anchor = False
+        if self._result_depth <= 0:
+            self._emit_if_relevant(close_anchor=False)
+            self._in_result = False
+            self._current_href = None
+            self._current_title = []
+            self._current_text = []
+            self._in_anchor = False
+
+    def _emit_if_relevant(self, *, close_anchor: bool) -> None:
+        if self._current_href is None:
+            return
+        title = " ".join(self._current_title).strip() or None
+        snippet = " ".join(self._current_text).strip() or None
+        url = parse.urljoin(SCC_SEARCH_URL, self._current_href)
+        if is_relevant_scc_result(url=url, title=title, snippet=snippet, query=self.query):
+            self.results.append(
+                ParsedSearchResult(
+                    source_url=url,
+                    source_title=title,
+                    snippet=snippet,
+                    source_query=self.query,
+                )
+            )
+        if close_anchor:
+            self._current_href = None
+            self._current_title = []
+            self._in_anchor = False
+
+
 class VirginiaSccDiscoveryAdapter:
     adapter_id = "virginia_scc"
     source_id = VIRGINIA_SCC_SOURCE_ID
@@ -119,23 +232,20 @@ class VirginiaSccDiscoveryAdapter:
         ]
 
     def _probe_public_pages(self, result: DiscoveryAdapterResult) -> None:
-        search_result = self._fetch(SCC_SEARCH_URL, result)
-        if not search_result.ok or search_result.text is None:
-            return
-        search_html = search_result.text
-        if "doesn't work properly without JavaScript enabled" in search_html:
-            result.warnings.append(
-                "Virginia SCC search page is JavaScript-rendered; automated result parsing is not reliable yet"
-            )
+        parsed_results: list[ParsedSearchResult] = []
+        for query in self.planned_queries():
+            fetch_result = self._fetch(query["search_url"], result)
+            if not fetch_result.ok or fetch_result.text is None:
+                continue
+            if "doesn't work properly without JavaScript enabled" in fetch_result.text:
+                result.warnings.append(
+                    "Virginia SCC search page is JavaScript-rendered; automated result parsing is not reliable yet"
+                )
+            parsed_results.extend(parse_scc_search_results(fetch_result.text, query=query["term"]))
 
-        docket_result = self._fetch(SCC_DOCKET_SEARCH_URL, result)
-        if not docket_result.ok or docket_result.text is None:
-            return
-        discovered = self._extract_relevant_links(docket_result.text)
+        discovered = self._sources_from_results(parsed_results)
         if not discovered:
-            result.warnings.append(
-                "Virginia SCC docket page probe completed, but no parseable data-center or large-load result links were found"
-            )
+            result.warnings.append("no_parseable_scc_results")
         result.discovered_sources.extend(discovered)
 
     def _fetch(self, url: str, result: DiscoveryAdapterResult) -> FetchResult:
@@ -188,3 +298,64 @@ class VirginiaSccDiscoveryAdapter:
             except ValidationError:
                 continue
         return discovered
+
+    def _sources_from_results(self, parsed_results: list[ParsedSearchResult]) -> list[DiscoveredSource]:
+        discovered: list[DiscoveredSource] = []
+        seen_urls: set[str] = set()
+        for parsed_result in parsed_results:
+            normalized_url = normalize_url(parsed_result.source_url)
+            if normalized_url in seen_urls:
+                continue
+            seen_urls.add(normalized_url)
+            try:
+                discovered.append(
+                    DiscoveredSource(
+                        source_url=normalized_url,
+                        source_title=parsed_result.source_title,
+                        source_type=self.source.source_type,
+                        publisher=SCC_PUBLISHER,
+                        geography=self.source.geography,
+                        discovered_at=datetime.now(timezone.utc),
+                        discovery_method=self.source.discovery_method,
+                        confidence="candidate_discovered",
+                        notes=build_notes(parsed_result),
+                        source_query=parsed_result.source_query,
+                    )
+                )
+            except ValidationError:
+                continue
+        return discovered
+
+
+def parse_scc_search_results(html: str, *, query: str) -> list[ParsedSearchResult]:
+    parser = SearchResultParser(query=query)
+    parser.feed(html)
+    deduped: dict[str, ParsedSearchResult] = {}
+    for result in parser.results:
+        deduped.setdefault(normalize_url(result.source_url), result)
+    return list(deduped.values())
+
+
+def normalize_url(url: str) -> str:
+    absolute = parse.urljoin(SCC_SEARCH_URL, url)
+    parsed = parse.urlsplit(absolute)
+    return parse.urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path, parsed.query, ""))
+
+
+def is_relevant_scc_result(*, url: str, title: str | None, snippet: str | None, query: str) -> bool:
+    absolute_url = normalize_url(url)
+    if "scc.virginia.gov" not in parse.urlsplit(absolute_url).netloc.lower():
+        return False
+    url_lower = absolute_url.casefold()
+    if not any(marker in url_lower for marker in SCC_URL_MARKERS):
+        return False
+    haystack = " ".join(part for part in [title, snippet, absolute_url] if part).casefold()
+    return any(term in haystack for term in RELEVANCE_TERMS)
+
+
+def build_notes(result: ParsedSearchResult) -> str:
+    parts = [f"Parsed from Virginia SCC public search results for query {result.source_query!r}."]
+    if result.snippet:
+        parts.append(f"Snippet: {result.snippet[:500]}")
+    parts.append("Requires analyst review before candidate extraction.")
+    return " ".join(parts)

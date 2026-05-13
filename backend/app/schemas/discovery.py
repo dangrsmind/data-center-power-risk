@@ -26,6 +26,7 @@ class DiscoveredSource(BaseModel):
     content_hash: str | None = None
     confidence: DiscoveryConfidence
     notes: str | None = None
+    source_query: str | None = None
 
 
 class ExtractedClaim(BaseModel):
