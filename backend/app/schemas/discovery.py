@@ -27,6 +27,9 @@ class DiscoveredSource(BaseModel):
     confidence: DiscoveryConfidence
     notes: str | None = None
     source_query: str | None = None
+    snippet: str | None = None
+    case_number: str | None = None
+    document_type: str | None = None
 
 
 class ExtractedClaim(BaseModel):

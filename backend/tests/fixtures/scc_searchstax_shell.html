@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <link rel="stylesheet" href="https://static.searchstax.com/studio-js/v3/css/studio-app.css">
+  </head>
+  <body>
+    <button id="websiteTab" facet-id="type_s-web-page">SITE PAGES</button>
+    <button id="newsTab" facet-id="sectiontype_s-news">NEWS</button>
+    <button id="casesTab" facet-id="sectiontype_s-case">CASES</button>
+    <script src="https://static.searchstax.com/studio-js/v3/js/studio-app.js"></script>
+    <script>
+      const studioConfig = {
+        connector: {
+          url: "https://searchcloud-2-us-east-1.searchstax.com/29847/vcascc-1781/emselect",
+          authentication: "",
+          apikey: "public-search-key",
+          select_auth_token: "public-select-token",
+          suggester_auth_token: "public-suggest-token",
+          search_auth_type: "token",
+          suggester: "https://searchcloud-2-us-east-1.searchstax.com/29847/vcascc-1781_suggester/emsuggest",
+          searchAPIKey: "related-search-key",
+          language: "en",
+          searchAdditionalArgs: "hl.fragsize=200"
+        },
+        searchResults: "#searchResultsSection"
+      };
+    </script>
+  </body>
+</html>
