@@ -8,11 +8,16 @@ from pathlib import Path
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+FIXTURES_DIR = BACKEND_DIR / "tests" / "fixtures"
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(BACKEND_DIR / "scripts"))
 
 from app.schemas.discovery import DiscoveredSource  # noqa: E402
-from app.services.discovery_adapters.virginia_scc import VirginiaSccDiscoveryAdapter  # noqa: E402
+from app.services.discovery_adapters.virginia_scc import (  # noqa: E402
+    VirginiaSccDiscoveryAdapter,
+    normalize_url,
+    parse_scc_search_results,
+)
 from app.services.public_fetch import FetchResult  # noqa: E402
 from app.services.source_registry import load_source_registry  # noqa: E402
 from run_public_discovery import run_sources  # noqa: E402
@@ -67,6 +72,53 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertEqual(sources[0].publisher, "Virginia State Corporation Commission")
         self.assertEqual(sources[0].confidence, "candidate_discovered")
 
+    def test_parse_representative_scc_search_results_fixture(self) -> None:
+        html = (FIXTURES_DIR / "scc_search_results.html").read_text()
+
+        results = parse_scc_search_results(html, query="data center")
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            results[0].source_url,
+            "https://www.scc.virginia.gov/docketsearch/DOCS/example-large-load.pdf",
+        )
+        self.assertEqual(results[0].source_title, "Data center large load electric service agreement")
+        self.assertIn("public utility case", results[0].snippet)
+        self.assertEqual(results[0].source_query, "data center")
+
+    def test_relative_url_normalization(self) -> None:
+        self.assertEqual(
+            normalize_url("/docketsearch/DOCS/example-large-load.pdf"),
+            "https://www.scc.virginia.gov/docketsearch/DOCS/example-large-load.pdf",
+        )
+
+    def test_scc_search_result_parser_deduplicates_by_source_url(self) -> None:
+        html = (FIXTURES_DIR / "scc_search_results.html").read_text()
+
+        results = parse_scc_search_results(html, query="large load")
+
+        urls = [normalize_url(result.source_url) for result in results]
+        self.assertEqual(len(urls), len(set(urls)))
+        self.assertIn("https://www.scc.virginia.gov/docketsearch/DOCS/example-large-load.pdf", urls)
+
+    def test_no_parseable_results_warns_without_crashing(self) -> None:
+        fetch_result = FetchResult(
+            url="https://www.scc.virginia.gov/search/",
+            ok=True,
+            status_code=200,
+            content_type="text/html",
+            text='<html><body><a href="/pages/about-the-commission">About SCC</a></body></html>',
+            content_hash="hash",
+            fetched_at="2026-05-13T00:00:00+00:00",
+        )
+
+        result = VirginiaSccDiscoveryAdapter(self._source(), fetch_client=StubFetchClient(fetch_result)).run(
+            dry_run=False
+        )
+
+        self.assertEqual(result.discovered_sources, [])
+        self.assertTrue(any("no_parseable_scc_results" in warning for warning in result.warnings))
+
     def test_run_public_discovery_dry_run_skips_unimplemented_adapters(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             payload = run_sources(dry_run=True, output_dir=Path(tmpdir))
@@ -104,8 +156,9 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
                 fetch_cache_dir=Path(tmpdir),
             )
             result = adapter.run(dry_run=False)
-            self.assertEqual(len(result.fetch_cache_paths), 1)
-            self.assertTrue(Path(result.fetch_cache_paths[0], "metadata.json").exists())
+            self.assertEqual(len(result.fetch_cache_paths), 4)
+            for cache_path in result.fetch_cache_paths:
+                self.assertTrue(Path(cache_path, "metadata.json").exists())
 
     def test_virginia_scc_fetch_failure_becomes_structured_warning(self) -> None:
         fetch_result = FetchResult(
