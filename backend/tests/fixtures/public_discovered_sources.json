@@ -1,0 +1,30 @@
+[
+  {
+    "source_url": "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00022.html",
+    "source_title": "Virginia SCC - Cases: Application of Virginia Electric and Power Company",
+    "source_type": "state_regulatory_dockets",
+    "publisher": "Virginia State Corporation Commission",
+    "geography": "Virginia",
+    "discovery_method": "searchstax_query",
+    "discovered_at": "2026-05-13T22:05:30.441583Z",
+    "confidence": "candidate_discovered",
+    "source_query": "data center",
+    "snippet": "Case Comments for PUR-2026-00022",
+    "case_number": "PUR-2026-00022",
+    "document_type": "case",
+    "extra_fixture_field": "preserved"
+  },
+  {
+    "source_url": "https://www.scc.virginia.gov/media/sccvirginiagov-home/about-the-scc/fact-sheets/scc-data-center-initiatives-02-2026.pdf",
+    "source_title": "SCC Data Center Initiatives Facts and Figures Feb2026",
+    "source_type": "state_regulatory_dockets",
+    "publisher": "Virginia State Corporation Commission",
+    "geography": "Virginia",
+    "discovery_method": "searchstax_query",
+    "discovered_at": "2026-05-13T22:05:30.441498Z",
+    "confidence": "0.7",
+    "source_query": "data center",
+    "snippet": "SCC Data Center Initiatives",
+    "document_type": "pdf"
+  }
+]
