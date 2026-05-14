@@ -91,7 +91,13 @@ Extracted discovered-source claims can now be grouped into reviewable rows in th
 
 Project candidates are not final `projects` rows, are not map markers, and are not prediction inputs. If no explicit `possible_project_name` claim exists, the generator uses a cautious unresolved label such as `Unresolved Virginia SCC candidate <source id>` rather than inferring a project name from vague source titles. It does not infer county/city from state, invent developers, invent load, or promote anything automatically.
 
-Promotion from project candidates to final projects, accepted evidence claims, map display, or prediction scoring remains a later reviewed workflow. The core rule remains unchanged: no public source, no project record.
+## Project Candidate Promotion
+
+Project candidates can now be promoted through an explicit single-candidate review action with `backend/scripts/promote_project_candidate.py --candidate-id <id> --confirm`, or the guarded `POST /project-candidates/{candidate_id}/promote` endpoint with `{"confirm": true}`. Without confirmation the promotion script and API run as dry-runs and do not create final records.
+
+Promotion creates a normal `projects` row and linked `evidence` only for the selected candidate, then marks that candidate as `promoted` with a `promoted_project_id` reference for idempotency. It does not bulk-promote candidates, does not invent missing developer/location/load fields, and does not bypass the public-source requirement. Candidates with unresolved generated names, missing state, or missing primary source URLs are blocked unless the reviewer passes the explicit override flags where available.
+
+Once promoted, the resulting row is an ordinary Project and may enter existing project evidence, map, and prediction workflows through those normal paths. Unpromoted project candidates remain review records only. The core rule remains unchanged: no public source, no project record.
 
 ## Public Fetch Policy
 
