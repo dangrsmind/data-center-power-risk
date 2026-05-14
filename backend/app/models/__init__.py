@@ -5,6 +5,7 @@ from app.models.evidence import Claim, Evidence, FieldProvenance
 from app.models.event import Adjudication, Event
 from app.models.graph import GraphEdge, GraphNode
 from app.models.project import Phase, PhaseLoad, Project, ProjectAlias, ProjectCoordinateHistory
+from app.models.project_candidate import ProjectCandidate
 from app.models.prediction import ProjectPrediction
 from app.models.quarterly import (
     PhaseQuarterScore,
@@ -34,6 +35,7 @@ __all__ = [
     "PhaseQuarterScore",
     "Project",
     "ProjectAlias",
+    "ProjectCandidate",
     "ProjectCoordinateHistory",
     "ProjectEnrichmentSnapshot",
     "ProjectPrediction",

@@ -115,9 +115,7 @@ class PublicDiscoveredSourceIngestionTest(unittest.TestCase):
         import discovery_healthcheck
 
         original_session = discovery_healthcheck.SessionLocal
-        original_create = discovery_healthcheck.create_db_and_tables
         discovery_healthcheck.SessionLocal = self.SessionLocal
-        discovery_healthcheck.create_db_and_tables = lambda: Base.metadata.create_all(bind=self.engine)
         db = self.SessionLocal()
         try:
             DiscoveredSourceService(db).ingest_rows(self._rows())
@@ -126,7 +124,6 @@ class PublicDiscoveredSourceIngestionTest(unittest.TestCase):
         finally:
             db.close()
             discovery_healthcheck.SessionLocal = original_session
-            discovery_healthcheck.create_db_and_tables = original_create
 
         self.assertEqual(payload["discovered_sources_checked"], 2)
         self.assertEqual(payload["errors"], [])

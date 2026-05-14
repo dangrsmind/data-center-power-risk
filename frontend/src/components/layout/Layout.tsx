@@ -5,8 +5,9 @@ const NAV = [
   { path: "/map",      label: "Map",      icon: "◎" },
   { path: "/coordinates", label: "Coordinates", icon: "⌖" },
   { path: "/discover",           label: "Discover",           icon: "⊘" },
-  { path: "/discovered-sources", label: "Discovered Sources", icon: "⊡" },
-  { path: "/ingest",             label: "Ingest",             icon: "⊕" },
+  { path: "/discovered-sources",       label: "Discovered Sources", icon: "⊡" },
+  { path: "/discovered-source-claims", label: "Discovered Claims",  icon: "⊟" },
+  { path: "/ingest",                   label: "Ingest",             icon: "⊕" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
