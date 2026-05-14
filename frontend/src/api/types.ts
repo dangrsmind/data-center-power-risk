@@ -541,12 +541,34 @@ export interface ProjectCandidate {
   discovered_source_claim_ids_json: string[] | null;
   evidence_excerpt: string | null;
   raw_metadata_json: Record<string, unknown> | unknown[] | null;
+  promoted_project_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface ProjectCandidateListResponse {
   items: ProjectCandidate[];
+}
+
+export interface ProjectCandidatePromotionRequest {
+  confirm: boolean;
+  allow_unresolved_name?: boolean;
+  allow_incomplete?: boolean;
+}
+
+export interface ProjectCandidatePromotionResponse {
+  dry_run: boolean;
+  candidate_id: string;
+  promoted: boolean;
+  project_created: boolean;
+  project_updated: boolean;
+  would_promote: boolean;
+  would_create_project: boolean;
+  would_update_project: boolean;
+  evidence_created: number;
+  warnings: string[];
+  errors: string[];
+  promoted_project_id: string | null;
 }
 
 // ---------------------------------------------------------------------------

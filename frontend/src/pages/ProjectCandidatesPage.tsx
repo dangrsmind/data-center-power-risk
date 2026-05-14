@@ -1,21 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import type { ProjectCandidate } from "../api/types";
-import { getProjectCandidates } from "../api/adapter";
+import type { ProjectCandidate, ProjectCandidatePromotionResponse } from "../api/types";
+import { getProjectCandidates, promoteProjectCandidate } from "../api/adapter";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("en-US", {
-      year: "numeric", month: "short", day: "numeric",
-    });
-  } catch {
-    return iso.slice(0, 10);
-  }
-}
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -54,8 +43,12 @@ function lifecycleLabel(s: string | null): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function isUnresolved(name: string): boolean {
+  return !name || name.trim().toLowerCase().startsWith("unresolved");
+}
+
 // ---------------------------------------------------------------------------
-// Small reusable components
+// Small shared components
 // ---------------------------------------------------------------------------
 
 function StatusBadge({ status }: { status: string }) {
@@ -100,7 +93,7 @@ function OpenSourceButton({ url }: { url: string }) {
   );
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label = "⎘ Copy URL" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const handleClick = useCallback(() => {
     navigator.clipboard.writeText(text).then(() => {
@@ -118,7 +111,7 @@ function CopyButton({ text }: { text: string }) {
       borderRadius: 4, textAlign: "center" as const,
       whiteSpace: "nowrap" as const,
     }}>
-      {copied ? "✓ Copied" : "⎘ Copy URL"}
+      {copied ? "✓ Copied" : label}
     </button>
   );
 }
@@ -140,6 +133,392 @@ function DetailsToggleButton({ expanded, onClick }: { expanded: boolean; onClick
 }
 
 // ---------------------------------------------------------------------------
+// Promotion modal
+// ---------------------------------------------------------------------------
+
+type ModalPhase = "review" | "pending" | "success" | "failed";
+
+function PromoteModal({
+  candidate,
+  onClose,
+  onSuccess,
+}: {
+  candidate: ProjectCandidate;
+  onClose: () => void;
+  onSuccess: (resp: ProjectCandidatePromotionResponse) => void;
+}) {
+  const [phase, setPhase] = useState<ModalPhase>("review");
+  const [allowUnresolved, setAllowUnresolved] = useState(false);
+  const [allowIncomplete, setAllowIncomplete] = useState(false);
+  const [result, setResult] = useState<ProjectCandidatePromotionResponse | null>(null);
+
+  const needsUnresolvedOverride = isUnresolved(candidate.candidate_name);
+  const needsIncompleteOverride = !candidate.state;
+
+  const handlePromote = useCallback(async () => {
+    setPhase("pending");
+    try {
+      const resp = await promoteProjectCandidate(candidate.id, {
+        confirm: true,
+        allow_unresolved_name: allowUnresolved,
+        allow_incomplete: allowIncomplete,
+      });
+      setResult(resp);
+      if (resp.promoted) {
+        setPhase("success");
+        onSuccess(resp);
+      } else {
+        setPhase("failed");
+      }
+    } catch (err) {
+      setResult({
+        dry_run: false,
+        candidate_id: candidate.id,
+        promoted: false,
+        project_created: false,
+        project_updated: false,
+        would_promote: false,
+        would_create_project: false,
+        would_update_project: false,
+        evidence_created: 0,
+        warnings: [],
+        errors: [String(err)],
+        promoted_project_id: null,
+      });
+      setPhase("failed");
+    }
+  }, [candidate.id, allowUnresolved, allowIncomplete, onSuccess]);
+
+  const canPromote =
+    phase === "review" &&
+    (!needsUnresolvedOverride || allowUnresolved) &&
+    (!needsIncompleteOverride || allowIncomplete);
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed", inset: 0, zIndex: 1000,
+    background: "rgba(0,0,0,0.72)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 24,
+  };
+
+  const panelStyle: React.CSSProperties = {
+    background: "#0f172a",
+    border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 10,
+    width: "100%", maxWidth: 560,
+    maxHeight: "90vh",
+    overflowY: "auto",
+    boxShadow: "0 24px 48px rgba(0,0,0,0.6)",
+  };
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+    letterSpacing: "0.08em", color: "#64748b", marginBottom: 4,
+  };
+
+  return (
+    <div style={overlayStyle} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={panelStyle}>
+
+        {/* Header */}
+        <div style={{
+          padding: "18px 20px 14px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12,
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>
+              Promote Candidate
+            </div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
+              Single-candidate promotion — no bulk actions
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "none", border: "none", color: "#64748b", cursor: "pointer",
+            fontSize: 18, lineHeight: 1, padding: "2px 4px", flexShrink: 0,
+          }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "18px 20px" }}>
+
+          {/* Success state */}
+          {phase === "success" && result && (
+            <div>
+              <div style={{
+                background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)",
+                borderRadius: 8, padding: "14px 16px", marginBottom: 16,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#22c55e", marginBottom: 4 }}>
+                  ✓ Candidate promoted successfully
+                </div>
+                {result.project_created && (
+                  <div style={{ fontSize: 12, color: "#86efac" }}>A new Project record was created.</div>
+                )}
+                {result.project_updated && (
+                  <div style={{ fontSize: 12, color: "#86efac" }}>An existing Project record was updated.</div>
+                )}
+                {result.evidence_created > 0 && (
+                  <div style={{ fontSize: 12, color: "#86efac" }}>
+                    {result.evidence_created} evidence record{result.evidence_created !== 1 ? "s" : ""} created.
+                  </div>
+                )}
+              </div>
+              {result.promoted_project_id && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={sectionLabel}>Promoted Project ID</div>
+                  <div style={{
+                    fontFamily: "monospace", fontSize: 12, color: "#a5b4fc",
+                    background: "rgba(99,102,241,0.1)", padding: "8px 10px",
+                    borderRadius: 6, wordBreak: "break-all",
+                  }}>
+                    {result.promoted_project_id}
+                  </div>
+                </div>
+              )}
+              {result.warnings.length > 0 && (
+                <div style={{
+                  background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)",
+                  borderRadius: 6, padding: "10px 12px", marginBottom: 14,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", marginBottom: 6 }}>
+                    Warnings
+                  </div>
+                  {result.warnings.map((w, i) => (
+                    <div key={i} style={{ fontSize: 11, color: "#fcd34d", marginBottom: 2 }}>• {w}</div>
+                  ))}
+                </div>
+              )}
+              <button onClick={onClose} style={{
+                width: "100%", padding: "10px 16px",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                background: "rgba(34,197,94,0.15)", color: "#22c55e",
+                border: "1px solid rgba(34,197,94,0.4)",
+                borderRadius: 6,
+              }}>
+                Close
+              </button>
+            </div>
+          )}
+
+          {/* Failed state */}
+          {phase === "failed" && result && (
+            <div>
+              <div style={{
+                background: "rgba(239,68,68,0.09)", border: "1px solid rgba(239,68,68,0.3)",
+                borderRadius: 8, padding: "14px 16px", marginBottom: 16,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#ef4444", marginBottom: 6 }}>
+                  Promotion failed
+                </div>
+                {result.errors.map((e, i) => (
+                  <div key={i} style={{ fontSize: 12, color: "#fca5a5", marginBottom: 2 }}>• {e}</div>
+                ))}
+              </div>
+              {result.warnings.length > 0 && (
+                <div style={{
+                  background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)",
+                  borderRadius: 6, padding: "10px 12px", marginBottom: 14,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+                    Warnings
+                  </div>
+                  {result.warnings.map((w, i) => (
+                    <div key={i} style={{ fontSize: 11, color: "#fcd34d", marginBottom: 2 }}>• {w}</div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => { setPhase("review"); setResult(null); }} style={{
+                  flex: 1, padding: "9px 16px",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  background: "rgba(255,255,255,0.06)", color: "#94a3b8",
+                  border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6,
+                }}>
+                  ← Try again
+                </button>
+                <button onClick={onClose} style={{
+                  flex: 1, padding: "9px 16px",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  background: "transparent", color: "#64748b",
+                  border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6,
+                }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Review / pending state */}
+          {(phase === "review" || phase === "pending") && (
+            <div>
+              {/* Warning banner */}
+              <div style={{
+                background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)",
+                borderRadius: 7, padding: "12px 14px", marginBottom: 18,
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+                  Review required
+                </div>
+                <div style={{ fontSize: 12, color: "#fcd34d", lineHeight: 1.5 }}>
+                  This will create a real Project record from this candidate.
+                  Continue only after review.
+                </div>
+              </div>
+
+              {/* Candidate summary */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 20px", marginBottom: 18 }}>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={sectionLabel}>Candidate Name</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
+                    {candidate.candidate_name}
+                  </div>
+                </div>
+
+                {(candidate.state || candidate.county || candidate.city) && (
+                  <div>
+                    <div style={sectionLabel}>Location</div>
+                    <div style={{ fontSize: 12, color: "#cbd5e1" }}>
+                      {[candidate.city, candidate.county, candidate.state].filter(Boolean).join(", ")}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div style={sectionLabel}>Confidence</div>
+                  <ConfBadge value={candidate.confidence} />
+                </div>
+
+                <div>
+                  <div style={sectionLabel}>Sources / Claims</div>
+                  <div style={{ fontSize: 12, color: "#cbd5e1" }}>
+                    {candidate.source_count} source{candidate.source_count !== 1 ? "s" : ""},
+                    {" "}{candidate.claim_count} claim{candidate.claim_count !== 1 ? "s" : ""}
+                  </div>
+                </div>
+
+                {candidate.primary_source_url && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={sectionLabel}>Primary Source</div>
+                    <a href={candidate.primary_source_url} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 11, color: "#818cf8", wordBreak: "break-all" }}>
+                      {candidate.primary_source_url}
+                    </a>
+                  </div>
+                )}
+
+                {candidate.evidence_excerpt && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={sectionLabel}>Evidence Excerpt</div>
+                    <div style={{
+                      fontSize: 11, color: "#94a3b8", lineHeight: 1.55,
+                      background: "rgba(255,255,255,0.04)", borderRadius: 5,
+                      padding: "8px 10px", maxHeight: 110, overflowY: "auto",
+                      whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    }}>
+                      {candidate.evidence_excerpt}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Safety gates */}
+              {needsUnresolvedOverride && (
+                <div style={{
+                  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.28)",
+                  borderRadius: 7, padding: "12px 14px", marginBottom: 12,
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", marginBottom: 6 }}>
+                    Unresolved name detected
+                  </div>
+                  <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 10, lineHeight: 1.5 }}>
+                    Candidates with unresolved names are blocked by default.
+                    Only override if you have verified the name is acceptable.
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={allowUnresolved}
+                      onChange={e => setAllowUnresolved(e.target.checked)}
+                      style={{ width: 14, height: 14, accentColor: "#f59e0b", cursor: "pointer" }}
+                    />
+                    <span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                      Allow unresolved name
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {needsIncompleteOverride && (
+                <div style={{
+                  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.28)",
+                  borderRadius: 7, padding: "12px 14px", marginBottom: 12,
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", marginBottom: 6 }}>
+                    Incomplete candidate
+                  </div>
+                  <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 10, lineHeight: 1.5 }}>
+                    Required fields (state) are missing. Promotion is blocked by default
+                    for incomplete candidates.
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={allowIncomplete}
+                      onChange={e => setAllowIncomplete(e.target.checked)}
+                      style={{ width: 14, height: 14, accentColor: "#f59e0b", cursor: "pointer" }}
+                    />
+                    <span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                      Allow incomplete candidate
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* Action row */}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button
+                  onClick={handlePromote}
+                  disabled={!canPromote}
+                  style={{
+                    flex: 1, padding: "11px 16px",
+                    fontSize: 13, fontWeight: 700, cursor: canPromote ? "pointer" : "not-allowed",
+                    background: canPromote
+                      ? "rgba(99,102,241,0.22)"
+                      : "rgba(99,102,241,0.07)",
+                    color: canPromote ? "#a5b4fc" : "#475569",
+                    border: canPromote
+                      ? "1px solid rgba(99,102,241,0.5)"
+                      : "1px solid rgba(99,102,241,0.15)",
+                    borderRadius: 6,
+                    transition: "all 0.12s",
+                  }}
+                >
+                  {phase === "pending" ? "Promoting…" : "Promote candidate"}
+                </button>
+                <button
+                  onClick={onClose}
+                  disabled={phase === "pending"}
+                  style={{
+                    padding: "11px 20px",
+                    fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    background: "transparent", color: "#64748b",
+                    border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6,
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Details expansion panel
 // ---------------------------------------------------------------------------
 
@@ -151,6 +530,11 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
     ? (c.discovered_source_claim_ids_json as string[])
     : [];
 
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+    letterSpacing: "0.08em", color: "#64748b", marginBottom: 4,
+  };
+
   return (
     <tr>
       <td colSpan={10} style={{ padding: 0 }}>
@@ -160,34 +544,22 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
           borderBottom: "1px solid rgba(255,255,255,0.06)",
           padding: "18px 20px",
         }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "16px 32px",
-            fontSize: 12,
-          }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 32px", fontSize: 12 }}>
 
-            {/* Evidence Excerpt */}
             {c.evidence_excerpt && (
               <div style={{ gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 6 }}>
-                  Evidence Excerpt
-                </div>
-                <div style={{ color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12 }}>
+                <div style={sectionLabel}>Evidence Excerpt</div>
+                <div style={{ color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {c.evidence_excerpt}
                 </div>
               </div>
             )}
 
-            {/* Primary Source URL */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Primary Source URL
-              </div>
+              <div style={sectionLabel}>Primary Source URL</div>
               {c.primary_source_url ? (
-                <a href={c.primary_source_url} target="_blank" rel="noopener noreferrer" style={{
-                  color: "#818cf8", fontSize: 12, wordBreak: "break-all",
-                }}>
+                <a href={c.primary_source_url} target="_blank" rel="noopener noreferrer"
+                  style={{ color: "#818cf8", wordBreak: "break-all" }}>
                   {c.primary_source_url}
                 </a>
               ) : (
@@ -195,79 +567,64 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
               )}
             </div>
 
-            {/* Source / Claim counts */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Evidence Counts
-              </div>
-              <div style={{ color: "#cbd5e1", fontSize: 12 }}>
+              <div style={sectionLabel}>Evidence Counts</div>
+              <div style={{ color: "#cbd5e1" }}>
                 {c.source_count} source{c.source_count !== 1 ? "s" : ""},&nbsp;
                 {c.claim_count} claim{c.claim_count !== 1 ? "s" : ""}
               </div>
             </div>
 
-            {/* Confidence + Status */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Confidence
-              </div>
-              <div style={{ color: "#cbd5e1", fontSize: 12 }}>
-                {confDisplay(c.confidence)} (raw: {c.confidence})
-              </div>
+              <div style={sectionLabel}>Confidence</div>
+              <div style={{ color: "#cbd5e1" }}>{confDisplay(c.confidence)} (raw: {c.confidence})</div>
             </div>
+
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Status
-              </div>
+              <div style={sectionLabel}>Status</div>
               <StatusBadge status={c.status} />
             </div>
 
-            {/* Utility */}
+            {c.promoted_project_id && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={sectionLabel}>Promoted Project ID</div>
+                <div style={{ color: "#a5b4fc", fontFamily: "monospace", fontSize: 11 }}>
+                  {c.promoted_project_id}
+                </div>
+              </div>
+            )}
+
             {c.utility && (
               <div>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                  Utility
-                </div>
-                <div style={{ color: "#cbd5e1", fontSize: 12 }}>{c.utility}</div>
+                <div style={sectionLabel}>Utility</div>
+                <div style={{ color: "#cbd5e1" }}>{c.utility}</div>
               </div>
             )}
 
-            {/* Lifecycle */}
             {c.lifecycle_state && (
               <div>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                  Lifecycle State
-                </div>
-                <div style={{ color: "#cbd5e1", fontSize: 12 }}>{lifecycleLabel(c.lifecycle_state)}</div>
+                <div style={sectionLabel}>Lifecycle State</div>
+                <div style={{ color: "#cbd5e1" }}>{lifecycleLabel(c.lifecycle_state)}</div>
               </div>
             )}
 
-            {/* Timestamps */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Created
-              </div>
-              <div style={{ color: "#94a3b8", fontSize: 12 }}>{formatDateTime(c.created_at)}</div>
+              <div style={sectionLabel}>Created</div>
+              <div style={{ color: "#94a3b8" }}>{formatDateTime(c.created_at)}</div>
             </div>
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Updated
-              </div>
-              <div style={{ color: "#94a3b8", fontSize: 12 }}>{formatDateTime(c.updated_at)}</div>
+              <div style={sectionLabel}>Updated</div>
+              <div style={{ color: "#94a3b8" }}>{formatDateTime(c.updated_at)}</div>
             </div>
 
-            {/* Candidate ID */}
             <div style={{ gridColumn: "1 / -1" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                Candidate ID
-              </div>
+              <div style={sectionLabel}>Candidate ID</div>
               <div style={{ color: "#64748b", fontFamily: "monospace", fontSize: 11 }}>{c.id}</div>
             </div>
 
-            {/* Discovered Source IDs */}
             {sourceIds.length > 0 && (
               <div style={{ gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 6 }}>
+                <div style={sectionLabel}>
                   Discovered Source IDs ({sourceIds.length}){" "}
                   <a href="/discovered-sources" style={{ color: "#818cf8", fontWeight: 400, textTransform: "none", fontSize: 11 }}>
                     → view sources
@@ -281,10 +638,9 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
               </div>
             )}
 
-            {/* Discovered Source Claim IDs */}
             {claimIds.length > 0 && (
               <div style={{ gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 6 }}>
+                <div style={sectionLabel}>
                   Discovered Source Claim IDs ({claimIds.length}){" "}
                   <a href="/discovered-source-claims" style={{ color: "#818cf8", fontWeight: 400, textTransform: "none", fontSize: 11 }}>
                     → view claims
@@ -298,12 +654,9 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
               </div>
             )}
 
-            {/* Raw metadata */}
             {c.raw_metadata_json && (
               <div style={{ gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b", marginBottom: 4 }}>
-                  Raw Metadata
-                </div>
+                <div style={sectionLabel}>Raw Metadata</div>
                 <pre style={{
                   color: "#94a3b8", fontSize: 11, lineHeight: 1.5,
                   background: "rgba(255,255,255,0.04)", borderRadius: 4,
@@ -325,8 +678,15 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
 // Table row
 // ---------------------------------------------------------------------------
 
-function CandidateRow({ c }: { c: ProjectCandidate }) {
+function CandidateRow({
+  c,
+  onPromote,
+}: {
+  c: ProjectCandidate;
+  onPromote: (c: ProjectCandidate) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const isPromoted = c.status === "promoted";
 
   return (
     <>
@@ -424,15 +784,11 @@ function CandidateRow({ c }: { c: ProjectCandidate }) {
 
         {/* Sources + Claims */}
         <td style={{ padding: "11px 10px", overflow: "hidden", textAlign: "center" as const }}>
-          <div style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 600 }}>
-            {c.source_count}
-          </div>
+          <div style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 600 }}>{c.source_count}</div>
           <div style={{ fontSize: 10, color: "#64748b" }}>src</div>
           {c.claim_count > 0 && (
             <>
-              <div style={{ color: "#818cf8", fontSize: 12, fontWeight: 600, marginTop: 3 }}>
-                {c.claim_count}
-              </div>
+              <div style={{ color: "#818cf8", fontSize: 12, fontWeight: 600, marginTop: 3 }}>{c.claim_count}</div>
               <div style={{ fontSize: 10, color: "#64748b" }}>claims</div>
             </>
           )}
@@ -451,6 +807,42 @@ function CandidateRow({ c }: { c: ProjectCandidate }) {
             {c.primary_source_url && <OpenSourceButton url={c.primary_source_url} />}
             {c.primary_source_url && <CopyButton text={c.primary_source_url} />}
             <DetailsToggleButton expanded={expanded} onClick={() => setExpanded(e => !e)} />
+
+            {/* Promotion action */}
+            {isPromoted ? (
+              <div>
+                <div style={{
+                  padding: "5px 9px",
+                  fontSize: 11, fontWeight: 700,
+                  background: "rgba(34,197,94,0.12)", color: "#22c55e",
+                  border: "1px solid rgba(34,197,94,0.35)",
+                  borderRadius: 4, textAlign: "center",
+                }}>
+                  ✓ Promoted
+                </div>
+                {c.promoted_project_id && (
+                  <CopyButton
+                    text={c.promoted_project_id}
+                    label="⎘ Copy project ID"
+                  />
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => onPromote(c)}
+                style={{
+                  display: "block", width: "100%", padding: "5px 9px",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  background: "rgba(99,102,241,0.14)", color: "#818cf8",
+                  border: "1px solid rgba(99,102,241,0.4)",
+                  borderRadius: 4, textAlign: "center" as const,
+                  whiteSpace: "nowrap" as const,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                ↑ Promote
+              </button>
+            )}
           </div>
         </td>
       </tr>
@@ -484,8 +876,7 @@ function FilterSelect({
         color: value ? "#e2e8f0" : "#94a3b8",
         border: "1px solid rgba(255,255,255,0.12)",
         borderRadius: 6, padding: "7px 10px",
-        fontSize: 12, cursor: "pointer",
-        minWidth: 140,
+        fontSize: 12, cursor: "pointer", minWidth: 140,
       }}
     >
       <option value="">{placeholder}</option>
@@ -516,7 +907,9 @@ export function ProjectCandidatesPage() {
   const [filterState, setFilterState] = useState("");
   const [filterConf, setFilterConf] = useState("");
 
-  useEffect(() => {
+  const [promotingCandidate, setPromotingCandidate] = useState<ProjectCandidate | null>(null);
+
+  const fetchCandidates = useCallback(() => {
     setLoading(true);
     setError(null);
     getProjectCandidates({ limit: 500 })
@@ -524,6 +917,12 @@ export function ProjectCandidatesPage() {
       .catch(err => setError(String(err)))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchCandidates(); }, [fetchCandidates]);
+
+  const handlePromotionSuccess = useCallback((_resp: ProjectCandidatePromotionResponse) => {
+    fetchCandidates();
+  }, [fetchCandidates]);
 
   const statusOptions = useMemo(() => {
     const s = [...new Set(candidates.map(c => c.status))].sort();
@@ -548,8 +947,7 @@ export function ProjectCandidatesPage() {
       if (needle) {
         const hay = [
           c.candidate_name, c.developer, c.state,
-          c.county, c.city, c.utility,
-          c.primary_source_url,
+          c.county, c.city, c.utility, c.primary_source_url,
         ].join(" ").toLowerCase();
         if (!hay.includes(needle)) return false;
       }
@@ -569,17 +967,19 @@ export function ProjectCandidatesPage() {
   };
 
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", height: "100%", overflow: "hidden",
-      background: "var(--bg)",
-    }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg)" }}>
+
+      {/* Promotion modal */}
+      {promotingCandidate && (
+        <PromoteModal
+          candidate={promotingCandidate}
+          onClose={() => setPromotingCandidate(null)}
+          onSuccess={handlePromotionSuccess}
+        />
+      )}
 
       {/* Header */}
-      <div style={{
-        padding: "16px 24px 12px",
-        borderBottom: "1px solid var(--border)",
-        flexShrink: 0,
-      }}>
+      <div style={{ padding: "16px 24px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
           <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#e2e8f0" }}>
             Project Candidates
@@ -621,7 +1021,9 @@ export function ProjectCandidatesPage() {
               return (
                 <div key={s} style={{ textAlign: "center" as const }}>
                   <div style={{ fontSize: 20, fontWeight: 700, color, lineHeight: 1 }}>{n}</div>
-                  <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>{s.replace(/_/g, " ")}</div>
+                  <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>
+                    {s.replace(/_/g, " ")}
+                  </div>
                 </div>
               );
             })}
@@ -647,14 +1049,11 @@ export function ProjectCandidatesPage() {
           <FilterSelect value={filterState} onChange={setFilterState} options={stateOptions} placeholder="All states" />
           <FilterSelect value={filterConf} onChange={setFilterConf} options={CONF_OPTIONS} placeholder="All confidence" />
           {hasFilters && (
-            <button
-              onClick={clearFilters}
-              style={{
-                padding: "7px 12px", fontSize: 12, cursor: "pointer",
-                background: "transparent", color: "#64748b",
-                border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6,
-              }}
-            >
+            <button onClick={clearFilters} style={{
+              padding: "7px 12px", fontSize: 12, cursor: "pointer",
+              background: "transparent", color: "#64748b",
+              border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6,
+            }}>
               Clear filters
             </button>
           )}
@@ -729,13 +1128,10 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
         {!loading && !error && candidates.length > 0 && filtered.length === 0 && (
           <div style={{ textAlign: "center", padding: "48px 24px", color: "#64748b", fontSize: 13 }}>
             No candidates match the current filters.{" "}
-            <button
-              onClick={clearFilters}
-              style={{
-                background: "none", border: "none", color: "#818cf8",
-                cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline",
-              }}
-            >
+            <button onClick={clearFilters} style={{
+              background: "none", border: "none", color: "#818cf8",
+              cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline",
+            }}>
               Clear filters
             </button>
           </div>
@@ -745,13 +1141,10 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
         {!loading && !error && filtered.length > 0 && (
           <div style={{ overflowX: "auto", marginTop: 12 }}>
             <table style={{
-              borderCollapse: "collapse",
-              fontSize: 12,
-              tableLayout: "fixed",
-              width: "100%",
-              minWidth: 900,
+              borderCollapse: "collapse", fontSize: 12,
+              tableLayout: "fixed", width: "100%", minWidth: 900,
             }}>
-              {/* Column widths: 190+110+100+90+72+90+88+88+70+120 = 1018px */}
+              {/* 190+110+100+90+72+90+88+88+70+120 = 1018px */}
               <colgroup>
                 <col style={{ width: 190 }} />
                 <col style={{ width: 110 }} />
@@ -771,18 +1164,15 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
                     "MW", "Lifecycle", "Confidence", "Status", "Sources", "Actions",
                   ].map((label, i) => (
                     <th key={label} style={{
-                      padding: "9px 10px", textAlign: i === 4 ? "right" as const : "left" as const,
-                      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-                      letterSpacing: "0.08em", color: "#94a3b8",
-                      whiteSpace: "nowrap" as const,
-                      overflow: "hidden",
+                      padding: "9px 10px",
+                      textAlign: i === 4 ? "right" as const : "left" as const,
+                      fontSize: 10, fontWeight: 700,
+                      textTransform: "uppercase" as const, letterSpacing: "0.08em",
+                      color: "#94a3b8", whiteSpace: "nowrap" as const, overflow: "hidden",
                       position: "sticky" as const, top: 0,
                       background: "var(--bg)", zIndex: i === 9 ? 3 : 1,
                       borderBottom: "1px solid rgba(255,255,255,0.08)",
-                      ...(i === 9 ? {
-                        right: 0,
-                        boxShadow: "-2px 0 6px rgba(0,0,0,0.3)",
-                      } : {}),
+                      ...(i === 9 ? { right: 0, boxShadow: "-2px 0 6px rgba(0,0,0,0.3)" } : {}),
                     }}>
                       {label}
                     </th>
@@ -791,7 +1181,11 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
               </thead>
               <tbody>
                 {filtered.map(c => (
-                  <CandidateRow key={c.id} c={c} />
+                  <CandidateRow
+                    key={c.id}
+                    c={c}
+                    onPromote={setPromotingCandidate}
+                  />
                 ))}
               </tbody>
             </table>
