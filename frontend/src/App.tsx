@@ -7,6 +7,7 @@ import { MapPage } from "./pages/MapPage";
 import { DiscoverPage } from "./pages/DiscoverPage";
 import { CoordinatesPage } from "./pages/CoordinatesPage";
 import { DiscoveredSourcesPage } from "./pages/DiscoveredSourcesPage";
+import { DiscoveredSourceClaimsPage } from "./pages/DiscoveredSourceClaimsPage";
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
           <Route path="/coordinates" element={<CoordinatesPage />} />
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/discovered-sources" element={<DiscoveredSourcesPage />} />
+          <Route path="/discovered-source-claims" element={<DiscoveredSourceClaimsPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

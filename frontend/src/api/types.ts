@@ -518,6 +518,32 @@ export interface ProjectCoordinateHistoryItem {
   created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Discovered Source Claims
+// ---------------------------------------------------------------------------
+
+export interface DiscoveredSourceClaim {
+  id: string;
+  discovered_source_id: string;
+  source_url: string | null;
+  claim_type: string;
+  claim_value: string | number | boolean | Record<string, unknown> | unknown[] | null;
+  claim_unit: string | null;
+  evidence_excerpt: string | null;
+  confidence: number | null;
+  status: string;
+  extractor_name: string | null;
+  extractor_version: string | null;
+  raw_metadata_json: Record<string, unknown> | unknown[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscoveredSourceClaimListResponse {
+  items: DiscoveredSourceClaim[];
+  total: number;
+}
+
 export interface DiscoveredSource {
   discovery_id: string;
   candidate_project_name: string;

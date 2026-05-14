@@ -31,6 +31,7 @@ import type {
   IngestEvidencePayload,
   IngestEvidenceResponse,
   DiscoveredSource,
+  DiscoveredSourceClaimListResponse,
   DiscoverDecisions,
   ManualCapture,
   ManualCapturesResponse,
@@ -501,6 +502,25 @@ export async function acceptClaim(
 // ---------------------------------------------------------------------------
 // Discovery Review
 // ---------------------------------------------------------------------------
+
+export async function getDiscoveredSourceClaims(params?: {
+  claim_type?: string;
+  status?: string;
+  discovered_source_id?: string;
+  limit?: number;
+}): Promise<DiscoveredSourceClaimListResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return { items: [], total: 0 };
+  }
+  const qs = new URLSearchParams();
+  if (params?.claim_type) qs.set("claim_type", params.claim_type);
+  if (params?.status) qs.set("status", params.status);
+  if (params?.discovered_source_id) qs.set("discovered_source_id", params.discovered_source_id);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return fetchJson<DiscoveredSourceClaimListResponse>(`/discovered-source-claims${query}`);
+}
 
 export async function getDiscoveredSources(): Promise<DiscoveredSource[]> {
   if (USE_MOCK) {
