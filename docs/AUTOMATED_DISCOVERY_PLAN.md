@@ -85,7 +85,13 @@ Ingested discovered sources can now be followed by conservative extracted claim 
 
 These extracted claims are not project records, not final evidence claims, and not promoted source records. They are review candidates with `extracted`, `rejected`, or `promoted` status. The initial rule-based extractor is intentionally narrow: it can emit explicit case numbers, clear MW mentions, SCC/Virginia state context, document type, and general relevance terms such as `data center`, `large load`, `electric service agreement`, or `transmission interconnection`. It should not infer hidden facts, vague locations, developers, or project names unless a clear labeled phrase exists in the source text.
 
-Promotion from extracted claims to project candidates or accepted evidence remains a later analyst-reviewed step.
+## Project Candidate Generation
+
+Extracted discovered-source claims can now be grouped into reviewable rows in the separate `project_candidates` table with `backend/scripts/generate_project_candidates.py`. Candidate generation uses explicit extracted claim types only: `possible_project_name`, `developer`, `state`, `county`, `city`, `utility`, and `load_mw` populate candidate fields; `general_relevance`, case numbers, source IDs, and excerpts are supporting context.
+
+Project candidates are not final `projects` rows, are not map markers, and are not prediction inputs. If no explicit `possible_project_name` claim exists, the generator uses a cautious unresolved label such as `Unresolved Virginia SCC candidate <source id>` rather than inferring a project name from vague source titles. It does not infer county/city from state, invent developers, invent load, or promote anything automatically.
+
+Promotion from project candidates to final projects, accepted evidence claims, map display, or prediction scoring remains a later reviewed workflow. The core rule remains unchanged: no public source, no project record.
 
 ## Public Fetch Policy
 
