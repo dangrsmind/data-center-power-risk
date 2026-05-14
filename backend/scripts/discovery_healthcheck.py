@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 
@@ -15,6 +15,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.core.db import SessionLocal  # noqa: E402
 from app.models.discovered_source import DiscoveredSourceClaim, DiscoveredSourceRecord  # noqa: E402
+from app.models.project import Project  # noqa: E402
 from app.models.project_candidate import ProjectCandidate  # noqa: E402
 from app.services.discovered_source_claim_extractor import VALID_DISCOVERED_SOURCE_CLAIM_STATUSES  # noqa: E402
 from app.services.discovered_source_service import VALID_DISCOVERED_SOURCE_STATUSES  # noqa: E402
@@ -34,11 +35,20 @@ def run_healthcheck() -> dict[str, object]:
     checked = 0
     claims_checked = 0
     candidates_checked = 0
+    promoted_candidates_checked = 0
     try:
         with SessionLocal() as db:
             checked = db.scalar(select(func.count()).select_from(DiscoveredSourceRecord)) or 0
             claims_checked = db.scalar(select(func.count()).select_from(DiscoveredSourceClaim)) or 0
             candidates_checked = db.scalar(select(func.count()).select_from(ProjectCandidate)) or 0
+            promoted_candidates_checked = (
+                db.scalar(
+                    select(func.count())
+                    .select_from(ProjectCandidate)
+                    .where(or_(ProjectCandidate.status == "promoted", ProjectCandidate.promoted_project_id.is_not(None)))
+                )
+                or 0
+            )
             duplicate_count = db.scalar(
                 select(func.count()).select_from(
                     select(DiscoveredSourceRecord.source_url)
@@ -70,6 +80,7 @@ def run_healthcheck() -> dict[str, object]:
                 if status not in VALID_DISCOVERED_SOURCE_CLAIM_STATUSES:
                     errors.append(f"claim {claim_id} has invalid status: {status}")
             claim_ids = set(db.scalars(select(DiscoveredSourceClaim.id)))
+            project_ids = set(db.scalars(select(Project.id)))
             duplicate_candidate_count = db.scalar(
                 select(func.count()).select_from(
                     select(ProjectCandidate.candidate_key)
@@ -85,6 +96,18 @@ def run_healthcheck() -> dict[str, object]:
                     errors.append(f"project candidate {candidate.id} has invalid status: {candidate.status}")
                 if not 0 <= candidate.confidence <= 1:
                     errors.append(f"project candidate {candidate.id} has invalid confidence: {candidate.confidence}")
+                if candidate.promoted_project_id is not None and candidate.status != "promoted":
+                    errors.append(
+                        f"project candidate {candidate.id} has promoted_project_id but status is {candidate.status}"
+                    )
+                if candidate.status == "promoted":
+                    if candidate.promoted_project_id is None:
+                        errors.append(f"promoted project candidate {candidate.id} has no promoted_project_id")
+                    elif candidate.promoted_project_id not in project_ids:
+                        errors.append(
+                            f"promoted project candidate {candidate.id} references missing project: "
+                            f"{candidate.promoted_project_id}"
+                        )
                 source_refs = candidate.discovered_source_ids_json or []
                 claim_refs = candidate.discovered_source_claim_ids_json or []
                 for source_ref in source_refs:
@@ -101,6 +124,7 @@ def run_healthcheck() -> dict[str, object]:
         "discovered_sources_checked": checked,
         "discovered_source_claims_checked": claims_checked,
         "project_candidates_checked": candidates_checked,
+        "promoted_project_candidates_checked": promoted_candidates_checked,
         "errors": errors,
         "warnings": warnings,
     }

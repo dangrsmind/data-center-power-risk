@@ -218,6 +218,11 @@ class ProjectCandidateGenerator:
             if existing is None:
                 self.db.add(ProjectCandidate(**asdict(candidate)))
                 summary.candidates_created += 1
+            elif existing.promoted_project_id:
+                if existing.status != "promoted":
+                    existing.status = "promoted"
+                    summary.warnings.append(f"corrected promoted project candidate status: {existing.id}")
+                summary.candidates_skipped += 1
             else:
                 update_project_candidate(existing, candidate)
                 summary.candidates_updated += 1

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy import JSON, CheckConstraint, Float, Index, String, Text, UniqueConstraint
+import uuid
+
+from sqlalchemy import JSON, CheckConstraint, Float, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.base import Base, GUID, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -18,6 +20,7 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_project_candidates_status", "status"),
         Index("ix_project_candidates_state", "state"),
         Index("ix_project_candidates_candidate_name", "candidate_name"),
+        Index("ix_project_candidates_promoted_project_id", "promoted_project_id"),
     )
 
     candidate_key: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -38,3 +41,6 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     discovered_source_claim_ids_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     evidence_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_metadata_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    promoted_project_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("projects.id"), nullable=True
+    )
