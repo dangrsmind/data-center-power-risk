@@ -71,6 +71,14 @@ Current limitations: the SearchStax token is public because SCC embeds it in the
 
 Extraction, claim parsing, entity resolution, coordinate enrichment, utility/ISO enrichment, confidence scoring, and publication remain later pipeline stages. The public discoverability rule remains unchanged: no source, no project.
 
+## Discovered Source Ingestion
+
+Discovery run output remains runtime data and is ignored under `data/discovery_runs/`. When a run finds source records, `backend/scripts/ingest_public_discovered_sources.py --input data/discovery_runs/<timestamp>/discovered_sources.json` can validate those records and upsert them into the database `discovered_sources` table by `source_url`.
+
+Ingested discovered sources are source/evidence candidates only. Ingestion stores URLs, titles, publisher/geography, discovery method, search term, snippet, case number/document type, registry/adapter context when present, raw metadata, and review status. It does not create projects, claims, project links, or promoted evidence. Re-running the ingest is idempotent: existing URLs are skipped by default or updated with `--allow-existing`.
+
+The next stage after discovered-source ingestion is document fetch/text extraction and analyst-reviewed project/candidate extraction. A discovered source must still support a project-specific public claim before any project record is created.
+
 ## Public Fetch Policy
 
 Discovery fetches use SSL certificate verification by default. SSL failures are reported as structured diagnostics and must not crash discovery runs or silently hide the problem.
