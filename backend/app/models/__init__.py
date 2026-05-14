@@ -1,5 +1,5 @@
 from app.models.base import Base
-from app.models.discovered_source import DiscoveredSourceRecord
+from app.models.discovered_source import DiscoveredSourceClaim, DiscoveredSourceRecord
 from app.models.enrichment import GridRetailTerritory, ProjectEnrichmentSnapshot
 from app.models.evidence import Claim, Evidence, FieldProvenance
 from app.models.event import Adjudication, Event
@@ -21,6 +21,7 @@ __all__ = [
     "Adjudication",
     "Base",
     "Claim",
+    "DiscoveredSourceClaim",
     "DiscoveredSourceRecord",
     "Evidence",
     "Event",

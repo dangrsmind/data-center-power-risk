@@ -10,6 +10,7 @@ from app.api.routes import (
     candidates_router,
     claims_router,
     discover_router,
+    discovered_source_claims_router,
     discovered_sources_router,
     evidence_router,
     projects_router,
@@ -48,6 +49,7 @@ app.include_router(projects_router)
 app.include_router(automation_router)
 app.include_router(candidates_router)
 app.include_router(discover_router)
+app.include_router(discovered_source_claims_router)
 app.include_router(discovered_sources_router)
 app.include_router(evidence_router)
 app.include_router(claims_router)

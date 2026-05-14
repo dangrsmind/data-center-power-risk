@@ -79,6 +79,14 @@ Ingested discovered sources are source/evidence candidates only. Ingestion store
 
 The next stage after discovered-source ingestion is document fetch/text extraction and analyst-reviewed project/candidate extraction. A discovered source must still support a project-specific public claim before any project record is created.
 
+## Extracted Claims From Discovered Sources
+
+Ingested discovered sources can now be followed by conservative extracted claim generation with `backend/scripts/extract_discovered_source_claims.py`. The extractor reads `discovered_sources`, uses only already-ingested fields such as title, URL, publisher, geography, search term, snippet, case number, document type, and raw metadata, and writes reviewable rows to `discovered_source_claims`.
+
+These extracted claims are not project records, not final evidence claims, and not promoted source records. They are review candidates with `extracted`, `rejected`, or `promoted` status. The initial rule-based extractor is intentionally narrow: it can emit explicit case numbers, clear MW mentions, SCC/Virginia state context, document type, and general relevance terms such as `data center`, `large load`, `electric service agreement`, or `transmission interconnection`. It should not infer hidden facts, vague locations, developers, or project names unless a clear labeled phrase exists in the source text.
+
+Promotion from extracted claims to project candidates or accepted evidence remains a later analyst-reviewed step.
+
 ## Public Fetch Policy
 
 Discovery fetches use SSL certificate verification by default. SSL failures are reported as structured diagnostics and must not crash discovery runs or silently hide the problem.
