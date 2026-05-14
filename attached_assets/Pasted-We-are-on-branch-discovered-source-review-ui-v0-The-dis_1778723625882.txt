@@ -1,0 +1,102 @@
+We are on branch discovered-source-review-ui-v0.
+
+The /discovered-sources page works, but it needs usability/readability polish before merge.
+
+Issues observed:
+- The row actions were hard to find.
+- Some text is very hard to read.
+- The page needs clearer visual hierarchy and more obvious controls.
+
+Please improve the UI in frontend/src/pages/DiscoveredSourcesPage.tsx.
+
+Do not redesign the app.
+Do not change backend behavior unless absolutely necessary.
+Keep the page read-only.
+Do not add promote/approve/project-create actions.
+
+Usability requirements:
+
+1. Make row actions obvious.
+Each row should clearly show:
+- Open source
+- Copy URL
+- Metadata
+
+The action area should be visible without hover.
+Use clear button labels, not only icons.
+Preferred labels:
+- Open source
+- Copy URL
+- Details
+
+2. Improve readability.
+Review all text colors on the page.
+Fix any low-contrast text, especially:
+- secondary text
+- URLs
+- metadata fields
+- status labels
+- empty/error/help text
+- table headers
+- expanded metadata text
+
+Use colors consistent with the existing dark theme, but ensure text is readable.
+
+3. Improve table usability.
+- Keep columns from becoming too cramped.
+- Make long URLs/title text wrap or truncate cleanly.
+- Consider making the actions column sticky/right aligned if the table scrolls horizontally.
+- Make horizontal scrolling obvious if it remains necessary.
+- Keep row height reasonable.
+
+4. Improve metadata expansion.
+- Rename Metadata/Meta to Details if clearer.
+- Expanded area should have readable labels and values.
+- Raw metadata/extracted text should be in a readable monospace or preformatted block.
+- Add enough spacing/padding so it does not look cramped.
+
+5. Improve filter area readability.
+- Make filter labels and selected values easy to read.
+- Clear Filters button should be visible.
+- Empty state should clearly explain how to generate and ingest discovered sources.
+
+6. Preserve existing behavior:
+- /discovered-sources route still works.
+- Source candidates only / No public source notices remain.
+- Open source opens source_url.
+- Copy URL copies source_url and shows confirmation.
+- Details expands/collapses metadata.
+- Filters still work.
+- Page remains read-only.
+
+7. Checks:
+Run:
+cd frontend
+npm run build
+
+If TypeScript-only check is preferred:
+npx tsc --noEmit
+
+8. Git hygiene:
+Do not commit:
+- local.db
+- node_modules
+- frontend/dist
+- runtime JSON/CSV
+- data/discovery_runs
+- data/source_fetches
+- attached_assets
+- __pycache__
+
+Commit message:
+Improve discovered source review usability
+
+Push to:
+discovered-source-review-ui-v0
+
+Report:
+- final commit hash
+- files changed
+- checks run
+- specific readability/action improvements made
+- any remaining UI gaps

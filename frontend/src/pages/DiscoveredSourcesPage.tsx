@@ -37,12 +37,12 @@ function hostname(url: string): string {
 function sourceTypeLabel(t: string): string {
   const map: Record<string, string> = {
     developer_statement: "Developer Statement",
-    official_filing: "Official Filing",
-    utility_statement: "Utility Statement",
-    regulatory_record: "Regulatory Record",
-    county_record: "County Record",
-    press: "Press",
-    url_seed: "URL Seed",
+    official_filing:     "Official Filing",
+    utility_statement:   "Utility Statement",
+    regulatory_record:   "Regulatory Record",
+    county_record:       "County Record",
+    press:               "Press",
+    url_seed:            "URL Seed",
   };
   return map[t] ?? t;
 }
@@ -58,22 +58,22 @@ function statusFromDecisions(
 }
 
 // ---------------------------------------------------------------------------
-// Small badge components
+// Badge components
 // ---------------------------------------------------------------------------
 
 function ConfBadge({ value }: { value: string }) {
   const cfg: Record<string, { color: string; bg: string }> = {
-    high:   { color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
-    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
-    low:    { color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+    high:   { color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
+    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
+    low:    { color: "#ef4444", bg: "rgba(239,68,68,0.15)" },
   };
-  const c = cfg[value] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
+  const c = cfg[value] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.12)" };
   return (
     <span style={{
-      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-      letterSpacing: "0.07em", padding: "2px 7px", borderRadius: 3,
-      color: c.color, background: c.bg, border: `1px solid ${c.color}33`,
-      whiteSpace: "nowrap" as const,
+      fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.06em", padding: "3px 8px", borderRadius: 3,
+      color: c.color, background: c.bg, border: `1px solid ${c.color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
     }}>
       {value || "—"}
     </span>
@@ -82,16 +82,16 @@ function ConfBadge({ value }: { value: string }) {
 
 function StatusBadge({ status }: { status: Status }) {
   const cfg = {
-    pending:  { label: "Pending",  color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
-    approved: { label: "Approved", color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
-    rejected: { label: "Rejected", color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+    pending:  { label: "Pending",  color: "#cbd5e1", bg: "rgba(148,163,184,0.14)" },
+    approved: { label: "Approved", color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
+    rejected: { label: "Rejected", color: "#ef4444", bg: "rgba(239,68,68,0.15)" },
   }[status];
   return (
     <span style={{
-      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-      letterSpacing: "0.07em", padding: "2px 7px", borderRadius: 3,
-      color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.color}33`,
-      whiteSpace: "nowrap" as const,
+      fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.06em", padding: "3px 8px", borderRadius: 3,
+      color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
     }}>
       {cfg.label}
     </span>
@@ -99,101 +99,193 @@ function StatusBadge({ status }: { status: Status }) {
 }
 
 // ---------------------------------------------------------------------------
-// Copy button
+// Action buttons — larger, always visible
 // ---------------------------------------------------------------------------
+
+const actionBtnBase: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  fontSize: 11,
+  fontWeight: 600,
+  padding: "5px 10px",
+  borderRadius: 4,
+  cursor: "pointer",
+  whiteSpace: "nowrap" as const,
+  textAlign: "left" as const,
+  transition: "background 0.12s",
+  lineHeight: 1.4,
+};
+
+function OpenSourceButton({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        ...actionBtnBase,
+        background: "rgba(99,179,237,0.1)",
+        border: "1px solid rgba(99,179,237,0.35)",
+        color: "#7ec8e3",
+        textDecoration: "none",
+      }}
+    >
+      ↗ Open source
+    </a>
+  );
+}
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   function handleCopy() {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => setCopied(false), 1600);
     });
   }
   return (
     <button
       onClick={handleCopy}
-      title="Copy URL"
       style={{
-        fontSize: 10, padding: "2px 7px", borderRadius: 3,
-        background: copied ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.05)",
-        border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "var(--border)"}`,
-        color: copied ? "#22c55e" : "var(--text-dim)",
-        cursor: "pointer", whiteSpace: "nowrap" as const,
-        transition: "all 0.15s",
+        ...actionBtnBase,
+        background: copied ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+        border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.12)"}`,
+        color: copied ? "#22c55e" : "#cbd5e1",
       }}
     >
-      {copied ? "✓ Copied" : "Copy URL"}
+      {copied ? "✓ Copied" : "⎘ Copy URL"}
+    </button>
+  );
+}
+
+function DetailsToggleButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        ...actionBtnBase,
+        background: expanded ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)",
+        border: `1px solid ${expanded ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)"}`,
+        color: expanded ? "#e2e8f0" : "#94a3b8",
+      }}
+    >
+      {expanded ? "▲ Hide details" : "▼ Details"}
     </button>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Expandable metadata section
+// Expandable details panel
 // ---------------------------------------------------------------------------
 
-function MetaExpander({ source }: { source: DiscoveredSource }) {
-  const [open, setOpen] = useState(false);
+const DETAIL_FIELDS: [string, (s: DiscoveredSource) => string][] = [
+  ["Discovery ID",       s => s.discovery_id],
+  ["Candidate name",     s => s.candidate_project_name || "—"],
+  ["Developer",          s => s.developer || "—"],
+  ["State",              s => s.state || "—"],
+  ["County",             s => s.county || "—"],
+  ["Source type",        s => sourceTypeLabel(s.source_type)],
+  ["Source date",        s => s.source_date || "—"],
+  ["Discovery method",   s => s.discovery_method || "—"],
+  ["Detected region",    s => s.detected_region || "—"],
+  ["Detected utility",   s => s.detected_utility || "—"],
+  ["Detected load (MW)", s => s.detected_load_mw != null ? String(s.detected_load_mw) : "—"],
+  ["Confidence",         s => s.confidence || "—"],
+  ["Retrieved at",       s => s.retrieved_at || "—"],
+  ["Review reason",      s => s.requires_review_reason || "—"],
+];
+
+function DetailsPanel({ source }: { source: DiscoveredSource }) {
   return (
-    <div style={{ marginTop: 6 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          fontSize: 10, padding: "2px 7px", borderRadius: 3,
-          background: "transparent",
-          border: "1px solid var(--border)",
-          color: "var(--text-dim)", cursor: "pointer",
-          whiteSpace: "nowrap" as const,
-        }}
-      >
-        {open ? "▲ Hide metadata" : "▼ Raw metadata"}
-      </button>
-      {open && (
-        <div style={{
-          marginTop: 8,
-          padding: "10px 12px",
-          background: "rgba(0,0,0,0.25)",
-          border: "1px solid var(--border)",
-          borderRadius: 4,
-          fontSize: 11,
-          color: "var(--text-muted)",
-          lineHeight: 1.6,
-          maxHeight: 260,
-          overflowY: "auto",
-        }}>
-          {[
-            ["Discovery ID",       source.discovery_id],
-            ["Candidate name",     source.candidate_project_name],
-            ["Developer",          source.developer],
-            ["State",              source.state],
-            ["County",             source.county],
-            ["Source type",        source.source_type],
-            ["Source date",        source.source_date],
-            ["Discovery method",   source.discovery_method],
-            ["Detected region",    source.detected_region],
-            ["Detected utility",   source.detected_utility],
-            ["Detected load (MW)", source.detected_load_mw != null ? String(source.detected_load_mw) : "—"],
-            ["Confidence",         source.confidence],
-            ["Retrieved at",       source.retrieved_at],
-            ["Review reason",      source.requires_review_reason || "—"],
-          ].map(([label, val]) => (
-            <div key={label} style={{ display: "flex", gap: 8, marginBottom: 3 }}>
-              <span style={{ color: "var(--text-dim)", minWidth: 140, flexShrink: 0 }}>{label}</span>
-              <span style={{ wordBreak: "break-all" }}>{val}</span>
-            </div>
-          ))}
-          {source.extracted_text && (
-            <div style={{ marginTop: 8, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
-              <div style={{ color: "var(--text-dim)", marginBottom: 4 }}>Extracted text</div>
-              <div style={{
-                fontFamily: "monospace", fontSize: 10,
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-                color: "var(--text-muted)", maxHeight: 120, overflowY: "auto",
-              }}>
-                {source.extracted_text}
-              </div>
-            </div>
-          )}
+    <div style={{
+      padding: "16px 20px",
+      background: "rgba(0,0,0,0.28)",
+      borderTop: "1px solid rgba(255,255,255,0.07)",
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+        letterSpacing: "0.1em", color: "#94a3b8", marginBottom: 12,
+      }}>
+        Source details
+      </div>
+
+      {/* Key-value grid */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+        gap: "8px 24px",
+        marginBottom: source.extracted_text ? 16 : 0,
+      }}>
+        {DETAIL_FIELDS.map(([label, getter]) => (
+          <div key={label} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+            <span style={{
+              fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const,
+              letterSpacing: "0.06em", color: "#64748b",
+              minWidth: 130, flexShrink: 0,
+            }}>
+              {label}
+            </span>
+            <span style={{
+              fontSize: 12, color: "#cbd5e1",
+              wordBreak: "break-word",
+              lineHeight: 1.4,
+            }}>
+              {getter(source)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Source URL */}
+      {source.source_url && (
+        <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 14 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const,
+            letterSpacing: "0.06em", color: "#64748b",
+            minWidth: 130, flexShrink: 0,
+          }}>
+            Source URL
+          </span>
+          <a
+            href={source.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: 12, color: "#7ec8e3",
+              wordBreak: "break-all", lineHeight: 1.4,
+            }}
+          >
+            {source.source_url}
+          </a>
+        </div>
+      )}
+
+      {/* Extracted text */}
+      {source.extracted_text && (
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+            letterSpacing: "0.1em", color: "#94a3b8", marginBottom: 8,
+          }}>
+            Extracted text
+          </div>
+          <pre style={{
+            margin: 0,
+            fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace",
+            fontSize: 11,
+            lineHeight: 1.65,
+            whiteSpace: "pre-wrap" as const,
+            wordBreak: "break-word" as const,
+            color: "#cbd5e1",
+            background: "rgba(0,0,0,0.35)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 4,
+            padding: "12px 14px",
+            maxHeight: 200,
+            overflowY: "auto",
+          }}>
+            {source.extracted_text}
+          </pre>
         </div>
       )}
     </div>
@@ -208,56 +300,70 @@ function EmptyState() {
   return (
     <div style={{
       textAlign: "center",
-      padding: "60px 24px",
-      color: "var(--text-dim)",
+      padding: "56px 24px 64px",
     }}>
-      <div style={{ fontSize: 36, marginBottom: 16, opacity: 0.4 }}>⊡</div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
+      <div style={{ fontSize: 38, marginBottom: 14, opacity: 0.35 }}>⊡</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
         No discovered sources found
       </div>
-      <div style={{ fontSize: 13, lineHeight: 1.7, maxWidth: 460, margin: "0 auto" }}>
-        To generate and ingest discovered sources:
+      <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.7, maxWidth: 480, margin: "0 auto 20px" }}>
+        The discovery CSV is missing or empty. Run the following commands from the
+        <code style={{ fontSize: 12, background: "rgba(255,255,255,0.07)", padding: "1px 5px", borderRadius: 3, color: "#cbd5e1" }}>backend/</code> directory:
       </div>
       <ol style={{
-        textAlign: "left", fontSize: 13, lineHeight: 1.9,
-        maxWidth: 440, margin: "16px auto 0",
-        color: "var(--text-muted)",
-        paddingLeft: 20,
+        textAlign: "left", fontSize: 13, lineHeight: 2.1,
+        maxWidth: 460, margin: "0 auto",
+        color: "#94a3b8",
+        paddingLeft: 22,
       }}>
-        <li>Run public discovery:<br />
-          <code style={{ fontSize: 11, background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: 3 }}>
-            python scripts/discover_starter_dataset.py
-          </code>
+        <li>
+          Run public discovery:
+          <div style={{ marginTop: 4, marginBottom: 4 }}>
+            <code style={{
+              fontSize: 12, background: "rgba(255,255,255,0.07)",
+              padding: "4px 10px", borderRadius: 4, color: "#e2e8f0",
+              display: "inline-block",
+            }}>
+              python scripts/discover_starter_dataset.py
+            </code>
+          </div>
         </li>
-        <li style={{ marginTop: 8 }}>Ingest the discovered source JSON:<br />
-          <code style={{ fontSize: 11, background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: 3 }}>
-            python scripts/ingest_discovered_sources.py
-          </code>
+        <li>
+          Ingest the discovered sources:
+          <div style={{ marginTop: 4, marginBottom: 4 }}>
+            <code style={{
+              fontSize: 12, background: "rgba(255,255,255,0.07)",
+              padding: "4px 10px", borderRadius: 4, color: "#e2e8f0",
+              display: "inline-block",
+            }}>
+              python scripts/ingest_discovered_sources.py
+            </code>
+          </div>
         </li>
-        <li style={{ marginTop: 8 }}>Refresh this page.</li>
+        <li>Refresh this page.</li>
       </ol>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Filter bar
+// Filter / input styles
 // ---------------------------------------------------------------------------
 
 const inputStyle: React.CSSProperties = {
-  background: "var(--bg-surface)",
-  border: "1px solid var(--border)",
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
   borderRadius: 4,
-  padding: "5px 10px",
+  padding: "6px 10px",
   fontSize: 12,
-  color: "var(--text)",
+  color: "#e2e8f0",
   outline: "none",
 };
 
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
   cursor: "pointer",
-  minWidth: 130,
+  minWidth: 140,
 };
 
 // ---------------------------------------------------------------------------
@@ -270,7 +376,6 @@ export function DiscoveredSourcesPage() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
 
-  // filters
   const [statusFilter,    setStatusFilter]    = useState<StatusFilter>("all");
   const [typeFilter,      setTypeFilter]      = useState<string>("all");
   const [publisherFilter, setPublisherFilter] = useState<string>("all");
@@ -300,18 +405,14 @@ export function DiscoveredSourcesPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // derive unique option lists
   const typeOptions = useMemo(() => {
-    const vals = [...new Set(sources.map(s => s.source_type).filter(Boolean))].sort();
-    return vals;
+    return [...new Set(sources.map(s => s.source_type).filter(Boolean))].sort();
   }, [sources]);
 
   const publisherOptions = useMemo(() => {
-    const vals = [...new Set(sources.map(s => s.developer).filter(Boolean))].sort();
-    return vals;
+    return [...new Set(sources.map(s => s.developer).filter(Boolean))].sort();
   }, [sources]);
 
-  // filtered rows
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return sources.filter(s => {
@@ -320,14 +421,14 @@ export function DiscoveredSourcesPage() {
       if (typeFilter !== "all" && s.source_type !== typeFilter) return false;
       if (publisherFilter !== "all" && s.developer !== publisherFilter) return false;
       if (q) {
-        const hay = [s.title, s.candidate_project_name, s.developer, s.source_url, s.state, s.county].join(" ").toLowerCase();
+        const hay = [s.title, s.candidate_project_name, s.developer, s.source_url, s.state, s.county]
+          .join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
   }, [sources, decisions, statusFilter, typeFilter, publisherFilter, search]);
 
-  // counts
   const counts = useMemo(() => {
     let pending = 0, approved = 0, rejected = 0;
     for (const s of sources) {
@@ -339,6 +440,8 @@ export function DiscoveredSourcesPage() {
     return { pending, approved, rejected, total: sources.length };
   }, [sources, decisions]);
 
+  const filtersActive = search !== "" || statusFilter !== "all" || typeFilter !== "all" || publisherFilter !== "all";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
@@ -349,48 +452,48 @@ export function DiscoveredSourcesPage() {
         flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#f1f5f9" }}>
             Discovered Sources
           </h1>
           {!loading && !error && (
-            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+            <span style={{ fontSize: 13, color: "#94a3b8" }}>
               {filtered.length} of {counts.total} sources
             </span>
           )}
         </div>
 
         {/* Notice banners */}
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
           <span style={{
-            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
-            padding: "3px 8px", borderRadius: 3,
-            background: "rgba(245,158,11,0.1)", color: "#f59e0b",
-            border: "1px solid rgba(245,158,11,0.25)",
+            fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
+            padding: "4px 10px", borderRadius: 3,
+            background: "rgba(245,158,11,0.12)", color: "#fbbf24",
+            border: "1px solid rgba(245,158,11,0.3)",
           }}>
             Source candidates only — not yet projects
           </span>
           <span style={{
-            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
-            padding: "3px 8px", borderRadius: 3,
-            background: "rgba(148,163,184,0.08)", color: "var(--text-dim)",
-            border: "1px solid var(--border)",
+            fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
+            padding: "4px 10px", borderRadius: 3,
+            background: "rgba(255,255,255,0.05)", color: "#94a3b8",
+            border: "1px solid rgba(255,255,255,0.1)",
           }}>
             No public source, no project record
           </span>
         </div>
 
-        {/* Summary counts */}
+        {/* Count pills */}
         {!loading && !error && counts.total > 0 && (
-          <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 24, marginTop: 12 }}>
             {[
-              { label: "Total",    value: counts.total,    color: "var(--text-muted)" },
+              { label: "Total",    value: counts.total,    color: "#e2e8f0" },
               { label: "Pending",  value: counts.pending,  color: "#94a3b8" },
               { label: "Approved", value: counts.approved, color: "#22c55e" },
-              { label: "Rejected", value: counts.rejected, color: "#ef4444" },
+              { label: "Rejected", value: counts.rejected, color: "#f87171" },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-                <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>
+                <div style={{ fontSize: 17, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+                <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", marginTop: 3 }}>
                   {label}
                 </div>
               </div>
@@ -405,7 +508,7 @@ export function DiscoveredSourcesPage() {
         borderBottom: "1px solid var(--border)",
         display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center",
         flexShrink: 0,
-        background: "rgba(0,0,0,0.1)",
+        background: "rgba(0,0,0,0.12)",
       }}>
         <input
           type="text"
@@ -431,7 +534,7 @@ export function DiscoveredSourcesPage() {
           onChange={e => setTypeFilter(e.target.value)}
           style={selectStyle}
         >
-          <option value="all">All types</option>
+          <option value="all">All source types</option>
           {typeOptions.map(t => (
             <option key={t} value={t}>{sourceTypeLabel(t)}</option>
           ))}
@@ -440,7 +543,7 @@ export function DiscoveredSourcesPage() {
         <select
           value={publisherFilter}
           onChange={e => setPublisherFilter(e.target.value)}
-          style={{ ...selectStyle, maxWidth: 200 }}
+          style={{ ...selectStyle, maxWidth: 210 }}
         >
           <option value="all">All publishers</option>
           {publisherOptions.map(p => (
@@ -448,41 +551,58 @@ export function DiscoveredSourcesPage() {
           ))}
         </select>
 
-        {(search || statusFilter !== "all" || typeFilter !== "all" || publisherFilter !== "all") && (
+        {filtersActive && (
           <button
             onClick={() => { setSearch(""); setStatusFilter("all"); setTypeFilter("all"); setPublisherFilter("all"); }}
             style={{
-              fontSize: 11, padding: "5px 10px", borderRadius: 4,
-              background: "transparent", border: "1px solid var(--border)",
-              color: "var(--text-dim)", cursor: "pointer",
+              fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 4,
+              background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
+              color: "#f87171", cursor: "pointer",
             }}
           >
-            Clear filters
+            ✕ Clear filters
           </button>
         )}
       </div>
 
       {/* ── Body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 20px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 24px" }}>
 
         {loading && (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+          <div style={{ padding: "48px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
             Loading discovered sources…
           </div>
         )}
 
         {!loading && error && (
           <div style={{
-            margin: "20px 0", padding: "14px 16px",
+            margin: "20px 0", padding: "16px 18px",
             background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 6, fontSize: 12, color: "#ef4444", lineHeight: 1.6,
+            borderRadius: 6, lineHeight: 1.7,
           }}>
-            <strong>Failed to load discovered sources</strong><br />
-            {error}<br />
-            <span style={{ color: "var(--text-dim)" }}>
-              Make sure the backend is running and the CSV exists at
-              <code style={{ marginLeft: 4 }}>backend/runtime_data/starter_sources/discovered_sources_v0_1.csv</code>.
-            </span>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 6 }}>
+              Failed to load discovered sources
+            </div>
+            <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 8 }}>
+              {error}
+            </div>
+            <div style={{ fontSize: 12, color: "#94a3b8" }}>
+              Make sure the backend is running and the CSV exists at{" "}
+              <code style={{
+                fontSize: 11, background: "rgba(255,255,255,0.07)",
+                padding: "2px 6px", borderRadius: 3, color: "#cbd5e1",
+              }}>
+                backend/runtime_data/starter_sources/discovered_sources_v0_1.csv
+              </code>.
+              Run{" "}
+              <code style={{
+                fontSize: 11, background: "rgba(255,255,255,0.07)",
+                padding: "2px 6px", borderRadius: 3, color: "#cbd5e1",
+              }}>
+                python scripts/discover_starter_dataset.py
+              </code>{" "}
+              to generate it.
+            </div>
           </div>
         )}
 
@@ -491,45 +611,68 @@ export function DiscoveredSourcesPage() {
         )}
 
         {!loading && !error && filtered.length === 0 && sources.length > 0 && (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
-            No sources match the current filters.
+          <div style={{ padding: "48px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            No sources match the current filters.{" "}
+            <button
+              onClick={() => { setSearch(""); setStatusFilter("all"); setTypeFilter("all"); setPublisherFilter("all"); }}
+              style={{
+                fontSize: 13, fontWeight: 600, background: "none", border: "none",
+                color: "#7ec8e3", cursor: "pointer", padding: 0, textDecoration: "underline",
+              }}
+            >
+              Clear filters
+            </button>
           </div>
         )}
 
         {!loading && !error && filtered.length > 0 && (
-          <table style={{
-            width: "100%", borderCollapse: "collapse",
-            fontSize: 12, marginTop: 12,
-          }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                {["Title / Project", "Publisher", "Type", "Geography", "Method", "Confidence", "Status", "Discovered", "Actions"].map(h => (
-                  <th key={h} style={{
-                    padding: "8px 10px", textAlign: "left",
-                    fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-                    letterSpacing: "0.07em", color: "var(--text-dim)",
-                    whiteSpace: "nowrap" as const,
-                    position: "sticky" as const, top: 0,
-                    background: "var(--bg)", zIndex: 1,
-                  }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(source => {
-                const status = statusFromDecisions(source.discovery_id, decisions);
-                return (
-                  <SourceRow
-                    key={source.discovery_id}
-                    source={source}
-                    status={status}
-                  />
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ overflowX: "auto", marginTop: 12 }}>
+            <table style={{
+              width: "100%", borderCollapse: "collapse",
+              fontSize: 12, minWidth: 860,
+            }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
+                  {[
+                    { label: "Title / Project", width: "auto" },
+                    { label: "Publisher",        width: 140 },
+                    { label: "Type",             width: 140 },
+                    { label: "Geography",        width: 150 },
+                    { label: "Method",           width: 110 },
+                    { label: "Confidence",       width: 100 },
+                    { label: "Status",           width: 90 },
+                    { label: "Discovered",       width: 100 },
+                    { label: "Actions",          width: 130 },
+                  ].map(({ label, width }) => (
+                    <th key={label} style={{
+                      padding: "9px 12px", textAlign: "left",
+                      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+                      letterSpacing: "0.08em", color: "#94a3b8",
+                      whiteSpace: "nowrap" as const,
+                      width: width === "auto" ? undefined : width,
+                      position: "sticky" as const, top: 0,
+                      background: "var(--bg)", zIndex: 1,
+                      borderBottom: "1px solid rgba(255,255,255,0.08)",
+                    }}>
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(source => {
+                  const status = statusFromDecisions(source.discovery_id, decisions);
+                  return (
+                    <SourceRow
+                      key={source.discovery_id}
+                      source={source}
+                      status={status}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -537,7 +680,7 @@ export function DiscoveredSourcesPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Table row (extracted to keep row expansion state local)
+// Table row
 // ---------------------------------------------------------------------------
 
 function SourceRow({
@@ -548,116 +691,101 @@ function SourceRow({
   status: Status;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const rowBg = expanded ? "rgba(255,255,255,0.02)" : "transparent";
+
+  const rowBorder = expanded
+    ? "1px solid rgba(99,179,237,0.2)"
+    : "1px solid rgba(255,255,255,0.06)";
 
   return (
     <>
-      <tr
-        style={{
-          borderBottom: "1px solid var(--border)",
-          background: rowBg,
-          verticalAlign: "top",
-          transition: "background 0.1s",
-        }}
-      >
+      <tr style={{
+        borderBottom: rowBorder,
+        background: expanded ? "rgba(99,179,237,0.03)" : "transparent",
+        verticalAlign: "top",
+        transition: "background 0.12s",
+      }}>
+
         {/* Title / Project */}
-        <td style={{ padding: "10px 10px" }}>
-          <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 2, lineHeight: 1.3 }}>
+        <td style={{ padding: "12px 12px", maxWidth: 320 }}>
+          <div style={{
+            fontWeight: 600, color: "#e2e8f0",
+            marginBottom: 3, lineHeight: 1.35,
+            wordBreak: "break-word",
+          }}>
             {source.title
-              ? source.title.length > 80
-                ? source.title.slice(0, 80) + "…"
+              ? source.title.length > 90
+                ? source.title.slice(0, 90) + "…"
                 : source.title
-              : <span style={{ color: "var(--text-dim)", fontStyle: "italic", fontWeight: 400 }}>Untitled</span>
+              : <span style={{ color: "#64748b", fontStyle: "italic", fontWeight: 400 }}>Untitled</span>
             }
           </div>
           {source.candidate_project_name && (
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2 }}>
               {source.candidate_project_name}
             </div>
           )}
           {source.source_url && (
-            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "#64748b" }}>
               {hostname(source.source_url)}
             </div>
           )}
         </td>
 
         {/* Publisher */}
-        <td style={{ padding: "10px 10px", color: "var(--text-muted)", whiteSpace: "nowrap" as const }}>
-          {source.developer || <span style={{ color: "var(--text-dim)" }}>—</span>}
+        <td style={{ padding: "12px 12px" }}>
+          <span style={{ color: "#cbd5e1", fontSize: 12 }}>
+            {source.developer || <span style={{ color: "#64748b" }}>—</span>}
+          </span>
         </td>
 
         {/* Type */}
-        <td style={{ padding: "10px 10px", whiteSpace: "nowrap" as const, color: "var(--text-muted)" }}>
+        <td style={{ padding: "12px 12px", color: "#cbd5e1", whiteSpace: "nowrap" as const }}>
           {sourceTypeLabel(source.source_type)}
         </td>
 
         {/* Geography */}
-        <td style={{ padding: "10px 10px", whiteSpace: "nowrap" as const, color: "var(--text-muted)" }}>
-          {[source.county, source.state].filter(Boolean).join(", ") || "—"}
+        <td style={{ padding: "12px 12px", color: "#cbd5e1", whiteSpace: "nowrap" as const }}>
+          {[source.county, source.state].filter(Boolean).join(", ") || (
+            <span style={{ color: "#64748b" }}>—</span>
+          )}
         </td>
 
         {/* Method */}
-        <td style={{ padding: "10px 10px", whiteSpace: "nowrap" as const, color: "var(--text-dim)", fontSize: 11 }}>
-          {source.discovery_method || "—"}
+        <td style={{ padding: "12px 12px", color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap" as const }}>
+          {source.discovery_method || <span style={{ color: "#64748b" }}>—</span>}
         </td>
 
         {/* Confidence */}
-        <td style={{ padding: "10px 10px" }}>
+        <td style={{ padding: "12px 12px" }}>
           <ConfBadge value={source.confidence} />
         </td>
 
         {/* Status */}
-        <td style={{ padding: "10px 10px" }}>
+        <td style={{ padding: "12px 12px" }}>
           <StatusBadge status={status} />
         </td>
 
-        {/* Discovered at */}
-        <td style={{ padding: "10px 10px", whiteSpace: "nowrap" as const, color: "var(--text-dim)", fontSize: 11 }}>
+        {/* Discovered */}
+        <td style={{ padding: "12px 12px", color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap" as const }}>
           {formatDate(source.retrieved_at)}
         </td>
 
-        {/* Actions */}
-        <td style={{ padding: "10px 10px" }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            {source.source_url && (
-              <a
-                href={source.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  fontSize: 10, padding: "2px 7px", borderRadius: 3,
-                  background: "rgba(99,179,237,0.08)",
-                  border: "1px solid rgba(99,179,237,0.3)",
-                  color: "var(--accent)", textDecoration: "none",
-                  whiteSpace: "nowrap" as const,
-                }}
-              >
-                ↗ Open
-              </a>
-            )}
+        {/* Actions — always visible, stacked */}
+        <td style={{ padding: "10px 12px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 118 }}>
+            {source.source_url && <OpenSourceButton url={source.source_url} />}
             {source.source_url && <CopyButton text={source.source_url} />}
-            <button
-              onClick={() => setExpanded(e => !e)}
-              style={{
-                fontSize: 10, padding: "2px 7px", borderRadius: 3,
-                background: expanded ? "rgba(255,255,255,0.06)" : "transparent",
-                border: "1px solid var(--border)",
-                color: "var(--text-dim)", cursor: "pointer",
-                whiteSpace: "nowrap" as const,
-              }}
-            >
-              {expanded ? "▲ Less" : "▼ Meta"}
-            </button>
+            <DetailsToggleButton expanded={expanded} onClick={() => setExpanded(e => !e)} />
           </div>
         </td>
+
       </tr>
 
-      {/* Expandable metadata row */}
+      {/* Expandable details row */}
       {expanded && (
-        <tr style={{ borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.18)" }}>
-          <td colSpan={9} style={{ padding: "10px 16px 14px 16px" }}>
-            <MetaExpander source={source} />
+        <tr style={{ borderBottom: "1px solid rgba(99,179,237,0.2)" }}>
+          <td colSpan={9} style={{ padding: 0 }}>
+            <DetailsPanel source={source} />
           </td>
         </tr>
       )}
