@@ -30,6 +30,7 @@ import type {
   IntakePacketResponse,
   IngestEvidencePayload,
   IngestEvidenceResponse,
+  ProjectCandidateListResponse,
   DiscoveredSource,
   DiscoveredSourceClaimListResponse,
   DiscoverDecisions,
@@ -502,6 +503,23 @@ export async function acceptClaim(
 // ---------------------------------------------------------------------------
 // Discovery Review
 // ---------------------------------------------------------------------------
+
+export async function getProjectCandidates(params?: {
+  status?: string;
+  state?: string;
+  limit?: number;
+}): Promise<ProjectCandidateListResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return { items: [] };
+  }
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.state) qs.set("state", params.state);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return fetchJson<ProjectCandidateListResponse>(`/project-candidates${query}`);
+}
 
 export async function getDiscoveredSourceClaims(params?: {
   claim_type?: string;
