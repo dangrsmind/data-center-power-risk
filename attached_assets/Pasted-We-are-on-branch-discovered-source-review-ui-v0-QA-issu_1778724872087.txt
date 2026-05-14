@@ -1,0 +1,90 @@
+We are on branch discovered-source-review-ui-v0.
+
+QA issue on /discovered-sources:
+The table layout still has a usability problem. Around the 4th column, there is excessive horizontal spacing before the 5th column. This pushes columns 5 and later off-screen and makes the table hard to use.
+
+Please fix the table layout in frontend/src/pages/DiscoveredSourcesPage.tsx.
+
+Do not change backend behavior.
+Do not redesign the whole app.
+Keep the page read-only.
+
+Specific requirements:
+
+1. Fix column spacing.
+- Remove the excessive gap between the 4th and 5th columns.
+- Columns should be compact and predictable.
+- Later columns should not be pushed far off-screen by one overly wide column.
+
+2. Use a deliberate table layout.
+Preferred:
+- tableLayout: "fixed"
+- explicit column widths
+- max-widths on wide text columns
+- overflow-wrap / word-break for URLs and long titles
+- ellipsis where appropriate
+
+3. Keep key information visible.
+The first visible screen should show at least:
+- Title/Project
+- Publisher
+- Type
+- Geography
+- Method
+- Confidence
+- Status
+- Actions
+
+If this cannot fit fully, keep Actions visible or make Actions sticky on the right.
+
+4. Long text handling.
+- Long URLs should not expand the whole table.
+- Long titles should wrap to 2 lines or truncate cleanly.
+- Raw metadata should only appear in the expanded Details panel, not force table width.
+
+5. Actions column.
+- Keep Open source, Copy URL, Details visible.
+- Make Actions column compact.
+- Actions should not be pushed off-screen by other columns.
+
+6. Horizontal scrolling.
+If horizontal scroll remains necessary:
+- Make it obvious.
+- Keep the table width reasonable.
+- Consider sticky first column and/or sticky actions column.
+
+7. Verify at normal browser width.
+Use a normal laptop viewport, not a very wide monitor.
+At http://localhost:5000/discovered-sources:
+- There should be no giant gap between columns.
+- Columns 5+ should be reachable and readable.
+- Actions should be easy to find and use.
+
+8. Checks:
+Run:
+cd frontend
+npm run build
+
+9. Git hygiene:
+Do not commit:
+- local.db
+- node_modules
+- frontend/dist
+- runtime JSON/CSV
+- data/discovery_runs
+- data/source_fetches
+- attached_assets
+- __pycache__
+
+Commit message:
+Fix discovered source table layout
+
+Push to:
+discovered-source-review-ui-v0
+
+Report:
+- final commit hash
+- files changed
+- checks run
+- what table layout changes were made
+- whether Actions remain visible
