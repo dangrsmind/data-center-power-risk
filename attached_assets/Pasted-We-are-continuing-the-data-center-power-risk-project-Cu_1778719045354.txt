@@ -1,0 +1,119 @@
+We are continuing the data-center-power-risk project.
+
+Current branch:
+discovered-source-review-ui-v0
+
+Current state:
+- main includes the working real-data demo.
+- main includes public discovery framework.
+- main includes Virginia SCC SearchStax discovery.
+- main includes robust public fetch client.
+- main includes discovered source ingestion.
+- GET /discovered-sources exists.
+- discovery_healthcheck.py passes.
+- demo_healthcheck.py passes.
+
+Goal:
+Add a simple UI page to review ingested discovered sources.
+
+Do not auto-create projects.
+Do not auto-promote sources.
+Do not redesign the app.
+
+Task:
+Create a frontend page for discovered sources.
+
+Requirements:
+
+1. Add route/page:
+- /discovered-sources
+
+2. Fetch from:
+- GET /discovered-sources
+
+3. Display a table or card list with:
+- source_title
+- source_url
+- publisher
+- source_type
+- geography
+- discovery_method
+- confidence
+- status
+- search_term if present
+- discovered_at
+- adapter_id/source_registry_id if present
+
+4. Add useful filters:
+- status
+- source_type
+- publisher
+- search text
+
+5. Add clear labels:
+- “Discovered Sources”
+- “Source candidates only — not yet projects”
+- “No public source, no project record”
+
+6. Each row should have:
+- Open source link
+- Copy URL button if easy
+- Raw metadata expandable section if easy
+
+7. Empty state:
+If no rows:
+- Explain how to generate and ingest discovered sources:
+  - run public discovery
+  - ingest discovered source JSON
+  - refresh page
+
+8. Navigation:
+Add a nav/sidebar link if there is an existing sidebar/nav pattern.
+Label:
+Discovered Sources
+
+9. Styling:
+Keep it consistent with existing pages.
+No major redesign.
+
+10. Backend:
+Do not change backend unless the existing endpoint needs small filter support.
+If adding query filters is easy, support:
+- status
+- source_type
+- publisher
+- limit
+
+11. Checks:
+Run frontend build/typecheck:
+npm run build
+or
+npx tsc --noEmit
+
+Run backend healthchecks if backend changed:
+DATABASE_URL=sqlite:///local.db python scripts/discovery_healthcheck.py
+DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
+
+12. Git hygiene:
+Do not commit:
+- local.db
+- node_modules
+- frontend/dist
+- runtime JSON/CSV
+- data/discovery_runs
+- data/source_fetches
+- attached_assets
+- __pycache__
+
+Commit message:
+Add discovered source review UI
+
+Push to:
+discovered-source-review-ui-v0
+
+Report:
+- final commit hash
+- files changed
+- screenshots/description of UI
+- checks run
+- known gaps
