@@ -8,6 +8,7 @@ import { DiscoverPage } from "./pages/DiscoverPage";
 import { CoordinatesPage } from "./pages/CoordinatesPage";
 import { DiscoveredSourcesPage } from "./pages/DiscoveredSourcesPage";
 import { DiscoveredSourceClaimsPage } from "./pages/DiscoveredSourceClaimsPage";
+import { ProjectCandidatesPage } from "./pages/ProjectCandidatesPage";
 
 export function App() {
   return (
@@ -22,6 +23,7 @@ export function App() {
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/discovered-sources" element={<DiscoveredSourcesPage />} />
           <Route path="/discovered-source-claims" element={<DiscoveredSourceClaimsPage />} />
+          <Route path="/project-candidates" element={<ProjectCandidatesPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

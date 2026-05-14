@@ -519,6 +519,37 @@ export interface ProjectCoordinateHistoryItem {
 }
 
 // ---------------------------------------------------------------------------
+// Project Candidates
+// ---------------------------------------------------------------------------
+
+export interface ProjectCandidate {
+  id: string;
+  candidate_name: string;
+  developer: string | null;
+  state: string | null;
+  county: string | null;
+  city: string | null;
+  utility: string | null;
+  load_mw: number | null;
+  lifecycle_state: string | null;
+  confidence: number;
+  status: string;
+  source_count: number;
+  claim_count: number;
+  primary_source_url: string | null;
+  discovered_source_ids_json: string[] | null;
+  discovered_source_claim_ids_json: string[] | null;
+  evidence_excerpt: string | null;
+  raw_metadata_json: Record<string, unknown> | unknown[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCandidateListResponse {
+  items: ProjectCandidate[];
+}
+
+// ---------------------------------------------------------------------------
 // Discovered Source Claims
 // ---------------------------------------------------------------------------
 

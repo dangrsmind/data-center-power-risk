@@ -7,6 +7,7 @@ const NAV = [
   { path: "/discover",           label: "Discover",           icon: "⊘" },
   { path: "/discovered-sources",       label: "Discovered Sources", icon: "⊡" },
   { path: "/discovered-source-claims", label: "Discovered Claims",  icon: "⊟" },
+  { path: "/project-candidates",       label: "Project Candidates", icon: "◈" },
   { path: "/ingest",                   label: "Ingest",             icon: "⊕" },
 ];
 
