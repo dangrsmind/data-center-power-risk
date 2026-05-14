@@ -628,31 +628,41 @@ export function DiscoveredSourcesPage() {
         {!loading && !error && filtered.length > 0 && (
           <div style={{ overflowX: "auto", marginTop: 12 }}>
             <table style={{
-              width: "100%", borderCollapse: "collapse",
-              fontSize: 12, minWidth: 860,
+              borderCollapse: "collapse",
+              fontSize: 12,
+              tableLayout: "fixed",
+              width: "100%",
+              minWidth: 900,
             }}>
+              {/* Column widths: 210+110+120+110+90+88+86+86+130 = 1030px */}
+              <colgroup>
+                <col style={{ width: 210 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 120 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 90 }} />
+                <col style={{ width: 88 }} />
+                <col style={{ width: 86 }} />
+                <col style={{ width: 86 }} />
+                <col style={{ width: 130 }} />
+              </colgroup>
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
-                  {[
-                    { label: "Title / Project", width: "auto" },
-                    { label: "Publisher",        width: 140 },
-                    { label: "Type",             width: 140 },
-                    { label: "Geography",        width: 150 },
-                    { label: "Method",           width: 110 },
-                    { label: "Confidence",       width: 100 },
-                    { label: "Status",           width: 90 },
-                    { label: "Discovered",       width: 100 },
-                    { label: "Actions",          width: 130 },
-                  ].map(({ label, width }) => (
+                  {["Title / Project", "Publisher", "Type", "Geography", "Method", "Confidence", "Status", "Discovered", "Actions"].map((label, i) => (
                     <th key={label} style={{
-                      padding: "9px 12px", textAlign: "left",
+                      padding: "9px 10px", textAlign: "left",
                       fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
                       letterSpacing: "0.08em", color: "#94a3b8",
                       whiteSpace: "nowrap" as const,
-                      width: width === "auto" ? undefined : width,
+                      overflow: "hidden",
                       position: "sticky" as const, top: 0,
-                      background: "var(--bg)", zIndex: 1,
+                      background: "var(--bg)", zIndex: i === 8 ? 3 : 1,
                       borderBottom: "1px solid rgba(255,255,255,0.08)",
+                      // Actions column sticky-right
+                      ...(i === 8 ? {
+                        right: 0,
+                        boxShadow: "-2px 0 6px rgba(0,0,0,0.3)",
+                      } : {}),
                     }}>
                       {label}
                     </th>
@@ -705,74 +715,98 @@ function SourceRow({
         transition: "background 0.12s",
       }}>
 
-        {/* Title / Project */}
-        <td style={{ padding: "12px 12px", maxWidth: 320 }}>
+        {/* Title / Project — wraps to 2 lines, clips beyond */}
+        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
           <div style={{
-            fontWeight: 600, color: "#e2e8f0",
-            marginBottom: 3, lineHeight: 1.35,
-            wordBreak: "break-word",
-          }}>
-            {source.title
-              ? source.title.length > 90
-                ? source.title.slice(0, 90) + "…"
-                : source.title
-              : <span style={{ color: "#64748b", fontStyle: "italic", fontWeight: 400 }}>Untitled</span>
-            }
+            fontWeight: 600, color: "#e2e8f0", lineHeight: 1.35,
+            marginBottom: 2,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+          } as React.CSSProperties}>
+            {source.title || <span style={{ color: "#64748b", fontStyle: "italic", fontWeight: 400 }}>Untitled</span>}
           </div>
           {source.candidate_project_name && (
-            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2 }}>
+            <div style={{
+              fontSize: 11, color: "#94a3b8",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
               {source.candidate_project_name}
             </div>
           )}
           {source.source_url && (
-            <div style={{ fontSize: 11, color: "#64748b" }}>
+            <div style={{
+              fontSize: 11, color: "#64748b",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
               {hostname(source.source_url)}
             </div>
           )}
         </td>
 
         {/* Publisher */}
-        <td style={{ padding: "12px 12px" }}>
-          <span style={{ color: "#cbd5e1", fontSize: 12 }}>
-            {source.developer || <span style={{ color: "#64748b" }}>—</span>}
-          </span>
+        <td style={{
+          padding: "11px 10px", color: "#cbd5e1",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+        }}>
+          {source.developer || <span style={{ color: "#64748b" }}>—</span>}
         </td>
 
         {/* Type */}
-        <td style={{ padding: "12px 12px", color: "#cbd5e1", whiteSpace: "nowrap" as const }}>
+        <td style={{
+          padding: "11px 10px", color: "#cbd5e1",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+        }}>
           {sourceTypeLabel(source.source_type)}
         </td>
 
         {/* Geography */}
-        <td style={{ padding: "12px 12px", color: "#cbd5e1", whiteSpace: "nowrap" as const }}>
+        <td style={{
+          padding: "11px 10px", color: "#cbd5e1",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+        }}>
           {[source.county, source.state].filter(Boolean).join(", ") || (
             <span style={{ color: "#64748b" }}>—</span>
           )}
         </td>
 
         {/* Method */}
-        <td style={{ padding: "12px 12px", color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap" as const }}>
+        <td style={{
+          padding: "11px 10px", color: "#94a3b8", fontSize: 12,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+        }}>
           {source.discovery_method || <span style={{ color: "#64748b" }}>—</span>}
         </td>
 
         {/* Confidence */}
-        <td style={{ padding: "12px 12px" }}>
+        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
           <ConfBadge value={source.confidence} />
         </td>
 
         {/* Status */}
-        <td style={{ padding: "12px 12px" }}>
+        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
           <StatusBadge status={status} />
         </td>
 
         {/* Discovered */}
-        <td style={{ padding: "12px 12px", color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap" as const }}>
+        <td style={{
+          padding: "11px 10px", color: "#94a3b8", fontSize: 12,
+          whiteSpace: "nowrap" as const, overflow: "hidden",
+        }}>
           {formatDate(source.retrieved_at)}
         </td>
 
-        {/* Actions — always visible, stacked */}
-        <td style={{ padding: "10px 12px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 118 }}>
+        {/* Actions — sticky right, always visible */}
+        <td style={{
+          padding: "9px 10px",
+          position: "sticky" as const,
+          right: 0,
+          background: expanded ? "rgba(15,23,42,0.97)" : "var(--bg)",
+          boxShadow: "-2px 0 8px rgba(0,0,0,0.35)",
+          zIndex: 2,
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {source.source_url && <OpenSourceButton url={source.source_url} />}
             {source.source_url && <CopyButton text={source.source_url} />}
             <DetailsToggleButton expanded={expanded} onClick={() => setExpanded(e => !e)} />
