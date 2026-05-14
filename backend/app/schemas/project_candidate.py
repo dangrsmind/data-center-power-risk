@@ -48,6 +48,9 @@ class ProjectCandidatePromotionResponse(BaseModel):
     promoted: bool
     project_created: bool
     project_updated: bool
+    would_promote: bool
+    would_create_project: bool
+    would_update_project: bool
     evidence_created: int
     warnings: list[str]
     errors: list[str]

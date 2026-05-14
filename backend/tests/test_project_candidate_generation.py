@@ -136,6 +136,30 @@ class ProjectCandidateGenerationTest(unittest.TestCase):
         self.assertEqual(candidate_count, 1)
         self.assertEqual(project_count, 0)
 
+    def test_generation_does_not_downgrade_promoted_candidate(self) -> None:
+        db = self.SessionLocal()
+        try:
+            self._seed_explicit_claims(db)
+            ProjectCandidateGenerator(db).generate()
+            db.commit()
+            candidate = db.scalar(select(ProjectCandidate))
+            project = Project(canonical_name="Example Data Center Campus", state="VA", lifecycle_state="candidate_unverified")
+            db.add(project)
+            db.flush()
+            candidate.promoted_project_id = project.id
+            candidate.status = "promoted"
+            db.commit()
+            summary = ProjectCandidateGenerator(db).generate()
+            db.commit()
+            db.refresh(candidate)
+        finally:
+            db.close()
+
+        self.assertEqual(summary.candidates_skipped, 1)
+        self.assertEqual(summary.candidates_updated, 0)
+        self.assertEqual(candidate.status, "promoted")
+        self.assertEqual(candidate.promoted_project_id, project.id)
+
     def test_dry_run_does_not_write(self) -> None:
         db = self.SessionLocal()
         try:

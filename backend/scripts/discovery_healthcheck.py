@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 
@@ -42,7 +42,11 @@ def run_healthcheck() -> dict[str, object]:
             claims_checked = db.scalar(select(func.count()).select_from(DiscoveredSourceClaim)) or 0
             candidates_checked = db.scalar(select(func.count()).select_from(ProjectCandidate)) or 0
             promoted_candidates_checked = (
-                db.scalar(select(func.count()).select_from(ProjectCandidate).where(ProjectCandidate.status == "promoted"))
+                db.scalar(
+                    select(func.count())
+                    .select_from(ProjectCandidate)
+                    .where(or_(ProjectCandidate.status == "promoted", ProjectCandidate.promoted_project_id.is_not(None)))
+                )
                 or 0
             )
             duplicate_count = db.scalar(
@@ -92,6 +96,10 @@ def run_healthcheck() -> dict[str, object]:
                     errors.append(f"project candidate {candidate.id} has invalid status: {candidate.status}")
                 if not 0 <= candidate.confidence <= 1:
                     errors.append(f"project candidate {candidate.id} has invalid confidence: {candidate.confidence}")
+                if candidate.promoted_project_id is not None and candidate.status != "promoted":
+                    errors.append(
+                        f"project candidate {candidate.id} has promoted_project_id but status is {candidate.status}"
+                    )
                 if candidate.status == "promoted":
                     if candidate.promoted_project_id is None:
                         errors.append(f"promoted project candidate {candidate.id} has no promoted_project_id")

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 
@@ -19,6 +19,7 @@ from app.models.evidence import Evidence, FieldProvenance  # noqa: E402
 from app.models.project import Project  # noqa: E402
 from app.models.project_candidate import ProjectCandidate  # noqa: E402
 from app.services.project_candidate_promotion import ProjectCandidatePromotionService  # noqa: E402
+import scripts.discovery_healthcheck as discovery_healthcheck  # noqa: E402
 
 
 class ProjectCandidatePromotionTest(unittest.TestCase):
@@ -73,7 +74,9 @@ class ProjectCandidatePromotionTest(unittest.TestCase):
             db.close()
 
         self.assertTrue(summary.dry_run)
-        self.assertTrue(summary.promoted)
+        self.assertFalse(summary.promoted)
+        self.assertTrue(summary.would_promote)
+        self.assertTrue(summary.would_create_project)
         self.assertEqual(project_count, 0)
 
     def test_confirm_promotes_one_candidate_with_evidence(self) -> None:
@@ -125,6 +128,30 @@ class ProjectCandidatePromotionTest(unittest.TestCase):
         self.assertIn("candidate_already_promoted", second.warnings)
         self.assertEqual(project_count, 1)
         self.assertEqual(evidence_count, 1)
+
+    def test_idempotent_promotion_corrects_stale_status(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate()
+            db.add(candidate)
+            db.commit()
+            first = ProjectCandidatePromotionService(db).promote(candidate.id, confirm=True)
+            db.commit()
+            candidate.status = "needs_review"
+            db.commit()
+            second = ProjectCandidatePromotionService(db).promote(candidate.id, confirm=True)
+            db.commit()
+            db.refresh(candidate)
+            project_count = db.scalar(select(func.count()).select_from(Project))
+        finally:
+            db.close()
+
+        self.assertTrue(first.project_created)
+        self.assertEqual(candidate.status, "promoted")
+        self.assertEqual(second.promoted_project_id, str(candidate.promoted_project_id))
+        self.assertIn("candidate_already_promoted", second.warnings)
+        self.assertIn("candidate_status_corrected", second.warnings)
+        self.assertEqual(project_count, 1)
 
     def test_missing_source_url_blocks_promotion(self) -> None:
         db = self.SessionLocal()
@@ -179,6 +206,63 @@ class ProjectCandidatePromotionTest(unittest.TestCase):
 
         self.assertIn("candidate_missing_state", blocked.errors)
         self.assertTrue(allowed.promoted)
+
+    def test_healthcheck_catches_promoted_project_id_with_stale_status(self) -> None:
+        original_session = discovery_healthcheck.SessionLocal
+        discovery_healthcheck.SessionLocal = self.SessionLocal
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate()
+            db.add(candidate)
+            db.commit()
+            ProjectCandidatePromotionService(db).promote(candidate.id, confirm=True)
+            db.commit()
+            candidate.status = "needs_review"
+            db.commit()
+            payload = discovery_healthcheck.run_healthcheck()
+        finally:
+            db.close()
+            discovery_healthcheck.SessionLocal = original_session
+
+        self.assertEqual(payload["promoted_project_candidates_checked"], 1)
+        self.assertTrue(any("has promoted_project_id but status is needs_review" in error for error in payload["errors"]))
+
+    def test_healthcheck_catches_promoted_status_without_project_id(self) -> None:
+        original_session = discovery_healthcheck.SessionLocal
+        discovery_healthcheck.SessionLocal = self.SessionLocal
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate(status="promoted")
+            db.add(candidate)
+            db.commit()
+            payload = discovery_healthcheck.run_healthcheck()
+        finally:
+            db.close()
+            discovery_healthcheck.SessionLocal = original_session
+
+        self.assertEqual(payload["promoted_project_candidates_checked"], 1)
+        self.assertTrue(any("has no promoted_project_id" in error for error in payload["errors"]))
+
+    def test_healthcheck_verifies_promoted_project_id_exists(self) -> None:
+        original_session = discovery_healthcheck.SessionLocal
+        discovery_healthcheck.SessionLocal = self.SessionLocal
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate()
+            db.add(candidate)
+            db.commit()
+            ProjectCandidatePromotionService(db).promote(candidate.id, confirm=True)
+            db.commit()
+            db.delete(db.get(Project, candidate.promoted_project_id))
+            db.execute(text("PRAGMA foreign_keys = OFF"))
+            db.commit()
+            payload = discovery_healthcheck.run_healthcheck()
+        finally:
+            db.close()
+            discovery_healthcheck.SessionLocal = original_session
+
+        self.assertEqual(payload["promoted_project_candidates_checked"], 1)
+        self.assertTrue(any("references missing project" in error for error in payload["errors"]))
 
 
 if __name__ == "__main__":

@@ -25,6 +25,9 @@ class ProjectCandidatePromotionSummary:
     promoted: bool = False
     project_created: bool = False
     project_updated: bool = False
+    would_promote: bool = False
+    would_create_project: bool = False
+    would_update_project: bool = False
     evidence_created: int = 0
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -61,11 +64,17 @@ class ProjectCandidatePromotionService:
             summary.errors.extend(errors)
             return summary
 
-        if candidate.status == "promoted" and candidate.promoted_project_id:
+        if candidate.promoted_project_id:
             project = self.db.get(Project, candidate.promoted_project_id)
             if project is None:
                 summary.errors.append("promoted_project_missing")
                 return summary
+            if confirm and candidate.status != "promoted":
+                candidate.status = "promoted"
+                summary.warnings.append("candidate_status_corrected")
+                self.db.flush()
+            elif candidate.status != "promoted":
+                summary.warnings.append("candidate_status_would_be_corrected")
             summary.promoted = True
             summary.promoted_project_id = str(project.id)
             summary.warnings.append("candidate_already_promoted")
@@ -73,9 +82,9 @@ class ProjectCandidatePromotionService:
 
         existing_project = self._find_existing_project(candidate)
         if not confirm:
-            summary.promoted = True
-            summary.project_created = existing_project is None
-            summary.project_updated = existing_project is not None
+            summary.would_promote = True
+            summary.would_create_project = existing_project is None
+            summary.would_update_project = existing_project is not None
             summary.promoted_project_id = str(existing_project.id) if existing_project else None
             summary.warnings.extend(mapping_warnings(candidate))
             summary.warnings.append("dry_run_only_no_records_written")
