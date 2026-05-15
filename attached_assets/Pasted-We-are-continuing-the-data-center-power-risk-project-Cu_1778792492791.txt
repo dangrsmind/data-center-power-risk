@@ -1,0 +1,212 @@
+We are continuing the data-center-power-risk project.
+
+Current branch:
+project-candidate-promotion-ui-v0
+
+Current state:
+- main includes the working real-data demo.
+- main includes SCC SearchStax public discovery.
+- main includes discovered source ingestion.
+- main includes extracted claim generation.
+- main includes project candidate generation.
+- main includes read-only review UIs:
+  - /discovered-sources
+  - /discovered-source-claims
+  - /project-candidates
+- main includes controlled backend project candidate promotion.
+- POST /project-candidates/{candidate_id}/promote exists.
+- Promotion requires explicit confirm=true.
+- Promotion is single-candidate only.
+- Project candidates are not final projects until explicitly promoted.
+- Public discoverability rule remains: no public source means no project record.
+
+Goal:
+Add a guarded, explicit promotion UI on /project-candidates.
+
+Do not add bulk promotion.
+Do not auto-promote anything.
+Do not redesign the app.
+Do not change discovery/extraction/generation logic.
+Do not add map/prediction behavior beyond what already happens once a real Project exists.
+Do not commit runtime data.
+
+Task:
+Update the /project-candidates page so an analyst can promote one project candidate at a time through an explicit confirmation flow.
+
+Requirements:
+
+1. Inspect existing frontend and backend:
+- frontend/src/pages/ProjectCandidatesPage.tsx
+- frontend/src/api/adapter.ts
+- frontend/src/api/types.ts
+- backend/app/api/routes/project_candidates.py
+- backend/app/schemas/project_candidate.py
+
+2. Add frontend API adapter function.
+
+Add a function such as:
+
+promoteProjectCandidate(candidateId, options)
+
+It should call:
+POST /project-candidates/{candidate_id}/promote
+
+Request body should include:
+{
+  "confirm": true,
+  "allow_unresolved_name": false,
+  "allow_incomplete": false
+}
+
+Expose optional booleans for:
+- allow_unresolved_name
+- allow_incomplete
+
+3. Update types.
+
+Add TypeScript types for:
+- promotion request
+- promotion response
+
+Response fields likely include:
+- dry_run
+- promoted
+- promoted_project_id
+- project_created
+- project_updated
+- evidence_created
+- warnings
+- errors
+- would_create_project
+- would_promote
+- would_update_project
+
+Match the backend response shape.
+
+4. Add visible row action.
+
+On /project-candidates, each row should have a read-only action set plus a guarded promotion action:
+- Open source
+- Copy URL
+- Details
+- Promote
+
+Promotion action rules:
+- Show Promote only for candidates that are not already promoted.
+- For already promoted candidates, show clear label:
+  Promoted
+  and show/copy promoted_project_id if available.
+- Do not allow bulk promotion.
+
+5. Confirmation flow.
+
+Clicking Promote should open a confirmation modal/panel, not immediately call the API.
+
+The modal/panel should show:
+- Candidate name
+- State/county/city if present
+- Primary source URL
+- Confidence
+- Source count
+- Claim count
+- Evidence excerpt
+- Clear warning:
+  “This will create a real Project record from this candidate. Continue only after review.”
+- Checkbox or explicit confirmation text/button.
+
+The final button should say:
+Promote candidate
+
+6. Safety options.
+
+If candidate_name starts with “Unresolved” or is missing:
+- Show warning that unresolved names are normally blocked.
+- Include an explicit checkbox:
+  Allow unresolved name
+
+If state or other required fields are missing:
+- Show warning.
+- Include an explicit checkbox:
+  Allow incomplete candidate
+
+The API call should pass those booleans.
+
+7. Result handling.
+
+After promotion API response:
+- If errors are returned, show them clearly and do not mark as promoted.
+- If promoted=true and promoted_project_id is returned:
+  - update the row locally or refetch /project-candidates
+  - show success message
+  - show promoted_project_id
+  - row should display Promoted after refresh/refetch
+- Show warnings returned by backend, for example candidate_already_promoted.
+
+8. UI clarity.
+
+Keep consistent dark theme and readable text.
+Promotion controls must be visually distinct but not dangerous-looking.
+Use clear labels.
+Do not hide row actions behind hover-only UI.
+Keep the table layout compact; do not reintroduce large column gaps.
+Actions column should remain easy to find.
+
+9. Empty state.
+
+No major change needed, but if relevant, keep current candidate generation instructions.
+
+10. Backend.
+
+Do not change backend unless the endpoint response or CORS/body handling has a small bug.
+If backend change is needed, keep it minimal and explain it.
+
+11. Checks.
+
+Run:
+cd frontend
+npm run build
+
+If backend changed:
+cd backend
+source .venv/bin/activate
+DATABASE_URL=sqlite:///local.db python scripts/discovery_healthcheck.py
+DATABASE_URL=sqlite:///local.db python scripts/demo_healthcheck.py
+
+12. Manual QA.
+
+With local data generated:
+- Open /project-candidates
+- Click Promote on one unpromoted candidate
+- Confirm modal appears
+- Try cancel
+- Try Promote with unresolved name blocked and confirm error displays
+- Try again with Allow unresolved name checked
+- Confirm success
+- Row updates to Promoted
+- No duplicate promotion on repeated click/refetch
+
+13. Git hygiene.
+
+Do not commit:
+- local.db
+- node_modules
+- frontend/dist
+- runtime JSON/CSV
+- data/discovery_runs
+- data/source_fetches
+- attached_assets
+- __pycache__
+
+Commit message:
+Add guarded project candidate promotion UI
+
+Push to:
+project-candidate-promotion-ui-v0
+
+Report:
+- final commit hash
+- files changed
+- checks run
+- backend changes, if any
+- manual QA results
+- known gaps

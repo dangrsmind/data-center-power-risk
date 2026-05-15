@@ -31,6 +31,8 @@ import type {
   IngestEvidencePayload,
   IngestEvidenceResponse,
   ProjectCandidateListResponse,
+  ProjectCandidatePromotionRequest,
+  ProjectCandidatePromotionResponse,
   DiscoveredSource,
   DiscoveredSourceClaimListResponse,
   DiscoverDecisions,
@@ -519,6 +521,48 @@ export async function getProjectCandidates(params?: {
   if (params?.limit != null) qs.set("limit", String(params.limit));
   const query = qs.toString() ? `?${qs.toString()}` : "";
   return fetchJson<ProjectCandidateListResponse>(`/project-candidates${query}`);
+}
+
+export async function promoteProjectCandidate(
+  candidateId: string,
+  options: {
+    confirm: boolean;
+    allow_unresolved_name?: boolean;
+    allow_incomplete?: boolean;
+  },
+): Promise<ProjectCandidatePromotionResponse> {
+  const body: ProjectCandidatePromotionRequest = {
+    confirm: options.confirm,
+    allow_unresolved_name: options.allow_unresolved_name ?? false,
+    allow_incomplete: options.allow_incomplete ?? false,
+  };
+  const res = await fetch(`${BASE_URL}/project-candidates/${candidateId}/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    // Backend raises HTTPException with detail = summary dict when errors exist
+    const detail = json?.detail ?? json ?? {};
+    const errors: string[] = Array.isArray(detail.errors) ? detail.errors : [String(json ?? res.statusText)];
+    const warnings: string[] = Array.isArray(detail.warnings) ? detail.warnings : [];
+    return {
+      dry_run: true,
+      candidate_id: candidateId,
+      promoted: false,
+      project_created: false,
+      project_updated: false,
+      would_promote: false,
+      would_create_project: false,
+      would_update_project: false,
+      evidence_created: 0,
+      warnings,
+      errors,
+      promoted_project_id: null,
+    };
+  }
+  return json as ProjectCandidatePromotionResponse;
 }
 
 export async function getDiscoveredSourceClaims(params?: {
