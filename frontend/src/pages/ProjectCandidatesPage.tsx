@@ -265,18 +265,41 @@ function PromoteModal({
                   </div>
                 )}
               </div>
-              {result.promoted_project_id && (
+
+              {result.promoted_project_id ? (
                 <div style={{ marginBottom: 14 }}>
                   <div style={sectionLabel}>Promoted Project ID</div>
                   <div style={{
                     fontFamily: "monospace", fontSize: 12, color: "#a5b4fc",
                     background: "rgba(99,102,241,0.1)", padding: "8px 10px",
-                    borderRadius: 6, wordBreak: "break-all",
+                    borderRadius: 6, wordBreak: "break-all", marginBottom: 10,
                   }}>
                     {result.promoted_project_id}
                   </div>
+                  <a
+                    href={`/projects/${result.promoted_project_id}`}
+                    style={{
+                      display: "block", padding: "9px 14px",
+                      fontSize: 12, fontWeight: 700, textDecoration: "none",
+                      background: "rgba(99,102,241,0.18)", color: "#a5b4fc",
+                      border: "1px solid rgba(99,102,241,0.4)",
+                      borderRadius: 6, textAlign: "center",
+                    }}
+                  >
+                    ↗ Open promoted project
+                  </a>
+                </div>
+              ) : (
+                <div style={{
+                  background: "rgba(245,158,11,0.09)", border: "1px solid rgba(245,158,11,0.3)",
+                  borderRadius: 6, padding: "10px 12px", marginBottom: 14,
+                }}>
+                  <div style={{ fontSize: 12, color: "#fbbf24" }}>
+                    Promotion succeeded but no project ID was returned. Refresh the page and locate the candidate to find the project link.
+                  </div>
                 </div>
               )}
+
               {result.warnings.length > 0 && (
                 <div style={{
                   background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)",
@@ -290,6 +313,34 @@ function PromoteModal({
                   ))}
                 </div>
               )}
+
+              {/* Handoff guidance */}
+              <div style={{
+                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 7, padding: "12px 14px", marginBottom: 14,
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                  Next steps
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 8 }}>
+                  <span style={{ color: "#fbbf24" }}>Map visibility:</span>{" "}
+                  This project may not appear on the map until coordinates are added.
+                  Open the project and use the Coordinates tab to set them.
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <span style={{ color: "#94a3b8" }}>Predictions:</span>{" "}
+                  To generate or refresh predictions for this project, run:
+                </div>
+                <pre style={{
+                  margin: "6px 0 0", padding: "8px 10px",
+                  background: "rgba(0,0,0,0.3)", borderRadius: 5,
+                  fontSize: 11, color: "#a5b4fc", overflowX: "auto",
+                  whiteSpace: "pre-wrap", wordBreak: "break-all",
+                }}>
+                  {`DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py`}
+                </pre>
+              </div>
+
               <button onClick={onClose} style={{
                 width: "100%", padding: "10px 16px",
                 fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -588,8 +639,48 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
             {c.promoted_project_id && (
               <div style={{ gridColumn: "1 / -1" }}>
                 <div style={sectionLabel}>Promoted Project ID</div>
-                <div style={{ color: "#a5b4fc", fontFamily: "monospace", fontSize: 11 }}>
+                <div style={{ color: "#a5b4fc", fontFamily: "monospace", fontSize: 11, marginBottom: 8, wordBreak: "break-all" }}>
                   {c.promoted_project_id}
+                </div>
+                <a
+                  href={`/projects/${c.promoted_project_id}`}
+                  style={{
+                    display: "inline-block", padding: "5px 12px",
+                    fontSize: 11, fontWeight: 600, textDecoration: "none",
+                    background: "rgba(99,102,241,0.14)", color: "#a5b4fc",
+                    border: "1px solid rgba(99,102,241,0.35)",
+                    borderRadius: 4,
+                  }}
+                >
+                  ↗ Open promoted project
+                </a>
+                <div style={{
+                  marginTop: 12,
+                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 6, padding: "10px 12px",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                    What happens next
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 6 }}>
+                    Promoted candidates are now normal Projects. Prediction and map visibility depends on project fields such as coordinates and prediction generation.
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 4 }}>
+                    <span style={{ color: "#fbbf24" }}>Map:</span>{" "}
+                    This project may not appear on the map until coordinates are added via the Coordinates tab.
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 4 }}>
+                    <span style={{ color: "#94a3b8" }}>Predictions:</span>{" "}
+                    Run to generate or refresh:
+                  </div>
+                  <pre style={{
+                    margin: 0, padding: "6px 8px",
+                    background: "rgba(0,0,0,0.3)", borderRadius: 4,
+                    fontSize: 10, color: "#a5b4fc", overflowX: "auto",
+                    whiteSpace: "pre-wrap", wordBreak: "break-all",
+                  }}>
+                    {`DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py`}
+                  </pre>
                 </div>
               </div>
             )}
@@ -810,7 +901,7 @@ function CandidateRow({
 
             {/* Promotion action */}
             {isPromoted ? (
-              <div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <div style={{
                   padding: "5px 9px",
                   fontSize: 11, fontWeight: 700,
@@ -821,10 +912,25 @@ function CandidateRow({
                   ✓ Promoted
                 </div>
                 {c.promoted_project_id && (
-                  <CopyButton
-                    text={c.promoted_project_id}
-                    label="⎘ Copy project ID"
-                  />
+                  <>
+                    <a
+                      href={`/projects/${c.promoted_project_id}`}
+                      style={{
+                        display: "block", padding: "5px 9px",
+                        fontSize: 11, fontWeight: 600, textDecoration: "none",
+                        background: "rgba(99,102,241,0.14)", color: "#a5b4fc",
+                        border: "1px solid rgba(99,102,241,0.35)",
+                        borderRadius: 4, textAlign: "center",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ↗ Open project
+                    </a>
+                    <CopyButton
+                      text={c.promoted_project_id}
+                      label="⎘ Copy project ID"
+                    />
+                  </>
                 )}
               </div>
             ) : (
