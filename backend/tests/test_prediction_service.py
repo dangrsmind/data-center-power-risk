@@ -4,9 +4,11 @@ import os
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
@@ -18,7 +20,9 @@ from app.core.enums import LifecycleState  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.models.prediction import ProjectPrediction  # noqa: E402
 from app.models.project import Project  # noqa: E402
+from app.api.routes.projects import run_project_prediction as run_project_prediction_api  # noqa: E402
 from app.services.prediction_service import MODEL_VERSION, PredictionService  # noqa: E402
+from app.services.project_prediction_runner import run_prediction_for_project  # noqa: E402
 from run_demo_predictions import run_predictions  # noqa: E402
 
 
@@ -135,6 +139,89 @@ class PredictionServiceTest(unittest.TestCase):
             self.assertEqual(predictions[0].model_version, MODEL_VERSION)
         finally:
             db.close()
+
+    def test_single_project_prediction_runner_creates_prediction(self) -> None:
+        db = self.SessionLocal()
+        try:
+            project = self._project(
+                db,
+                candidate_metadata_json={
+                    "load_mw": 300,
+                    "source_url": "https://example.test/source",
+                    "evidence_excerpt": "A source-backed excerpt describing the project.",
+                },
+            )
+            db.commit()
+            result = run_prediction_for_project(db, project.id)
+            db.commit()
+            prediction = db.scalar(select(ProjectPrediction))
+        finally:
+            db.close()
+
+        self.assertTrue(result.prediction_created)
+        self.assertFalse(result.prediction_updated)
+        self.assertEqual(result.errors, [])
+        self.assertIsNotNone(prediction)
+        self.assertEqual(prediction.project_id, project.id)
+
+    def test_single_project_prediction_runner_updates_idempotently(self) -> None:
+        db = self.SessionLocal()
+        try:
+            project = self._project(
+                db,
+                candidate_metadata_json={"load_mw": 300, "source_url": "https://example.test/source"},
+            )
+            db.commit()
+            first = run_prediction_for_project(db, project.id)
+            db.commit()
+            project.candidate_metadata_json = {"load_mw": 900, "source_url": "https://example.test/source"}
+            second = run_prediction_for_project(db, project.id)
+            db.commit()
+            third = run_prediction_for_project(db, project.id)
+            db.commit()
+            predictions = db.scalars(select(ProjectPrediction)).all()
+        finally:
+            db.close()
+
+        self.assertTrue(first.prediction_created)
+        self.assertTrue(second.prediction_updated)
+        self.assertTrue(third.prediction_skipped)
+        self.assertEqual(len(predictions), 1)
+
+    def test_single_project_prediction_runner_missing_project_returns_clean_error(self) -> None:
+        db = self.SessionLocal()
+        try:
+            project_id = uuid.uuid4()
+            result = run_prediction_for_project(db, project_id)
+        finally:
+            db.close()
+
+        self.assertEqual(result.project_id, str(project_id))
+        self.assertIn("project_not_found", result.errors)
+
+    def test_prediction_run_api_endpoint_creates_prediction(self) -> None:
+        db = self.SessionLocal()
+        try:
+            project = self._project(db, candidate_metadata_json={"source_url": "https://example.test/source"})
+            db.commit()
+            response = run_project_prediction_api(project.id, db)
+            prediction = db.scalar(select(ProjectPrediction))
+        finally:
+            db.close()
+
+        self.assertTrue(response.prediction_created)
+        self.assertEqual(response.project_id, project.id)
+        self.assertIsNotNone(prediction)
+
+    def test_prediction_run_api_endpoint_missing_project_raises_404(self) -> None:
+        db = self.SessionLocal()
+        try:
+            with self.assertRaises(HTTPException) as context:
+                run_project_prediction_api(uuid.uuid4(), db)
+        finally:
+            db.close()
+
+        self.assertEqual(context.exception.status_code, 404)
 
 
 if __name__ == "__main__":

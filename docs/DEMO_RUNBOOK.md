@@ -62,6 +62,14 @@ Expected summary fields:
 - `predictions_updated`
 - `errors`
 
+To refresh one promoted or demo project without running the batch scorer:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/run_project_prediction.py --project-id <PROJECT_UUID>
+```
+
+This uses the same deterministic baseline and upserts only that project's prediction. The API equivalent is `POST /projects/<PROJECT_UUID>/prediction/run`.
+
 ## 5. Run Backend Healthcheck
 
 ```bash

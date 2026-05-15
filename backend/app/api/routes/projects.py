@@ -14,6 +14,7 @@ from app.schemas.analyst import (
     ProjectEvidenceResponse,
     ProjectEventsResponse,
     ProjectHistoryResponse,
+    ProjectPredictionRunResponse,
     ProjectPredictionResponse,
     ProjectRiskSignalResponse,
     ProjectStressResponse,
@@ -29,6 +30,7 @@ from app.schemas.project import (
 )
 from app.schemas.score import ProjectScoreResponse
 from app.services import EnrichmentService, PredictionService, ProjectService
+from app.services.project_prediction_runner import run_prediction_for_project
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -243,6 +245,16 @@ def get_project_risk_signal(project_id: uuid.UUID, db: Session = Depends(get_db)
 @router.get("/{project_id}/prediction", response_model=ProjectPredictionResponse, response_model_exclude_none=True)
 def get_project_prediction(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectPredictionResponse:
     return PredictionService(db).get_project_prediction(project_id)
+
+
+@router.post("/{project_id}/prediction/run", response_model=ProjectPredictionRunResponse)
+def run_project_prediction(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectPredictionRunResponse:
+    result = run_prediction_for_project(db, project_id)
+    if result.errors:
+        status_code = 404 if "project_not_found" in result.errors else 400
+        raise HTTPException(status_code=status_code, detail=result.to_dict())
+    db.commit()
+    return ProjectPredictionRunResponse(**result.to_dict())
 
 
 @router.get("/{project_id}/enrichment", response_model=ProjectEnrichmentResponse, response_model_exclude_none=True)

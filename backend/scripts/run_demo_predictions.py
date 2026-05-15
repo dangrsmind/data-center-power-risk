@@ -16,7 +16,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.core.db import SessionLocal  # noqa: E402
 from app.models.project import Project  # noqa: E402
-from app.services.prediction_service import MODEL_VERSION, PredictionService  # noqa: E402
+from app.services.prediction_service import MODEL_VERSION  # noqa: E402
+from app.services.project_prediction_runner import run_prediction_for_project  # noqa: E402
 
 
 DEMO_DATASET_ID = "demo_projects_v0_1"
@@ -68,14 +69,22 @@ def load_projects(db, *, all_projects: bool) -> list[Project]:
 def run_predictions(*, all_projects: bool = False) -> PredictionSummary:
     summary = PredictionSummary()
     with SessionLocal() as db:
-        service = PredictionService(db)
         for project in load_projects(db, all_projects=all_projects):
             try:
-                _, status = service.upsert_project_prediction(project)
+                result = run_prediction_for_project(db, project.id)
+                if result.errors:
+                    summary.errors.append(
+                        PredictionError(
+                            project_id=str(project.id),
+                            canonical_name=project.canonical_name,
+                            reason="; ".join(result.errors),
+                        )
+                    )
+                    continue
                 summary.projects_scored += 1
-                if status == "created":
+                if result.prediction_created:
                     summary.predictions_created += 1
-                elif status == "updated":
+                elif result.prediction_updated:
                     summary.predictions_updated += 1
             except Exception as exc:  # pragma: no cover - protects batch runner summary output
                 summary.errors.append(

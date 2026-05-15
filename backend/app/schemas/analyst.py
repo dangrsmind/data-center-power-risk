@@ -168,3 +168,13 @@ class ProjectPredictionResponse(BaseModel):
     drivers: list[PredictionDriver]
     missing_inputs: list[str]
     method_note: str = "This is a deterministic baseline, not a trained ML model."
+
+
+class ProjectPredictionRunResponse(BaseModel):
+    project_id: uuid.UUID
+    prediction_created: bool
+    prediction_updated: bool
+    prediction_skipped: bool
+    warnings: list[str]
+    errors: list[str]
+    prediction_id: uuid.UUID | None
