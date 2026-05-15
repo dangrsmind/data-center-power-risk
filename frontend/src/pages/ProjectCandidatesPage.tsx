@@ -328,17 +328,9 @@ function PromoteModal({
                   Open the project and use the Coordinates tab to set them.
                 </div>
                 <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-                  <span style={{ color: "#94a3b8" }}>Predictions:</span>{" "}
-                  To generate or refresh predictions for this project, run:
+                  <span style={{ color: "#818cf8" }}>Predictions:</span>{" "}
+                  Open the project and use the <strong style={{ color: "#a5b4fc" }}>Prediction tab</strong> to run or refresh the prediction.
                 </div>
-                <pre style={{
-                  margin: "6px 0 0", padding: "8px 10px",
-                  background: "rgba(0,0,0,0.3)", borderRadius: 5,
-                  fontSize: 11, color: "#a5b4fc", overflowX: "auto",
-                  whiteSpace: "pre-wrap", wordBreak: "break-all",
-                }}>
-                  {`DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py`}
-                </pre>
               </div>
 
               <button onClick={onClose} style={{
@@ -665,22 +657,14 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
                   <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 6 }}>
                     Promoted candidates are now normal Projects. Prediction and map visibility depends on project fields such as coordinates and prediction generation.
                   </div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 6 }}>
                     <span style={{ color: "#fbbf24" }}>Map:</span>{" "}
                     This project may not appear on the map until coordinates are added via the Coordinates tab.
                   </div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 4 }}>
-                    <span style={{ color: "#94a3b8" }}>Predictions:</span>{" "}
-                    Run to generate or refresh:
+                  <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>
+                    <span style={{ color: "#818cf8" }}>Predictions:</span>{" "}
+                    Open the project and use the <strong style={{ color: "#a5b4fc" }}>Prediction tab</strong> to run or refresh the prediction.
                   </div>
-                  <pre style={{
-                    margin: 0, padding: "6px 8px",
-                    background: "rgba(0,0,0,0.3)", borderRadius: 4,
-                    fontSize: 10, color: "#a5b4fc", overflowX: "auto",
-                    whiteSpace: "pre-wrap", wordBreak: "break-all",
-                  }}>
-                    {`DATABASE_URL=sqlite:///local.db python scripts/run_demo_predictions.py`}
-                  </pre>
                 </div>
               </div>
             )}

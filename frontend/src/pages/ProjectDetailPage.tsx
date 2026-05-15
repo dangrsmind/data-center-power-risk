@@ -8,6 +8,7 @@ import type {
   ProjectHistoryData,
   ProjectEvidenceData,
   ProjectPredictionData,
+  ProjectPredictionRunResponse,
   ProjectRiskSignalData,
 } from "../api/types";
 import {
@@ -19,6 +20,7 @@ import {
   getProjectEvidence,
   getProjectPrediction,
   getProjectRiskSignal,
+  runProjectPrediction,
 } from "../api/adapter";
 import { ProjectDetailPanel } from "../components/detail/ProjectDetailPanel";
 import { PhaseList } from "../components/detail/PhaseList";
@@ -221,13 +223,14 @@ export function ProjectDetailPage() {
               </div>
             )}
 
-            {tab === "prediction" && prediction && (
+            {tab === "prediction" && (
               <div style={{ maxWidth: 820 }}>
-                <PredictionTab data={prediction} />
+                <PredictionRefreshPanel
+                  projectId={id!}
+                  prediction={prediction}
+                  onRefreshed={setPrediction}
+                />
               </div>
-            )}
-            {tab === "prediction" && !prediction && !loading && (
-              <div style={{ color: "var(--text-muted)", fontSize: 13 }}>No prediction data available.</div>
             )}
 
             {tab === "risk-signal" && riskSignal && (
@@ -347,6 +350,148 @@ function CoordinateSection({ project, onSaved }: { project: ProjectDetail; onSav
         )}
       </div>
     </SectionCard>
+  );
+}
+
+function PredictionRefreshPanel({
+  projectId,
+  prediction,
+  onRefreshed,
+}: {
+  projectId: string;
+  prediction: ProjectPredictionData | null;
+  onRefreshed: (data: ProjectPredictionData) => void;
+}) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<ProjectPredictionRunResponse | null>(null);
+
+  async function handleRun() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const r = await runProjectPrediction(projectId);
+      setResult(r);
+      if (r.errors.length === 0) {
+        try {
+          const updated = await getProjectPrediction(projectId);
+          onRefreshed(updated);
+        } catch {
+          // Non-fatal — result is still displayed, user can reload tab
+        }
+      }
+    } catch (e) {
+      setResult({
+        project_id: projectId,
+        prediction_created: false,
+        prediction_updated: false,
+        prediction_skipped: false,
+        warnings: [],
+        errors: [String(e)],
+        prediction_id: null,
+      });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const hasErrors   = result && result.errors.length > 0;
+  const hasWarnings = result && result.warnings.length > 0;
+  const wasSuccess  = result && result.errors.length === 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Action row */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 14,
+        padding: "12px 16px",
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+      }}>
+        <button
+          onClick={handleRun}
+          disabled={running}
+          style={{
+            padding: "7px 18px",
+            fontSize: 12, fontWeight: 700,
+            background: running ? "rgba(99,102,241,0.08)" : "rgba(99,102,241,0.14)",
+            color: "#818cf8",
+            border: "1px solid rgba(99,102,241,0.4)",
+            borderRadius: 5,
+            cursor: running ? "not-allowed" : "pointer",
+            opacity: running ? 0.7 : 1,
+            whiteSpace: "nowrap" as const,
+            flexShrink: 0,
+          }}
+        >
+          {running ? "Running…" : prediction ? "↺ Refresh prediction" : "▶ Run prediction"}
+        </button>
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Runs the deterministic baseline model for this project.
+          Results depend on available evidence and project fields.
+          This is not a trained ML model.
+        </div>
+      </div>
+
+      {/* Result banner */}
+      {result && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {hasErrors && (
+            <div style={{
+              background: "rgba(239,68,68,0.09)", border: "1px solid rgba(239,68,68,0.3)",
+              borderRadius: 6, padding: "10px 14px",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", marginBottom: 5 }}>
+                Errors — prediction not saved
+              </div>
+              {result.errors.map((e, i) => (
+                <div key={i} style={{ fontSize: 11, color: "#fca5a5" }}>• {e}</div>
+              ))}
+            </div>
+          )}
+          {wasSuccess && (
+            <div style={{
+              background: "rgba(34,197,94,0.09)", border: "1px solid rgba(34,197,94,0.3)",
+              borderRadius: 6, padding: "9px 14px",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#22c55e" }}>
+                ✓ {result.prediction_created
+                  ? "Prediction created"
+                  : result.prediction_updated
+                  ? "Prediction updated"
+                  : result.prediction_skipped
+                  ? "Prediction skipped — already up to date"
+                  : "Done"}
+              </div>
+            </div>
+          )}
+          {hasWarnings && (
+            <div style={{
+              background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)",
+              borderRadius: 6, padding: "9px 14px",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+                Warnings
+              </div>
+              {result.warnings.map((w, i) => (
+                <div key={i} style={{ fontSize: 11, color: "#fcd34d" }}>• {w}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Prediction content */}
+      {prediction ? (
+        <PredictionTab data={prediction} />
+      ) : !running && !result ? (
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          No prediction data available. Click "Run prediction" to generate one.
+        </div>
+      ) : null}
+
+    </div>
   );
 }
 

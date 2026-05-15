@@ -519,6 +519,20 @@ export interface ProjectCoordinateHistoryItem {
 }
 
 // ---------------------------------------------------------------------------
+// Prediction Run
+// ---------------------------------------------------------------------------
+
+export interface ProjectPredictionRunResponse {
+  project_id: string;
+  prediction_created: boolean;
+  prediction_updated: boolean;
+  prediction_skipped: boolean;
+  warnings: string[];
+  errors: string[];
+  prediction_id: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Project Candidates
 // ---------------------------------------------------------------------------
 

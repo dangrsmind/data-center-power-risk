@@ -25,6 +25,7 @@ import type {
   ProjectHistoryData,
   ProjectEvidenceData,
   ProjectPredictionData,
+  ProjectPredictionRunResponse,
   ProjectRiskSignalData,
   IntakePacketRequest,
   IntakePacketResponse,
@@ -762,6 +763,41 @@ export async function getProjectPrediction(id: string): Promise<ProjectPredictio
     };
   }
   return fetchJson<ProjectPredictionData>(`/projects/${id}/prediction`);
+}
+
+export async function runProjectPrediction(projectId: string): Promise<ProjectPredictionRunResponse> {
+  if (USE_MOCK) {
+    await delay(800);
+    return {
+      project_id: projectId,
+      prediction_created: false,
+      prediction_updated: true,
+      prediction_skipped: false,
+      warnings: ["utility_named missing — prediction confidence is reduced"],
+      errors: [],
+      prediction_id: null,
+    };
+  }
+  const res = await fetch(`${BASE_URL}/projects/${projectId}/prediction/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail = json?.detail ?? json ?? {};
+    const errors: string[] = Array.isArray(detail.errors) ? detail.errors : [String(json ?? res.statusText)];
+    const warnings: string[] = Array.isArray(detail.warnings) ? detail.warnings : [];
+    return {
+      project_id: projectId,
+      prediction_created: false,
+      prediction_updated: false,
+      prediction_skipped: false,
+      warnings,
+      errors,
+      prediction_id: null,
+    };
+  }
+  return json as ProjectPredictionRunResponse;
 }
 
 export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSignalData> {
