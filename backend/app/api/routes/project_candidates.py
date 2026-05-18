@@ -10,9 +10,11 @@ from app.schemas.project_candidate import (
     ProjectCandidateListResponse,
     ProjectCandidatePromotionRequest,
     ProjectCandidatePromotionResponse,
+    ProjectCandidateVerificationResponse,
 )
 from app.services.project_candidate_generator import ProjectCandidateGenerator
 from app.services.project_candidate_promotion import ProjectCandidatePromotionService
+from app.services.project_candidate_verifier import ProjectCandidateVerifier
 
 
 router = APIRouter(prefix="/project-candidates", tags=["project-candidates"])
@@ -47,3 +49,16 @@ def promote_project_candidate(
     if request.confirm:
         db.commit()
     return ProjectCandidatePromotionResponse(**summary.to_dict())
+
+
+@router.get("/{candidate_id}/verification", response_model=ProjectCandidateVerificationResponse)
+def get_project_candidate_verification(
+    candidate_id: uuid.UUID,
+    threshold: float = Query(default=0.80, ge=0, le=1),
+    db: Session = Depends(get_db),
+) -> ProjectCandidateVerificationResponse:
+    verifier = ProjectCandidateVerifier(db)
+    candidate = verifier.get_candidate(candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="project candidate not found")
+    return ProjectCandidateVerificationResponse(**verifier.verify(candidate, threshold=threshold).to_dict())

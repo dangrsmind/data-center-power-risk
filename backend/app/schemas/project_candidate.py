@@ -26,6 +26,12 @@ class ProjectCandidateResponse(BaseModel):
     evidence_excerpt: str | None
     raw_metadata_json: dict | list | None
     promoted_project_id: uuid.UUID | None
+    verification_status: str | None
+    verification_confidence: float | None
+    verification_reasons_json: list | None
+    verification_errors_json: list | None
+    auto_admit_eligible: bool
+    verified_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -55,3 +61,15 @@ class ProjectCandidatePromotionResponse(BaseModel):
     warnings: list[str]
     errors: list[str]
     promoted_project_id: uuid.UUID | None
+
+
+class ProjectCandidateVerificationResponse(BaseModel):
+    candidate_id: uuid.UUID
+    decision: str
+    confidence: float
+    reasons: list[str]
+    blocking_errors: list[str]
+    warnings: list[str]
+    required_fields_present: dict
+    evidence_requirements_met: dict
+    source_quality_summary: dict
