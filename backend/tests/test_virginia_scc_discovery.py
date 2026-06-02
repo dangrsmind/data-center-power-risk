@@ -269,7 +269,10 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertFalse(payload["allow_insecure_fetch"])
         self.assertFalse(payload["write_fetch_cache"])
         self.assertTrue(any("no adapter implemented" in warning for warning in payload["warnings"]))
-        self.assertEqual(payload["implemented_adapters"], ["virginia_scc_data_center_large_load_dockets"])
+        self.assertEqual(
+            payload["implemented_adapters"],
+            ["generic_web_search", "virginia_scc_data_center_large_load_dockets"],
+        )
 
     def test_run_public_discovery_can_mark_insecure_fetch_dev_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

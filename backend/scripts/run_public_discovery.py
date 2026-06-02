@@ -14,6 +14,11 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.schemas.discovery import DiscoveryRunSummary  # noqa: E402
+from app.services.discovery_adapters.generic_web_search import (  # noqa: E402
+    GENERIC_WEB_SEARCH_ADAPTER_ID,
+    GENERIC_WEB_SEARCH_METHOD,
+    GenericWebSearchDiscoveryAdapter,
+)
 from app.services.discovery_adapters.virginia_scc import (  # noqa: E402
     VIRGINIA_SCC_SOURCE_ID,
     VirginiaSccDiscoveryAdapter,
@@ -29,6 +34,9 @@ DEFAULT_DISCOVERY_RUNS_DIR = REPO_DIR / "data" / "discovery_runs"
 DEFAULT_SOURCE_FETCHES_DIR = REPO_DIR / "data" / "source_fetches"
 IMPLEMENTED_ADAPTERS = {
     VIRGINIA_SCC_SOURCE_ID: VirginiaSccDiscoveryAdapter,
+}
+IMPLEMENTED_DISCOVERY_METHODS = {
+    GENERIC_WEB_SEARCH_METHOD: GenericWebSearchDiscoveryAdapter,
 }
 
 
@@ -79,9 +87,12 @@ def source_preview(source: Any) -> dict[str, Any]:
 
 def adapter_for_source(source: Any, *, fetch_cache_dir: Path | None = None) -> Any | None:
     adapter_cls = IMPLEMENTED_ADAPTERS.get(source.id)
-    if adapter_cls is None:
-        return None
-    return adapter_cls(source, fetch_cache_dir=fetch_cache_dir)
+    if adapter_cls is not None:
+        return adapter_cls(source, fetch_cache_dir=fetch_cache_dir)
+    adapter_cls = IMPLEMENTED_DISCOVERY_METHODS.get(source.discovery_method)
+    if adapter_cls is not None:
+        return adapter_cls(source)
+    return None
 
 
 def run_sources(
@@ -138,7 +149,7 @@ def run_sources(
         "fetch_cache_dir": str(fetch_cache_dir) if write_fetch_cache else None,
         "registry_path": str(DEFAULT_REGISTRY_PATH),
         "enabled_sources": [source_preview(source) for source in enabled_sources],
-        "implemented_adapters": sorted(IMPLEMENTED_ADAPTERS),
+        "implemented_adapters": sorted([*IMPLEMENTED_ADAPTERS, GENERIC_WEB_SEARCH_ADAPTER_ID]),
         "adapter_results": adapter_results,
         "would_run": build_would_run(enabled_sources),
     }
