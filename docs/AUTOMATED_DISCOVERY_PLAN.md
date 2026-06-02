@@ -99,6 +99,14 @@ Promotion creates a normal `projects` row and linked `evidence` only for the sel
 
 Once promoted, the resulting row is an ordinary Project and may enter existing project evidence, map, and prediction workflows through those normal paths. Unpromoted project candidates remain review records only. The core rule remains unchanged: no public source, no project record.
 
+## Automated Admission Verification
+
+Automated admission is intentionally strict and source-backed. `backend/scripts/verify_project_candidates.py` classifies project candidates as `auto_admit_eligible`, `needs_review`, or `quarantined` using only persisted candidate, discovered-source, and extracted-claim fields. It is dry-run by default; `--confirm` persists verification metadata only and does not create Projects.
+
+Only candidates with valid public source URLs, discovered source references, extracted claim references, resolved project names, state, high candidate confidence, project-specific claims, and official or high-trust source evidence can be marked `auto_admit_eligible`. Incomplete, ambiguous, unresolved, context-only, or low-confidence candidates remain `needs_review` or `quarantined`. The dataset is therefore intentionally incomplete rather than source-weak.
+
+`backend/scripts/auto_admit_project_candidates.py` is also dry-run by default. With `--confirm`, it promotes only candidates that pass the verifier as `auto_admit_eligible` and uses the existing guarded promotion service without unresolved-name or incomplete-field overrides. It does not promote `needs_review` or `quarantined` candidates.
+
 ## Public Fetch Policy
 
 Discovery fetches use SSL certificate verification by default. SSL failures are reported as structured diagnostics and must not crash discovery runs or silently hide the problem.

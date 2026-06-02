@@ -20,6 +20,7 @@ from app.models.project_candidate import ProjectCandidate  # noqa: E402
 from app.services.discovered_source_claim_extractor import VALID_DISCOVERED_SOURCE_CLAIM_STATUSES  # noqa: E402
 from app.services.discovered_source_service import VALID_DISCOVERED_SOURCE_STATUSES  # noqa: E402
 from app.services.project_candidate_generator import VALID_PROJECT_CANDIDATE_STATUSES  # noqa: E402
+from app.services.project_candidate_verifier import VALID_VERIFICATION_STATUSES  # noqa: E402
 
 
 def valid_url(value: str | None) -> bool:
@@ -94,8 +95,36 @@ def run_healthcheck() -> dict[str, object]:
             for candidate in db.scalars(select(ProjectCandidate)):
                 if candidate.status not in VALID_PROJECT_CANDIDATE_STATUSES:
                     errors.append(f"project candidate {candidate.id} has invalid status: {candidate.status}")
+                if candidate.verification_status and candidate.verification_status not in VALID_VERIFICATION_STATUSES:
+                    errors.append(
+                        f"project candidate {candidate.id} has invalid verification_status: "
+                        f"{candidate.verification_status}"
+                    )
+                if candidate.auto_admit_eligible and candidate.verification_status != "auto_admit_eligible":
+                    errors.append(
+                        f"project candidate {candidate.id} has auto_admit_eligible without eligible verification status"
+                    )
+                if candidate.verification_status == "auto_admit_eligible" and not candidate.auto_admit_eligible:
+                    errors.append(
+                        f"project candidate {candidate.id} has eligible verification status without auto_admit_eligible"
+                    )
+                if candidate.verification_status == "quarantined" and candidate.status == "promoted":
+                    errors.append(f"quarantined project candidate {candidate.id} is promoted")
                 if not 0 <= candidate.confidence <= 1:
                     errors.append(f"project candidate {candidate.id} has invalid confidence: {candidate.confidence}")
+                if candidate.verification_confidence is not None and not 0 <= candidate.verification_confidence <= 1:
+                    errors.append(
+                        f"project candidate {candidate.id} has invalid verification_confidence: "
+                        f"{candidate.verification_confidence}"
+                    )
+                if candidate.auto_admit_eligible and (
+                    not candidate.primary_source_url
+                    or not candidate.discovered_source_ids_json
+                    or not candidate.discovered_source_claim_ids_json
+                ):
+                    errors.append(
+                        f"project candidate {candidate.id} is auto-admit eligible without required source references"
+                    )
                 if candidate.promoted_project_id is not None and candidate.status != "promoted":
                     errors.append(
                         f"project candidate {candidate.id} has promoted_project_id but status is {candidate.status}"

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import JSON, CheckConstraint, Float, ForeignKey, Index, String, Text, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, GUID, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,6 +23,7 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_project_candidates_state", "state"),
         Index("ix_project_candidates_candidate_name", "candidate_name"),
         Index("ix_project_candidates_promoted_project_id", "promoted_project_id"),
+        Index("ix_project_candidates_verification_status", "verification_status"),
     )
 
     candidate_key: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -44,3 +47,9 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     promoted_project_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), ForeignKey("projects.id"), nullable=True
     )
+    verification_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    verification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    verification_reasons_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    verification_errors_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    auto_admit_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
