@@ -71,6 +71,20 @@ Current limitations: the SearchStax token is public because SCC embeds it in the
 
 Extraction, claim parsing, entity resolution, coordinate enrichment, utility/ISO enrichment, confidence scoring, and publication remain later pipeline stages. The public discoverability rule remains unchanged: no source, no project.
 
+## Generic Web Search Adapter
+
+Registry entries with `discovery_method: web_search_pattern` are now handled by the generic web-search discovery adapter. The adapter reads each entry's configured `search_terms`, builds planned search-provider queries, and emits only discovered source records when a supported provider returns relevant results. It does not create Projects, ProjectCandidates, extracted claims, promotions, or auto-admission decisions.
+
+The default provider is disabled. Dry-run mode always lists the planned queries without network calls. Non-dry-run mode with no configured provider returns the warning `generic_web_search_requires_search_api` and skips safely. The adapter does not scrape Google HTML directly and does not bypass access controls. Live web search should be added only through an official or terms-compliant API provider.
+
+Configuration:
+
+- `WEB_SEARCH_PROVIDER=disabled` is the default and performs no live search.
+- `WEB_SEARCH_PROVIDER=mock` enables fixture-backed search results for tests or local demos.
+- `WEB_SEARCH_MOCK_RESULTS_PATH=/path/to/results.json` points the mock provider at a JSON fixture keyed by query.
+
+Relevant provider results are converted into discovered source records with URL, title, source type from the registry, inferred publisher when possible, geography, discovery method, search term/source query, snippet, adapter/source registry IDs, analyst-review confidence, and raw provider metadata. Results are deduplicated by normalized `source_url` and filtered to plausible data center, large-load, utility filing, planning, permitting, economic development, company announcement, developer page, or data center news contexts. The adapter does not fabricate project names, developers, locations, loads, titles, or snippets.
+
 ## Discovered Source Ingestion
 
 Discovery run output remains runtime data and is ignored under `data/discovery_runs/`. When a run finds source records, `backend/scripts/ingest_public_discovered_sources.py --input data/discovery_runs/<timestamp>/discovered_sources.json` can validate those records and upsert them into the database `discovered_sources` table by `source_url`.

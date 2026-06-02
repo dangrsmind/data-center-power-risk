@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -26,10 +26,14 @@ class DiscoveredSource(BaseModel):
     content_hash: str | None = None
     confidence: DiscoveryConfidence
     notes: str | None = None
+    search_term: str | None = None
     source_query: str | None = None
     snippet: str | None = None
     case_number: str | None = None
     document_type: str | None = None
+    source_registry_id: str | None = None
+    adapter_id: str | None = None
+    raw_metadata_json: dict[str, Any] | None = None
 
 
 class ExtractedClaim(BaseModel):

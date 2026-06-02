@@ -1,0 +1,30 @@
+{
+  "queries": {
+    "\"planning commission\" \"data center\"": [
+      {
+        "url": "https://planning.example.gov/agendas/2026-05-01-data-center.html",
+        "title": "Planning Commission agenda: data center special use permit",
+        "snippet": "Public hearing for a data center special use permit and rezoning request.",
+        "publisher": "Example County Planning"
+      },
+      {
+        "url": "https://planning.example.gov/agendas/2026-05-01-data-center.html#details",
+        "title": "Planning Commission agenda duplicate fragment",
+        "snippet": "Duplicate data center agenda result."
+      },
+      {
+        "url": "https://jobs.example.com/data-center-technician-training",
+        "title": "Data center training jobs",
+        "snippet": "Jobs at data center training program."
+      }
+    ],
+    "\"large load\" \"data center\" \"utility\"": [
+      {
+        "url": "https://utility.example.com/filings/large-load-data-center.pdf",
+        "title": "Large load electric service agreement for data center",
+        "snippet": "Utility filing describes a large load and electric service agreement.",
+        "document_type": "pdf"
+      }
+    ]
+  }
+}
