@@ -18,6 +18,8 @@ from app.services.discovery_adapters.generic_web_search import (  # noqa: E402
     GENERIC_WEB_SEARCH_ADAPTER_ID,
     GENERIC_WEB_SEARCH_METHOD,
     GenericWebSearchDiscoveryAdapter,
+    configured_provider_name,
+    result_limit_from_env,
 )
 from app.services.discovery_adapters.virginia_scc import (  # noqa: E402
     VIRGINIA_SCC_SOURCE_ID,
@@ -147,6 +149,8 @@ def run_sources(
         "allow_insecure_fetch": allow_insecure_fetch,
         "write_fetch_cache": write_fetch_cache,
         "fetch_cache_dir": str(fetch_cache_dir) if write_fetch_cache else None,
+        "web_search_provider": configured_provider_name(),
+        "web_search_max_results": result_limit_from_env(),
         "registry_path": str(DEFAULT_REGISTRY_PATH),
         "enabled_sources": [source_preview(source) for source in enabled_sources],
         "implemented_adapters": sorted([*IMPLEMENTED_ADAPTERS, GENERIC_WEB_SEARCH_ADAPTER_ID]),

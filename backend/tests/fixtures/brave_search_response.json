@@ -1,0 +1,23 @@
+{
+  "web": {
+    "results": [
+      {
+        "title": "Planning Commission agenda: data center rezoning",
+        "url": "https://planning.example.gov/agendas/data-center-rezoning",
+        "description": "Planning commission packet for a data center rezoning and special use permit.",
+        "profile": {
+          "long_name": "Example Planning Department"
+        },
+        "age": "2026-05-20"
+      },
+      {
+        "title": "Data center technician training",
+        "url": "https://jobs.example.com/data-center-training",
+        "description": "Jobs at data center training program.",
+        "profile": {
+          "long_name": "Example Jobs"
+        }
+      }
+    ]
+  }
+}

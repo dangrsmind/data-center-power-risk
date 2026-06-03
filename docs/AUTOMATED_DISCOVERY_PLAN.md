@@ -75,13 +75,28 @@ Extraction, claim parsing, entity resolution, coordinate enrichment, utility/ISO
 
 Registry entries with `discovery_method: web_search_pattern` are now handled by the generic web-search discovery adapter. The adapter reads each entry's configured `search_terms`, builds planned search-provider queries, and emits only discovered source records when a supported provider returns relevant results. It does not create Projects, ProjectCandidates, extracted claims, promotions, or auto-admission decisions.
 
-The default provider is disabled. Dry-run mode always lists the planned queries without network calls. Non-dry-run mode with no configured provider returns the warning `generic_web_search_requires_search_api` and skips safely. The adapter does not scrape Google HTML directly and does not bypass access controls. Live web search should be added only through an official or terms-compliant API provider.
+The default provider is disabled. Dry-run mode always lists the planned queries without network calls. Non-dry-run mode with no configured provider returns the warning `generic_web_search_requires_search_api` and skips safely. The adapter does not scrape Google HTML directly and does not bypass access controls. Live web search is available only through explicitly configured provider APIs.
 
 Configuration:
 
 - `WEB_SEARCH_PROVIDER=disabled` is the default and performs no live search.
-- `WEB_SEARCH_PROVIDER=mock` enables fixture-backed search results for tests or local demos.
+- `WEB_SEARCH_PROVIDER=mock` enables fixture-backed search results for tests or local demos. If `WEB_SEARCH_MOCK_RESULTS_PATH` is unset, the adapter uses the committed generic web-search test fixture.
 - `WEB_SEARCH_MOCK_RESULTS_PATH=/path/to/results.json` points the mock provider at a JSON fixture keyed by query.
+- `WEB_SEARCH_PROVIDER=brave` enables the Brave Search API provider.
+- `WEB_SEARCH_API_KEY=<secret>` is required for `WEB_SEARCH_PROVIDER=brave`. Keep this in the shell environment or a local uncommitted secret manager; do not commit it.
+- `WEB_SEARCH_MAX_RESULTS=5` limits provider results per query. Values are capped to the adapter maximum.
+
+Example commands:
+
+```bash
+cd backend
+python scripts/run_public_discovery.py --dry-run
+python scripts/run_public_discovery.py
+WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py
+WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py
+```
+
+If `WEB_SEARCH_PROVIDER=brave` is set without `WEB_SEARCH_API_KEY`, the adapter returns `web_search_api_key_missing` and emits no discovered source records. Provider request failures are reported as structured warnings and do not crash the whole discovery run. The discovery summary reports the active provider name and result limit but never prints API keys.
 
 Relevant provider results are converted into discovered source records with URL, title, source type from the registry, inferred publisher when possible, geography, discovery method, search term/source query, snippet, adapter/source registry IDs, analyst-review confidence, and raw provider metadata. Results are deduplicated by normalized `source_url` and filtered to plausible data center, large-load, utility filing, planning, permitting, economic development, company announcement, developer page, or data center news contexts. The adapter does not fabricate project names, developers, locations, loads, titles, or snippets.
 

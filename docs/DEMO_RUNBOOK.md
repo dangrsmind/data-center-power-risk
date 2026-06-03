@@ -92,6 +92,28 @@ Expected output (all zeros for errors and warnings):
 }
 ```
 
+## Optional: Run Generic Web-Search Discovery
+
+Generic web-search discovery is disabled by default and never creates projects directly. Dry-run lists planned queries only:
+
+```bash
+python scripts/run_public_discovery.py --dry-run
+```
+
+For a fixture-backed local check:
+
+```bash
+WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py
+```
+
+For live Brave Search API discovery, keep the key in your shell environment and do not commit it:
+
+```bash
+WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py
+```
+
+Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted.
+
 ## 6. Start the Backend
 
 ```bash

@@ -12,6 +12,7 @@ from urllib import parse
 from pydantic import ValidationError
 
 from app.schemas.discovery import DiscoveredSource
+from app.services.public_fetch import PublicFetchClient
 from app.services.discovery_adapters.virginia_scc import DiscoveryAdapterResult
 from app.services.source_registry import SourceRegistryEntry
 
@@ -19,7 +20,12 @@ from app.services.source_registry import SourceRegistryEntry
 GENERIC_WEB_SEARCH_ADAPTER_ID = "generic_web_search"
 GENERIC_WEB_SEARCH_METHOD = "web_search_pattern"
 DEFAULT_RESULT_LIMIT = 10
+DEFAULT_MOCK_RESULTS_PATH = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "generic_web_search_results.json"
+BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 REQUIRES_PROVIDER_WARNING = "generic_web_search_requires_search_api"
+MISSING_API_KEY_WARNING = "web_search_api_key_missing"
+UNSUPPORTED_PROVIDER_WARNING = "web_search_provider_unsupported"
+PROVIDER_ERROR_WARNING = "generic_web_search_provider_error"
 POSITIVE_RELEVANCE_TERMS = {
     "data center",
     "datacenter",
@@ -68,11 +74,36 @@ class WebSearchProvider(Protocol):
         ...
 
 
+class WebSearchProviderRuntimeError(RuntimeError):
+    pass
+
+
 class DisabledWebSearchProvider:
     provider_id = "disabled"
+    config_warning = REQUIRES_PROVIDER_WARNING
 
     def search(self, query: str, *, limit: int = DEFAULT_RESULT_LIMIT) -> list[WebSearchResult]:
         raise RuntimeError(REQUIRES_PROVIDER_WARNING)
+
+
+class MissingApiKeyWebSearchProvider:
+    config_warning = MISSING_API_KEY_WARNING
+
+    def __init__(self, provider_id: str):
+        self.provider_id = provider_id
+
+    def search(self, query: str, *, limit: int = DEFAULT_RESULT_LIMIT) -> list[WebSearchResult]:
+        raise RuntimeError(MISSING_API_KEY_WARNING)
+
+
+class UnsupportedWebSearchProvider:
+    config_warning = UNSUPPORTED_PROVIDER_WARNING
+
+    def __init__(self, provider_id: str):
+        self.provider_id = provider_id
+
+    def search(self, query: str, *, limit: int = DEFAULT_RESULT_LIMIT) -> list[WebSearchResult]:
+        raise RuntimeError(UNSUPPORTED_PROVIDER_WARNING)
 
 
 class MockWebSearchProvider:
@@ -117,6 +148,41 @@ class MockWebSearchProvider:
         return results
 
 
+class BraveWebSearchProvider:
+    provider_id = "brave"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        fetch_client: PublicFetchClient | None = None,
+        endpoint: str = BRAVE_SEARCH_ENDPOINT,
+    ):
+        self.api_key = api_key
+        self.fetch_client = fetch_client or PublicFetchClient()
+        self.endpoint = endpoint
+
+    def search(self, query: str, *, limit: int = DEFAULT_RESULT_LIMIT) -> list[WebSearchResult]:
+        url = f"{self.endpoint}?{parse.urlencode({'q': query, 'count': str(limit)})}"
+        fetch_result = self.fetch_client.fetch(
+            url,
+            headers={
+                "Accept": "application/json",
+                "X-Subscription-Token": self.api_key,
+            },
+        )
+        if not fetch_result.ok or fetch_result.text is None:
+            raise WebSearchProviderRuntimeError(
+                f"brave_search_request_failed: {fetch_result.error_type or 'fetch_error'}; "
+                f"{fetch_result.error_message or 'no detail'}"
+            )
+        try:
+            payload = json.loads(fetch_result.text)
+        except json.JSONDecodeError as exc:
+            raise WebSearchProviderRuntimeError(f"brave_search_invalid_json: {exc}") from exc
+        return parse_brave_search_response(payload)
+
+
 class GenericWebSearchDiscoveryAdapter:
     adapter_id = GENERIC_WEB_SEARCH_ADAPTER_ID
 
@@ -131,7 +197,7 @@ class GenericWebSearchDiscoveryAdapter:
             raise ValueError(f"Generic web-search adapter cannot run method {source.discovery_method!r}")
         self.source = source
         self.provider = provider if provider is not None else provider_from_env()
-        self.result_limit = result_limit
+        self.result_limit = result_limit_from_env(default=result_limit) if provider is None else result_limit
 
     def run(self, *, dry_run: bool, allow_insecure_fetch: bool = False) -> DiscoveryAdapterResult:
         result = DiscoveryAdapterResult(
@@ -142,12 +208,9 @@ class GenericWebSearchDiscoveryAdapter:
         if dry_run:
             result.warnings.append("dry_run_only: generic web-search adapter did not call a search provider")
             return result
-        if self.provider.provider_id == "disabled":
-            result.warnings.append(REQUIRES_PROVIDER_WARNING)
-            result.warnings.append(
-                "Set WEB_SEARCH_PROVIDER=mock with WEB_SEARCH_MOCK_RESULTS_PATH for fixture-backed runs, "
-                "or configure a supported official search API provider. Direct Google HTML scraping is disabled."
-            )
+        config_warning = getattr(self.provider, "config_warning", None)
+        if config_warning:
+            result.warnings.extend(provider_config_warnings(self.provider.provider_id, config_warning))
             return result
 
         parsed_results: list[tuple[str, WebSearchResult]] = []
@@ -155,7 +218,10 @@ class GenericWebSearchDiscoveryAdapter:
             try:
                 provider_results = self.provider.search(query, limit=self.result_limit)
             except Exception as exc:  # noqa: BLE001 - providers are optional external integrations.
-                result.warnings.append(f"generic_web_search_provider_error for {self.source.id}: {type(exc).__name__}: {exc}")
+                result.warnings.append(
+                    f"{PROVIDER_ERROR_WARNING} for {self.source.id} via {self.provider.provider_id}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
                 continue
             for provider_result in provider_results:
                 if is_relevant_result(provider_result, query=query):
@@ -217,15 +283,82 @@ class GenericWebSearchDiscoveryAdapter:
 
 def provider_from_env() -> WebSearchProvider:
     provider = os.getenv("WEB_SEARCH_PROVIDER", "disabled").strip().lower() or "disabled"
+    if provider == "disabled":
+        return DisabledWebSearchProvider()
     if provider == "mock":
-        path_text = os.getenv("WEB_SEARCH_MOCK_RESULTS_PATH")
-        if not path_text:
-            return DisabledWebSearchProvider()
+        path_text = os.getenv("WEB_SEARCH_MOCK_RESULTS_PATH") or str(DEFAULT_MOCK_RESULTS_PATH)
         try:
             return MockWebSearchProvider.from_path(Path(path_text))
         except (OSError, ValueError, json.JSONDecodeError):
             return DisabledWebSearchProvider()
+    if provider == "brave":
+        api_key = clean_text(os.getenv("WEB_SEARCH_API_KEY"))
+        if not api_key:
+            return MissingApiKeyWebSearchProvider(provider)
+        return BraveWebSearchProvider(api_key=api_key)
+    if provider in {"serpapi", "tavily"}:
+        return UnsupportedWebSearchProvider(provider)
     return DisabledWebSearchProvider()
+
+
+def configured_provider_name() -> str:
+    return os.getenv("WEB_SEARCH_PROVIDER", "disabled").strip().lower() or "disabled"
+
+
+def result_limit_from_env(*, default: int = DEFAULT_RESULT_LIMIT) -> int:
+    raw = os.getenv("WEB_SEARCH_MAX_RESULTS")
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return min(max(value, 1), DEFAULT_RESULT_LIMIT)
+
+
+def provider_config_warnings(provider_id: str, warning_code: str) -> list[str]:
+    if warning_code == REQUIRES_PROVIDER_WARNING:
+        return [
+            REQUIRES_PROVIDER_WARNING,
+            "Set WEB_SEARCH_PROVIDER=mock for fixture-backed runs, or WEB_SEARCH_PROVIDER=brave with "
+            "WEB_SEARCH_API_KEY for Brave Search API runs. Direct Google HTML scraping is disabled.",
+        ]
+    if warning_code == MISSING_API_KEY_WARNING:
+        return [f"{MISSING_API_KEY_WARNING}: WEB_SEARCH_API_KEY is required for WEB_SEARCH_PROVIDER={provider_id}"]
+    if warning_code == UNSUPPORTED_PROVIDER_WARNING:
+        return [
+            f"{UNSUPPORTED_PROVIDER_WARNING}: WEB_SEARCH_PROVIDER={provider_id} is recognized but not implemented; "
+            "supported live provider: brave"
+        ]
+    return [warning_code]
+
+
+def parse_brave_search_response(payload: dict[str, Any]) -> list[WebSearchResult]:
+    rows = payload.get("web", {}).get("results", [])
+    if not isinstance(rows, list):
+        return []
+    results: list[WebSearchResult] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        url = clean_text(row.get("url"))
+        if not url:
+            continue
+        profile = row.get("profile") if isinstance(row.get("profile"), dict) else {}
+        results.append(
+            WebSearchResult(
+                url=url,
+                title=clean_text(row.get("title")),
+                snippet=clean_text(row.get("description")),
+                publisher=clean_text(profile.get("long_name")),
+                raw_metadata={
+                    key: value
+                    for key, value in row.items()
+                    if key not in {"url", "title", "description", "profile"}
+                },
+            )
+        )
+    return results
 
 
 def build_search_url(base_url: str, term: str) -> str:
