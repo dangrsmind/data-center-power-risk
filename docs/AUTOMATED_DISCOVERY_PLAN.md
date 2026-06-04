@@ -136,6 +136,29 @@ Only candidates with valid public source URLs, discovered source references, ext
 
 `backend/scripts/auto_admit_project_candidates.py` is also dry-run by default. With `--confirm`, it promotes only candidates that pass the verifier as `auto_admit_eligible` and uses the existing guarded promotion service without unresolved-name or incomplete-field overrides. It does not promote `needs_review` or `quarantined` candidates.
 
+## Optional: Live/Mock Discovery Smoke Workflow
+
+`backend/scripts/run_live_discovery_smoke.py` wraps public discovery, optional discovered-source ingestion, optional claim extraction, optional candidate generation, optional verification, optional auto-admit dry-run, and optional healthcheck. Public discovery is the only default step. Downstream stages run only when their flags are passed, promotion is never performed, and the script never calls auto-admit with `--confirm`.
+
+Mock, no API key:
+
+```bash
+WEB_SEARCH_PROVIDER=mock DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py
+WEB_SEARCH_PROVIDER=mock DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py --ingest --extract-claims --generate-candidates --verify-candidates --auto-admit-dry-run --healthcheck
+```
+
+Live Brave, with local shell env only:
+
+```bash
+export WEB_SEARCH_PROVIDER=brave
+export WEB_SEARCH_API_KEY='...'
+export WEB_SEARCH_MAX_RESULTS=3
+DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py
+DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py --ingest --extract-claims --generate-candidates --verify-candidates --auto-admit-dry-run --healthcheck
+```
+
+Brave API usage may create incremental API cost. Keep `WEB_SEARCH_MAX_RESULTS` small for smoke tests, keep API keys in the local shell environment only, and do not commit API keys or `.env` files. Smoke results become discovered sources first; project candidates are review records, not final Projects. Auto-admit remains dry-run in this wrapper. No public source means no project record.
+
 ## Public Fetch Policy
 
 Discovery fetches use SSL certificate verification by default. SSL failures are reported as structured diagnostics and must not crash discovery runs or silently hide the problem.
