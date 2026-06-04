@@ -18,6 +18,7 @@ sys.path.insert(0, str(BACKEND_DIR / "scripts"))
 
 from app.models import Base  # noqa: E402
 from app.models.discovered_source import DiscoveredSourceRecord  # noqa: E402
+from app.models.project import Project  # noqa: E402
 from app.services.discovered_source_service import (  # noqa: E402
     DiscoveredSourceService,
     validate_discovered_source_row,
@@ -85,7 +86,53 @@ class PublicDiscoveredSourceIngestionTest(unittest.TestCase):
         self.assertEqual(first.sources_created, 2)
         self.assertEqual(second.sources_created, 0)
         self.assertEqual(second.rows_skipped, 2)
+        self.assertEqual(second.duplicate_existing_urls_skipped, 2)
         self.assertEqual(count, 2)
+
+    def test_duplicate_source_urls_within_one_batch_are_skipped_before_insert(self) -> None:
+        rows = self._rows()
+        duplicate = dict(rows[0])
+        duplicate["source_title"] = "Duplicate later title"
+        db = self.SessionLocal()
+        try:
+            summary = DiscoveredSourceService(db).ingest_rows([rows[0], duplicate, rows[1]])
+            db.commit()
+            records = list(db.scalars(select(DiscoveredSourceRecord).order_by(DiscoveredSourceRecord.source_url)))
+        finally:
+            db.close()
+
+        self.assertEqual(summary.rows_read, 3)
+        self.assertEqual(summary.sources_created, 2)
+        self.assertEqual(summary.rows_skipped, 1)
+        self.assertEqual(summary.duplicate_input_urls_skipped, 1)
+        self.assertEqual(summary.duplicate_existing_urls_skipped, 0)
+        self.assertEqual(len(records), 2)
+        self.assertTrue(any(record.source_title == rows[0]["source_title"] for record in records))
+        self.assertFalse(any(record.source_title == "Duplicate later title" for record in records))
+
+    def test_mixed_batch_with_existing_and_new_urls_creates_only_new_rows(self) -> None:
+        rows = self._rows()
+        new_row = dict(rows[0])
+        new_row["source_url"] = "https://planning.example.gov/agendas/new-data-center.html"
+        new_row["source_title"] = "New data center planning agenda"
+        db = self.SessionLocal()
+        try:
+            service = DiscoveredSourceService(db)
+            service.ingest_rows(rows[:1])
+            db.commit()
+            summary = service.ingest_rows([rows[0], new_row])
+            db.commit()
+            count = db.scalar(select(func.count()).select_from(DiscoveredSourceRecord))
+            project_count = db.scalar(select(func.count()).select_from(Project))
+        finally:
+            db.close()
+
+        self.assertEqual(summary.rows_read, 2)
+        self.assertEqual(summary.sources_created, 1)
+        self.assertEqual(summary.rows_skipped, 1)
+        self.assertEqual(summary.duplicate_existing_urls_skipped, 1)
+        self.assertEqual(count, 2)
+        self.assertEqual(project_count, 0)
 
     def test_allow_existing_updates_existing_row(self) -> None:
         rows = self._rows()
@@ -104,6 +151,29 @@ class PublicDiscoveredSourceIngestionTest(unittest.TestCase):
         self.assertEqual(summary.sources_updated, 1)
         self.assertIsNotNone(record)
         self.assertEqual(record.source_title, "Updated title")
+
+    def test_allow_existing_does_not_overwrite_existing_status(self) -> None:
+        rows = self._rows()
+        db = self.SessionLocal()
+        try:
+            service = DiscoveredSourceService(db)
+            service.ingest_rows(rows[:1])
+            db.commit()
+            record = db.scalar(select(DiscoveredSourceRecord).where(DiscoveredSourceRecord.source_url == rows[0]["source_url"]))
+            record.status = "rejected"
+            db.commit()
+            incoming = dict(rows[0])
+            incoming["status"] = "discovered"
+            incoming["source_title"] = "Safe metadata update"
+            summary = service.ingest_rows([incoming], allow_existing=True)
+            db.commit()
+            db.refresh(record)
+        finally:
+            db.close()
+
+        self.assertEqual(summary.sources_updated, 1)
+        self.assertEqual(record.status, "rejected")
+        self.assertEqual(record.source_title, "Safe metadata update")
 
     def test_load_discovered_source_rows_fixture(self) -> None:
         rows, context = load_discovered_source_rows(FIXTURES_DIR / "public_discovered_sources.json")
