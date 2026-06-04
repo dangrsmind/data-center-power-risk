@@ -32,6 +32,12 @@ class ProjectCandidateResponse(BaseModel):
     verification_errors_json: list | None
     auto_admit_eligible: bool
     verified_at: datetime | None
+    triage_score: float | None
+    triage_tier: str | None
+    triage_reasons_json: list | None
+    triage_warnings_json: list | None
+    recommended_action: str | None
+    triaged_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

@@ -49,6 +49,15 @@ function verificationStatusColor(s: string): { color: string; bg: string } {
   return map[s] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
 }
 
+function triageTierColor(s: string | null | undefined): { color: string; bg: string } {
+  const map: Record<string, { color: string; bg: string }> = {
+    high:   { color: "#22c55e", bg: "rgba(34,197,94,0.14)" },
+    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.13)" },
+    low:    { color: "#64748b", bg: "rgba(100,116,139,0.12)" },
+  };
+  return map[s ?? ""] ?? { color: "#64748b", bg: "rgba(100,116,139,0.08)" };
+}
+
 function VerifBadge({ status }: { status: string }) {
   const { color, bg } = verificationStatusColor(status);
   return (
@@ -63,7 +72,29 @@ function VerifBadge({ status }: { status: string }) {
   );
 }
 
+function TriageBadge({ tier, score }: { tier: string | null; score: number | null }) {
+  if (!tier || score === null || score === undefined) {
+    return <span style={{ fontSize: 11, color: "#475569" }}>—</span>;
+  }
+  const { color, bg } = triageTierColor(tier);
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.04em", padding: "3px 8px", borderRadius: 3,
+      color, background: bg, border: `1px solid ${color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      {tier} {Math.round(score * 100)}%
+    </span>
+  );
+}
+
 function lifecycleLabel(s: string | null): string {
+  if (!s) return "—";
+  return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function actionLabel(s: string | null | undefined): string {
   if (!s) return "—";
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -605,7 +636,7 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
 
   return (
     <tr>
-      <td colSpan={10} style={{ padding: 0 }}>
+      <td colSpan={11} style={{ padding: 0 }}>
         <div style={{
           background: "rgba(15,23,42,0.95)",
           borderTop: "1px solid rgba(255,255,255,0.06)",
@@ -652,6 +683,50 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
               <div style={sectionLabel}>Status</div>
               <StatusBadge status={c.status} />
             </div>
+
+            {(c.triage_tier || c.recommended_action) && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={sectionLabel}>Triage</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "8px 16px", alignItems: "center", marginBottom: 8 }}>
+                  <TriageBadge tier={c.triage_tier} score={c.triage_score} />
+                  <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                    action{" "}
+                    <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                      {actionLabel(c.recommended_action)}
+                    </span>
+                  </span>
+                  {c.triaged_at && (
+                    <span style={{ fontSize: 11, color: "#64748b" }}>
+                      as of {formatDateTime(c.triaged_at)}
+                    </span>
+                  )}
+                </div>
+                {Array.isArray(c.triage_reasons_json) && c.triage_reasons_json.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", marginBottom: 3 }}>
+                      Triage Reasons
+                    </div>
+                    <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                      {(c.triage_reasons_json as string[]).map((r, i) => (
+                        <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(c.triage_warnings_json) && c.triage_warnings_json.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", marginBottom: 3 }}>
+                      Triage Warnings
+                    </div>
+                    <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                      {(c.triage_warnings_json as string[]).map((w, i) => (
+                        <li key={i} style={{ fontSize: 11, color: "#fbbf24", lineHeight: 1.6 }}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             {c.verification_status && (
               <div style={{ gridColumn: "1 / -1" }}>
@@ -929,6 +1004,19 @@ function CandidateRow({
           <ConfBadge value={c.confidence} />
         </td>
 
+        {/* Triage */}
+        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
+          <TriageBadge tier={c.triage_tier} score={c.triage_score} />
+          {c.recommended_action && (
+            <div style={{
+              fontSize: 10, color: "#94a3b8", marginTop: 4,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {actionLabel(c.recommended_action)}
+            </div>
+          )}
+        </td>
+
         {/* Status */}
         <td style={{ padding: "11px 10px", overflow: "hidden" }}>
           <StatusBadge status={c.status} />
@@ -1077,6 +1165,7 @@ export function ProjectCandidatesPage() {
   const [searchText, setSearchText] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterState, setFilterState] = useState("");
+  const [filterTriage, setFilterTriage] = useState("");
   const [filterConf, setFilterConf] = useState("");
 
   const [promotingCandidate, setPromotingCandidate] = useState<ProjectCandidate | null>(null);
@@ -1109,23 +1198,30 @@ export function ProjectCandidatesPage() {
     return s.map(v => ({ value: v, label: v }));
   }, [candidates]);
 
+  const triageOptions = useMemo(() => {
+    const order = ["high", "medium", "low"];
+    const tiers = new Set(candidates.map(c => c.triage_tier).filter(Boolean) as string[]);
+    return order.filter(t => tiers.has(t)).map(v => ({ value: v, label: actionLabel(v) }));
+  }, [candidates]);
+
   const filtered = useMemo(() => {
     const needle = searchText.toLowerCase();
     const confMin = filterConf ? parseFloat(filterConf) : null;
     return candidates.filter(c => {
       if (filterStatus && c.status !== filterStatus) return false;
       if (filterState && c.state !== filterState) return false;
+      if (filterTriage && c.triage_tier !== filterTriage) return false;
       if (confMin !== null && c.confidence < confMin) return false;
       if (needle) {
         const hay = [
           c.candidate_name, c.developer, c.state,
-          c.county, c.city, c.utility, c.primary_source_url,
+          c.county, c.city, c.utility, c.primary_source_url, c.triage_tier, c.recommended_action,
         ].join(" ").toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
     });
-  }, [candidates, searchText, filterStatus, filterState, filterConf]);
+  }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf]);
 
   const countsByStatus = useMemo(() => {
     const m: Record<string, number> = {};
@@ -1133,9 +1229,9 @@ export function ProjectCandidatesPage() {
     return m;
   }, [candidates]);
 
-  const hasFilters = !!(searchText || filterStatus || filterState || filterConf);
+  const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf);
   const clearFilters = () => {
-    setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterConf("");
+    setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
   };
 
   return (
@@ -1219,6 +1315,7 @@ export function ProjectCandidatesPage() {
           />
           <FilterSelect value={filterStatus} onChange={setFilterStatus} options={statusOptions} placeholder="All statuses" />
           <FilterSelect value={filterState} onChange={setFilterState} options={stateOptions} placeholder="All states" />
+          <FilterSelect value={filterTriage} onChange={setFilterTriage} options={triageOptions} placeholder="All triage" />
           <FilterSelect value={filterConf} onChange={setFilterConf} options={CONF_OPTIONS} placeholder="All confidence" />
           {hasFilters && (
             <button onClick={clearFilters} style={{
@@ -1316,7 +1413,7 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
               borderCollapse: "collapse", fontSize: 12,
               tableLayout: "fixed", width: "100%", minWidth: 900,
             }}>
-              {/* 190+110+100+90+72+90+88+88+70+120 = 1018px */}
+              {/* 190+110+100+90+72+90+88+104+88+70+120 = 1122px */}
               <colgroup>
                 <col style={{ width: 190 }} />
                 <col style={{ width: 110 }} />
@@ -1325,6 +1422,7 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
                 <col style={{ width: 72 }} />
                 <col style={{ width: 90 }} />
                 <col style={{ width: 88 }} />
+                <col style={{ width: 104 }} />
                 <col style={{ width: 88 }} />
                 <col style={{ width: 70 }} />
                 <col style={{ width: 120 }} />
@@ -1333,7 +1431,7 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
                   {[
                     "Candidate", "Developer", "State / County", "City",
-                    "MW", "Lifecycle", "Confidence", "Status", "Sources", "Actions",
+                    "MW", "Lifecycle", "Confidence", "Triage", "Status", "Sources", "Actions",
                   ].map((label, i) => (
                     <th key={label} style={{
                       padding: "9px 10px",
@@ -1342,9 +1440,9 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
                       textTransform: "uppercase" as const, letterSpacing: "0.08em",
                       color: "#94a3b8", whiteSpace: "nowrap" as const, overflow: "hidden",
                       position: "sticky" as const, top: 0,
-                      background: "var(--bg)", zIndex: i === 9 ? 3 : 1,
+                      background: "var(--bg)", zIndex: i === 10 ? 3 : 1,
                       borderBottom: "1px solid rgba(255,255,255,0.08)",
-                      ...(i === 9 ? { right: 0, boxShadow: "-2px 0 6px rgba(0,0,0,0.3)" } : {}),
+                      ...(i === 10 ? { right: 0, boxShadow: "-2px 0 6px rgba(0,0,0,0.3)" } : {}),
                     }}>
                       {label}
                     </th>

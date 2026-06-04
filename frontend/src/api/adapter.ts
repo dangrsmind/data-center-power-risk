@@ -510,6 +510,9 @@ export async function acceptClaim(
 export async function getProjectCandidates(params?: {
   status?: string;
   state?: string;
+  triage_tier?: string;
+  recommended_action?: string;
+  min_triage_score?: number;
   limit?: number;
 }): Promise<ProjectCandidateListResponse> {
   if (USE_MOCK) {
@@ -519,6 +522,9 @@ export async function getProjectCandidates(params?: {
   const qs = new URLSearchParams();
   if (params?.status) qs.set("status", params.status);
   if (params?.state) qs.set("state", params.state);
+  if (params?.triage_tier) qs.set("triage_tier", params.triage_tier);
+  if (params?.recommended_action) qs.set("recommended_action", params.recommended_action);
+  if (params?.min_triage_score != null) qs.set("min_triage_score", String(params.min_triage_score));
   if (params?.limit != null) qs.set("limit", String(params.limit));
   const query = qs.toString() ? `?${qs.toString()}` : "";
   return fetchJson<ProjectCandidateListResponse>(`/project-candidates${query}`);

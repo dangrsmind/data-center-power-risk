@@ -144,6 +144,14 @@ Only candidates with valid public source URLs, discovered source references, ext
 
 `backend/scripts/auto_admit_project_candidates.py` is also dry-run by default. With `--confirm`, it promotes only candidates that pass the verifier as `auto_admit_eligible` and uses the existing guarded promotion service without unresolved-name or incomplete-field overrides. It does not promote `needs_review` or `quarantined` candidates.
 
+## Candidate Review Triage
+
+`backend/scripts/triage_project_candidates.py` ranks ProjectCandidates for analyst review without changing verification or promotion rules. It produces a `triage_score`, `triage_tier`, reasons, warnings, and a recommended review action such as `review_for_promotion`, `needs_source_detail`, `needs_location`, `needs_project_name`, `likely_context_only`, or `defer`.
+
+Triage is separate from automated admission. It helps analysts prioritize `needs_review` candidates by favoring official/high-trust sources, project-specific claims, resolved names, location detail, utility/load evidence, multiple supporting claims, and high candidate confidence. It penalizes unresolved names, missing location, context-only sources, weak source quality, low confidence, and generic source titles.
+
+Triage never creates Projects, never auto-promotes candidates, and never marks a candidate auto-admit eligible. Auto-admit remains strict, dry-run by default, and separate from review triage.
+
 ## Optional: Live/Mock Discovery Smoke Workflow
 
 `backend/scripts/run_live_discovery_smoke.py` wraps public discovery, optional discovered-source ingestion, optional claim extraction, optional candidate generation, optional verification, optional auto-admit dry-run, and optional healthcheck. Public discovery is the only default step. Downstream stages run only when their flags are passed, promotion is never performed, and the script never calls auto-admit with `--confirm`.
