@@ -38,6 +38,31 @@ function statusColor(s: string): { color: string; bg: string } {
   return map[s] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
 }
 
+function verificationStatusColor(s: string): { color: string; bg: string } {
+  const map: Record<string, { color: string; bg: string }> = {
+    verified:     { color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
+    auto_admit:   { color: "#34d399", bg: "rgba(52,211,153,0.15)" },
+    rejected:     { color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+    needs_review: { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+    unverified:   { color: "#64748b", bg: "rgba(100,116,139,0.1)" },
+  };
+  return map[s] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
+}
+
+function VerifBadge({ status }: { status: string }) {
+  const { color, bg } = verificationStatusColor(status);
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.06em", padding: "2px 7px", borderRadius: 3,
+      color, background: bg, border: `1px solid ${color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      ✓ {status.replace(/_/g, " ")}
+    </span>
+  );
+}
+
 function lifecycleLabel(s: string | null): string {
   if (!s) return "—";
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -628,6 +653,58 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
               <StatusBadge status={c.status} />
             </div>
 
+            {c.verification_status && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={sectionLabel}>Verification</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "8px 16px", alignItems: "center", marginBottom: 8 }}>
+                  <VerifBadge status={c.verification_status} />
+                  {c.verification_confidence !== null && c.verification_confidence !== undefined && (
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                      confidence{" "}
+                      <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                        {Math.round(c.verification_confidence * 100)}%
+                      </span>
+                    </span>
+                  )}
+                  <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                    auto-admit:{" "}
+                    <span style={{ color: c.auto_admit_eligible ? "#22c55e" : "#64748b", fontWeight: 600 }}>
+                      {c.auto_admit_eligible ? "yes" : "no"}
+                    </span>
+                  </span>
+                  {c.verified_at && (
+                    <span style={{ fontSize: 11, color: "#64748b" }}>
+                      as of {formatDateTime(c.verified_at)}
+                    </span>
+                  )}
+                </div>
+                {Array.isArray(c.verification_reasons_json) && c.verification_reasons_json.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", marginBottom: 3 }}>
+                      Reasons
+                    </div>
+                    <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                      {(c.verification_reasons_json as string[]).map((r, i) => (
+                        <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(c.verification_errors_json) && c.verification_errors_json.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", marginBottom: 3 }}>
+                      Blocking Errors
+                    </div>
+                    <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                      {(c.verification_errors_json as string[]).map((e, i) => (
+                        <li key={i} style={{ fontSize: 11, color: "#fca5a5", lineHeight: 1.6 }}>{e}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {c.promoted_project_id && (
               <div style={{ gridColumn: "1 / -1" }}>
                 <div style={sectionLabel}>Promoted Project ID</div>
@@ -855,6 +932,11 @@ function CandidateRow({
         {/* Status */}
         <td style={{ padding: "11px 10px", overflow: "hidden" }}>
           <StatusBadge status={c.status} />
+          {c.verification_status && (
+            <div style={{ marginTop: 4 }}>
+              <VerifBadge status={c.verification_status} />
+            </div>
+          )}
         </td>
 
         {/* Sources + Claims */}
