@@ -556,6 +556,12 @@ export interface ProjectCandidate {
   evidence_excerpt: string | null;
   raw_metadata_json: Record<string, unknown> | unknown[] | null;
   promoted_project_id: string | null;
+  verification_status: string | null;
+  verification_confidence: number | null;
+  verification_reasons_json: string[] | null;
+  verification_errors_json: string[] | null;
+  auto_admit_eligible: boolean;
+  verified_at: string | null;
   created_at: string;
   updated_at: string;
 }
