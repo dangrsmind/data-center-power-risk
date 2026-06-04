@@ -24,10 +24,20 @@ router = APIRouter(prefix="/project-candidates", tags=["project-candidates"])
 def list_project_candidates(
     status: str | None = None,
     state: str | None = None,
+    triage_tier: str | None = None,
+    recommended_action: str | None = None,
+    min_triage_score: float | None = Query(default=None, ge=0, le=1),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> ProjectCandidateListResponse:
-    candidates = ProjectCandidateGenerator(db).list_candidates(status=status, state=state, limit=limit)
+    candidates = ProjectCandidateGenerator(db).list_candidates(
+        status=status,
+        state=state,
+        triage_tier=triage_tier,
+        recommended_action=recommended_action,
+        min_triage_score=min_triage_score,
+        limit=limit,
+    )
     return ProjectCandidateListResponse(items=candidates)
 
 

@@ -24,6 +24,8 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_project_candidates_candidate_name", "candidate_name"),
         Index("ix_project_candidates_promoted_project_id", "promoted_project_id"),
         Index("ix_project_candidates_verification_status", "verification_status"),
+        Index("ix_project_candidates_triage_tier", "triage_tier"),
+        Index("ix_project_candidates_recommended_action", "recommended_action"),
     )
 
     candidate_key: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -53,3 +55,9 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     verification_errors_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     auto_admit_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    triage_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    triage_tier: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    triage_reasons_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    triage_warnings_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    recommended_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    triaged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

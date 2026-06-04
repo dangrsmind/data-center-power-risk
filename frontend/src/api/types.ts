@@ -562,6 +562,12 @@ export interface ProjectCandidate {
   verification_errors_json: string[] | null;
   auto_admit_eligible: boolean;
   verified_at: string | null;
+  triage_score: number | null;
+  triage_tier: "high" | "medium" | "low" | null;
+  triage_reasons_json: string[] | null;
+  triage_warnings_json: string[] | null;
+  recommended_action: string | null;
+  triaged_at: string | null;
   created_at: string;
   updated_at: string;
 }

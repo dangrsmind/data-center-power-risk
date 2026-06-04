@@ -238,13 +238,22 @@ class ProjectCandidateGenerator:
         *,
         status: str | None = None,
         state: str | None = None,
+        triage_tier: str | None = None,
+        recommended_action: str | None = None,
+        min_triage_score: float | None = None,
         limit: int = 100,
     ) -> list[ProjectCandidate]:
-        query = select(ProjectCandidate).order_by(ProjectCandidate.created_at.desc())
+        query = select(ProjectCandidate).order_by(ProjectCandidate.triage_score.desc().nullslast(), ProjectCandidate.created_at.desc())
         if status:
             query = query.where(ProjectCandidate.status == status)
         if state:
             query = query.where(ProjectCandidate.state == state)
+        if triage_tier:
+            query = query.where(ProjectCandidate.triage_tier == triage_tier)
+        if recommended_action:
+            query = query.where(ProjectCandidate.recommended_action == recommended_action)
+        if min_triage_score is not None:
+            query = query.where(ProjectCandidate.triage_score >= min_triage_score)
         return list(self.db.scalars(query.limit(max(1, min(limit, 500)))))
 
     def _load_claims(
