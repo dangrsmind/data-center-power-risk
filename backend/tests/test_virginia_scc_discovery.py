@@ -264,8 +264,10 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             payload = run_sources(dry_run=True, output_dir=Path(tmpdir))
 
-        self.assertEqual(payload["sources_checked"], 11)
+        self.assertEqual(payload["sources_checked"], 25)
         self.assertEqual(payload["sources_discovered"], 0)
+        self.assertEqual(payload["planned_search_query_count"], 60)
+        self.assertEqual(payload["planned_generic_web_search_query_count"], 56)
         self.assertFalse(payload["allow_insecure_fetch"])
         self.assertFalse(payload["write_fetch_cache"])
         self.assertTrue(any("no adapter implemented" in warning for warning in payload["warnings"]))

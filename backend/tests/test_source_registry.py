@@ -65,6 +65,34 @@ class SourceRegistryTest(unittest.TestCase):
 
         self.assertTrue(any("base_url" in error for error in ctx.exception.errors))
 
+    def test_default_registry_includes_controlled_targeted_official_searches(self) -> None:
+        registry = load_source_registry()
+        targeted_ids = {
+            "loudoun_county_data_center_planning_search",
+            "prince_william_county_data_center_planning_search",
+            "fairfax_county_data_center_planning_search",
+            "texas_puct_large_load_data_center_search",
+            "ercot_large_load_data_center_search",
+            "georgia_psc_data_center_utility_search",
+            "georgia_economic_development_data_center_search",
+            "ohio_power_siting_data_center_search",
+            "indiana_economic_development_data_center_search",
+            "north_carolina_commerce_data_center_search",
+            "south_carolina_commerce_data_center_search",
+            "arizona_corporation_commission_data_center_search",
+            "nevada_puc_data_center_search",
+            "pacific_northwest_utility_data_center_search",
+        }
+        sources_by_id = {source.id: source for source in registry.sources}
+
+        self.assertEqual(len(registry.sources), 25)
+        self.assertEqual(len(targeted_ids), 14)
+        self.assertTrue(targeted_ids.issubset(sources_by_id))
+        for source_id in targeted_ids:
+            source = sources_by_id[source_id]
+            self.assertEqual(source.discovery_method, "web_search_pattern")
+            self.assertLessEqual(len(source.search_terms), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

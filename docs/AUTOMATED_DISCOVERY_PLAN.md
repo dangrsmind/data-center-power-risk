@@ -100,6 +100,14 @@ If `WEB_SEARCH_PROVIDER=brave` is set without `WEB_SEARCH_API_KEY`, the adapter 
 
 Relevant provider results are converted into discovered source records with URL, title, source type from the registry, inferred publisher when possible, geography, discovery method, search term/source query, snippet, adapter/source registry IDs, analyst-review confidence, and raw provider metadata. Results are deduplicated by normalized `source_url` and filtered to plausible data center, large-load, utility filing, planning, permitting, economic development, company announcement, developer page, or data center news contexts. The adapter does not fabricate project names, developers, locations, loads, titles, or snippets.
 
+## Targeted Official-Source Expansion
+
+The registry includes a controlled targeted expansion for high-value data center markets. These entries use official or public domains in generic web-search patterns for Northern Virginia county planning records, Texas utility/regulatory materials, Georgia utility and economic development sources, Ohio/Indiana public sources, North Carolina/South Carolina commerce sources, Arizona/Nevada utility regulators, and Oregon/Washington utility regulators.
+
+This expansion adds 14 enabled `web_search_pattern` entries with 2 search terms each, for approximately 28 incremental generic-provider queries per full discovery run. A dry-run summary reports `planned_search_query_count` and `planned_generic_web_search_query_count`; the latter is the best estimate of Brave Search API query volume when `WEB_SEARCH_PROVIDER=brave`.
+
+The targeted entries still emit only `discovered_sources`. Search results do not create Projects, do not create ProjectCandidates directly, and do not bypass ingestion, claim extraction, candidate generation, verification, analyst review, or the auto-admit gate. The verifier and auto-admit dry-run remain the protections between discovery and final project creation. No public source means no project record.
+
 ## Discovered Source Ingestion
 
 Discovery run output remains runtime data and is ignored under `data/discovery_runs/`. When a run finds source records, `backend/scripts/ingest_public_discovered_sources.py --input data/discovery_runs/<timestamp>/discovered_sources.json` can validate those records and upsert them into the database `discovered_sources` table by `source_url`.

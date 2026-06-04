@@ -147,6 +147,223 @@ sources:
       primary records where possible. It can be project evidence when the article
       cites or reports specific public project facts with source attribution.
 
+  - id: loudoun_county_data_center_planning_search
+    name: Loudoun County data center planning search
+    source_type: county_city_planning
+    geography: Loudoun County, Virginia
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - 'site:loudoun.gov "data center" "planning commission"'
+      - 'site:loudoun.gov "data center" "special exception"'
+    notes: >
+      Targeted official-domain search for Loudoun County planning records,
+      hearings, and special exception materials. Results remain discovered
+      sources only until they identify a specific project, applicant, site, or
+      public action.
+
+  - id: prince_william_county_data_center_planning_search
+    name: Prince William County data center planning search
+    source_type: county_city_planning
+    geography: Prince William County, Virginia
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - 'site:pwcva.gov "data center" "planning"'
+      - 'site:pwcva.gov "data center" "rezoning"'
+    notes: >
+      Targeted official-domain search for Prince William County planning and
+      rezoning records. County records are project evidence only when they name
+      a project, applicant, parcel, or hearing item tied to a data center.
+
+  - id: fairfax_county_data_center_planning_search
+    name: Fairfax County data center planning search
+    source_type: county_city_planning
+    geography: Fairfax County, Virginia
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:fairfaxcounty.gov "data center" "planning"'
+      - 'site:fairfaxcounty.gov "data center" "special exception"'
+    notes: >
+      Targeted official-domain search for Fairfax County planning and public
+      hearing records that may identify proposed data center facilities.
+
+  - id: texas_puct_large_load_data_center_search
+    name: Texas PUCT large-load data center search
+    source_type: utility_large_load_filings
+    geography: Texas
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - 'site:puc.texas.gov "data center" "large load"'
+      - 'site:puc.texas.gov "data center" "interconnection"'
+    notes: >
+      Targeted official-domain search for Texas Public Utility Commission
+      filings or materials that may identify project-specific large load or
+      interconnection issues.
+
+  - id: ercot_large_load_data_center_search
+    name: ERCOT large-load data center search
+    source_type: utility_large_load_filings
+    geography: ERCOT / Texas
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - 'site:ercot.com "data center" "large load"'
+      - 'site:ercot.com "data center" "load" "MW"'
+    notes: >
+      Targeted official-domain search for ERCOT materials mentioning data
+      center load, interconnection, or planning context. Results require review
+      before any candidate extraction.
+
+  - id: georgia_psc_data_center_utility_search
+    name: Georgia PSC data center utility search
+    source_type: utility_large_load_filings
+    geography: Georgia
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:psc.ga.gov "data center" "large load"'
+      - 'site:psc.ga.gov "data center" "MW"'
+    notes: >
+      Targeted official-domain search for Georgia Public Service Commission
+      records that may reference data center load or utility proceedings.
+
+  - id: georgia_economic_development_data_center_search
+    name: Georgia economic development data center search
+    source_type: economic_development_announcements
+    geography: Georgia
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:georgia.org "data center" "economic development"'
+      - 'site:georgia.org "data center" "investment"'
+    notes: >
+      Targeted official-domain search for Georgia economic development
+      announcements. Announcements require public project-specific facts before
+      promotion can ever be considered.
+
+  - id: ohio_power_siting_data_center_search
+    name: Ohio Power Siting Board data center search
+    source_type: state_regulatory_dockets
+    geography: Ohio
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:opsb.ohio.gov "data center"'
+      - 'site:opsb.ohio.gov "data center" "MW"'
+    notes: >
+      Targeted official-domain search for Ohio Power Siting Board records that
+      may mention data center projects, load, or related public proceedings.
+
+  - id: indiana_economic_development_data_center_search
+    name: Indiana economic development data center search
+    source_type: economic_development_announcements
+    geography: Indiana
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:iedc.in.gov "data center" "investment"'
+      - 'site:iedc.in.gov "data center" "economic development"'
+    notes: >
+      Targeted official-domain search for Indiana Economic Development
+      Corporation announcements that may identify specific data center projects.
+
+  - id: north_carolina_commerce_data_center_search
+    name: North Carolina commerce data center search
+    source_type: economic_development_announcements
+    geography: North Carolina
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:commerce.nc.gov "data center" "investment"'
+      - 'site:commerce.nc.gov "data center" "economic development"'
+    notes: >
+      Targeted official-domain search for North Carolina commerce announcements
+      that may identify specific data center investments, locations, or public
+      incentive actions.
+
+  - id: south_carolina_commerce_data_center_search
+    name: South Carolina commerce data center search
+    source_type: economic_development_announcements
+    geography: South Carolina
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:sccommerce.com "data center" "investment"'
+      - 'site:sccommerce.com "data center" "economic development"'
+    notes: >
+      Targeted official-domain search for South Carolina commerce announcements
+      that may identify project-specific public facts.
+
+  - id: arizona_corporation_commission_data_center_search
+    name: Arizona Corporation Commission data center search
+    source_type: utility_large_load_filings
+    geography: Arizona
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:azcc.gov "data center" "large load"'
+      - 'site:azcc.gov "data center" "MW"'
+    notes: >
+      Targeted official-domain search for Arizona Corporation Commission
+      records that may reference data center load or utility proceedings.
+
+  - id: nevada_puc_data_center_search
+    name: Nevada PUC data center search
+    source_type: utility_large_load_filings
+    geography: Nevada
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:puc.nv.gov "data center" "large load"'
+      - 'site:puc.nv.gov "data center" "MW"'
+    notes: >
+      Targeted official-domain search for Nevada Public Utilities Commission
+      records that may reference data center load, tariffs, or proceedings.
+
+  - id: pacific_northwest_utility_data_center_search
+    name: Oregon and Washington utility data center search
+    source_type: utility_large_load_filings
+    geography: Oregon and Washington
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - 'site:puc.oregon.gov "data center" "large load"'
+      - 'site:utc.wa.gov "data center" "large load"'
+    notes: >
+      Targeted official-domain search for Oregon PUC and Washington UTC utility
+      materials that may identify data center load, service, or planning issues.
+
   - id: eia_861_grid_context
     name: EIA/EIA-861 utility and sales context
     source_type: grid_context
