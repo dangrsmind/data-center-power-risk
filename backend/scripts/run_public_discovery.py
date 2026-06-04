@@ -97,6 +97,17 @@ def adapter_for_source(source: Any, *, fetch_cache_dir: Path | None = None) -> A
     return None
 
 
+def planned_query_count(adapter_results: list[dict[str, Any]], *, adapter_id: str | None = None) -> int:
+    count = 0
+    for result in adapter_results:
+        if adapter_id is not None and result.get("adapter_id") != adapter_id:
+            continue
+        planned_queries = result.get("planned_queries")
+        if isinstance(planned_queries, list):
+            count += len(planned_queries)
+    return count
+
+
 def run_sources(
     *,
     dry_run: bool,
@@ -151,6 +162,11 @@ def run_sources(
         "fetch_cache_dir": str(fetch_cache_dir) if write_fetch_cache else None,
         "web_search_provider": configured_provider_name(),
         "web_search_max_results": result_limit_from_env(),
+        "planned_search_query_count": planned_query_count(adapter_results),
+        "planned_generic_web_search_query_count": planned_query_count(
+            adapter_results,
+            adapter_id=GENERIC_WEB_SEARCH_ADAPTER_ID,
+        ),
         "registry_path": str(DEFAULT_REGISTRY_PATH),
         "enabled_sources": [source_preview(source) for source in enabled_sources],
         "implemented_adapters": sorted([*IMPLEMENTED_ADAPTERS, GENERIC_WEB_SEARCH_ADAPTER_ID]),

@@ -100,6 +100,8 @@ Generic web-search discovery is disabled by default and never creates projects d
 python scripts/run_public_discovery.py --dry-run
 ```
 
+The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source expansion adds 28 generic-provider queries per full run.
+
 For a fixture-backed local check:
 
 ```bash
@@ -136,6 +138,8 @@ DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py --ing
 ```
 
 Brave API usage may create incremental API cost, so keep `WEB_SEARCH_MAX_RESULTS` small for smoke tests. Do not commit API keys or `.env` files. Results become discovered sources first; project candidates are not final Projects. Auto-admit remains dry-run in this smoke script, and the public discoverability rule still applies: no public source means no project record.
+
+For live smoke runs, keep `WEB_SEARCH_MAX_RESULTS=3` unless deliberately broadening the run. The query count controls the number of Brave API searches; max results controls how many records each query asks the provider to return.
 
 ## 6. Start the Backend
 

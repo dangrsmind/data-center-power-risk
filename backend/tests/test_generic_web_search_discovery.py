@@ -157,11 +157,27 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         generic_results = [
             result for result in payload["adapter_results"] if result["adapter_id"] == GENERIC_WEB_SEARCH_ADAPTER_ID
         ]
-        self.assertEqual(len(generic_results), 7)
-        self.assertEqual(payload["sources_checked"], 11)
+        self.assertEqual(len(generic_results), 21)
+        self.assertEqual(payload["sources_checked"], 25)
         self.assertEqual(payload["sources_discovered"], 0)
+        self.assertEqual(payload["planned_search_query_count"], 60)
+        self.assertEqual(payload["planned_generic_web_search_query_count"], 56)
         self.assertTrue(any(result["planned_queries"] for result in generic_results))
+        self.assertTrue(
+            any(result["source_id"] == "loudoun_county_data_center_planning_search" for result in generic_results)
+        )
         self.assertTrue(any("no adapter implemented" in warning for warning in payload["warnings"]))
+
+    def test_targeted_official_entries_plan_queries_without_provider_calls(self) -> None:
+        provider = MockWebSearchProvider({"unused": []})
+        result = GenericWebSearchDiscoveryAdapter(
+            self._source("texas_puct_large_load_data_center_search"),
+            provider=provider,
+        ).run(dry_run=True)
+
+        self.assertEqual(len(result.planned_queries), 2)
+        self.assertEqual(provider.calls, [])
+        self.assertIn("site:puc.texas.gov", result.planned_queries[0]["term"])
 
     def test_run_public_discovery_non_dry_run_without_provider_does_not_crash(self) -> None:
         with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "disabled"}, clear=False):
