@@ -116,6 +116,8 @@ WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_
 
 Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted.
 
+Live discovery outputs may include duplicate `source_url` values across query patterns or repeat runs. Ingestion is expected to be duplicate-safe and idempotent by `source_url`: duplicate input URLs and already-ingested URLs are skipped unless safe metadata updates are requested with `--allow-existing`.
+
 ## Optional: Live/Mock Discovery Smoke Workflow
 
 The smoke wrapper runs the manual discovery pipeline in controlled opt-in steps. It never promotes candidates, never passes `--confirm` to auto-admit, and reports provider state without printing API keys.

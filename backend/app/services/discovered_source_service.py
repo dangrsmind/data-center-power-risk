@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.discovered_source import DiscoveredSourceRecord
@@ -68,7 +69,10 @@ class DiscoveredSourceIngestSummary:
     sources_created: int = 0
     sources_updated: int = 0
     rows_skipped: int = 0
+    duplicate_input_urls_skipped: int = 0
+    duplicate_existing_urls_skipped: int = 0
     validation_errors: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -187,6 +191,7 @@ class DiscoveredSourceService:
         source_registry_id: str | None = None,
     ) -> DiscoveredSourceIngestSummary:
         summary = DiscoveredSourceIngestSummary(rows_read=len(rows))
+        validated_by_url: dict[str, ValidatedDiscoveredSource] = {}
         for index, raw in enumerate(rows, start=1):
             try:
                 validated = validate_discovered_source_row(
@@ -209,16 +214,31 @@ class DiscoveredSourceService:
                 )
                 continue
 
-            if dry_run:
-                summary.sources_created += 1
+            if validated.source_url in validated_by_url:
+                summary.rows_skipped += 1
+                summary.duplicate_input_urls_skipped += 1
+                summary.warnings.append(
+                    f"duplicate_input_source_url_skipped: row {index} duplicates {validated.source_url}"
+                )
                 continue
-            existing = self.get_by_url(validated.source_url)
+            validated_by_url[validated.source_url] = validated
+
+        existing_by_url = self.get_existing_by_url(validated_by_url.keys())
+        for validated in validated_by_url.values():
+            existing = existing_by_url.get(validated.source_url)
             if existing is not None and not allow_existing:
                 summary.rows_skipped += 1
+                summary.duplicate_existing_urls_skipped += 1
+                continue
+            if dry_run:
+                if existing is None:
+                    summary.sources_created += 1
+                else:
+                    summary.sources_updated += 1
                 continue
             if existing is None:
-                summary.sources_created += 1
-                self.db.add(self._record_from_validated(validated))
+                if self._insert_record(validated, summary):
+                    summary.sources_created += 1
                 continue
             summary.sources_updated += 1
             self._update_record(existing, validated)
@@ -229,6 +249,13 @@ class DiscoveredSourceService:
 
     def get_by_url(self, source_url: str) -> DiscoveredSourceRecord | None:
         return self.db.scalar(select(DiscoveredSourceRecord).where(DiscoveredSourceRecord.source_url == source_url))
+
+    def get_existing_by_url(self, source_urls: Any) -> dict[str, DiscoveredSourceRecord]:
+        urls = list(source_urls)
+        if not urls:
+            return {}
+        records = self.db.scalars(select(DiscoveredSourceRecord).where(DiscoveredSourceRecord.source_url.in_(urls)))
+        return {record.source_url: record for record in records}
 
     def list_sources(
         self,
@@ -250,9 +277,25 @@ class DiscoveredSourceService:
     def _record_from_validated(self, source: ValidatedDiscoveredSource) -> DiscoveredSourceRecord:
         return DiscoveredSourceRecord(**asdict(source))
 
+    def _insert_record(
+        self,
+        source: ValidatedDiscoveredSource,
+        summary: DiscoveredSourceIngestSummary,
+    ) -> bool:
+        try:
+            with self.db.begin_nested():
+                self.db.add(self._record_from_validated(source))
+                self.db.flush()
+        except IntegrityError:
+            summary.rows_skipped += 1
+            summary.duplicate_existing_urls_skipped += 1
+            summary.warnings.append(f"duplicate_source_url_integrity_fallback_skipped: {source.source_url}")
+            return False
+        return True
+
     def _update_record(self, record: DiscoveredSourceRecord, source: ValidatedDiscoveredSource) -> None:
         for field_name, value in asdict(source).items():
             if field_name == "raw_metadata_json":
                 record.raw_metadata_json = {**(record.raw_metadata_json or {}), **source.raw_metadata_json}
-            elif value is not None:
+            elif field_name not in {"source_url", "status"} and value is not None:
                 setattr(record, field_name, value)
