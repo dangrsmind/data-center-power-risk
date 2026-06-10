@@ -4,6 +4,7 @@ from app.models.enrichment import GridRetailTerritory, ProjectEnrichmentSnapshot
 from app.models.evidence import Claim, Evidence, FieldProvenance
 from app.models.event import Adjudication, Event
 from app.models.graph import GraphEdge, GraphNode
+from app.models.imported_dataset import ImportedCandidateLink, ImportedDatasetRow, ImportedDatasetRun
 from app.models.project import Phase, PhaseLoad, Project, ProjectAlias, ProjectCoordinateHistory
 from app.models.project_candidate import ProjectCandidate
 from app.models.prediction import ProjectPrediction
@@ -30,6 +31,9 @@ __all__ = [
     "GraphEdge",
     "GraphNode",
     "GridRetailTerritory",
+    "ImportedCandidateLink",
+    "ImportedDatasetRow",
+    "ImportedDatasetRun",
     "Phase",
     "PhaseLoad",
     "PhaseQuarterScore",
