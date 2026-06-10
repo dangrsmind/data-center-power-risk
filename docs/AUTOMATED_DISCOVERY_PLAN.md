@@ -128,6 +128,26 @@ Extracted discovered-source claims can now be grouped into reviewable rows in th
 
 Project candidates are not final `projects` rows, are not map markers, and are not prediction inputs. If no explicit `possible_project_name` claim exists, the generator uses a cautious unresolved label such as `Unresolved Virginia SCC candidate <source id>` rather than inferring a project name from vague source titles. It does not infer county/city from state, invent developers, invent load, or promote anything automatically.
 
+## Manual CSV Dataset Imports
+
+External data center datasets can be profiled and imported through `backend/scripts/import_csv_dataset.py`. This path is for dataset-backed review inputs such as Epoch AI Frontier Data Centers and FracTracker Open U.S. Data Centers Tracker. It writes audit rows to `imported_dataset_runs`, `imported_dataset_rows`, and optional duplicate links; it does not create final Projects and does not auto-promote anything.
+
+Default mode is dry-run and writes nothing:
+
+```bash
+cd backend
+python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv
+python scripts/import_csv_dataset.py --dataset fractracker_open_us --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv
+```
+
+With `--confirm`, the importer stores raw row JSON, normalized row JSON, source URLs, row/file provenance, license/citation notes, warnings, and dedupe status. `--create-candidates` is an additional opt-in and creates only `needs_review` ProjectCandidates when a row has enough identity and a public source URL. It never creates Projects, never marks `auto_admit_eligible`, and avoids overwriting stronger existing candidate fields with weaker CSV values.
+
+Epoch `data_centers.csv` maps facility name, owner, users, power, address, evidence/source fields, project family, energy-company hints, and calculation-sheet URLs into the normalized row. Epoch `data_center_timelines.csv` maps timeline events and numeric claims and carries a candidate-key hint back to the data-center row by normalized name. Epoch cooling tower and chiller files are treated as equipment reference/profile data, not candidate inputs.
+
+FracTracker imports use flexible column-name matching for common fields such as name, status, company/operator, address, county, state, coordinates, MW, square footage, source/URL, notes, cooling, and power source. Missing columns do not fail the run; populated unmapped columns are reported in the JSON summary for analyst follow-up.
+
+CSV deduplication is conservative and non-destructive. Strong signals include identical source URL, identical external dataset ID, normalized name plus state/address, developer plus address, and very close coordinates. Soft signals include fuzzy name or owner similarity, same county/state, similar MW, shared source domains, and project-family matches. Duplicate statuses are `exact_duplicate`, `likely_same_project`, `possible_duplicate`, `distinct`, and `insufficient_information`.
+
 ## Project Candidate Promotion
 
 Project candidates can now be promoted through an explicit single-candidate review action with `backend/scripts/promote_project_candidate.py --candidate-id <id> --confirm`, or the guarded `POST /project-candidates/{candidate_id}/promote` endpoint with `{"confirm": true}`. Without confirmation the promotion script and API run as dry-runs and do not create final records.

@@ -118,6 +118,30 @@ Any discovered records are written under ignored `data/discovery_runs/` runtime 
 
 Live discovery outputs may include duplicate `source_url` values across query patterns or repeat runs. Ingestion is expected to be duplicate-safe and idempotent by `source_url`: duplicate input URLs and already-ingested URLs are skipped unless safe metadata updates are requested with `--allow-existing`.
 
+## Optional: Import Manual CSV Datasets
+
+Manual CSV imports are disabled-by-default review inputs for external datasets. Dry-run writes nothing and reports mapping, warnings, duplicate status counts, and unmapped columns:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv
+DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset fractracker_open_us --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv
+```
+
+To persist only imported row audit records:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv --confirm
+```
+
+To additionally create review-only ProjectCandidates, pass `--create-candidates` with `--confirm`. This never creates Projects, never promotes candidates, and never marks candidates `auto_admit_eligible`:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv --confirm --create-candidates --source-url https://epoch.ai/data/frontier-data-centers --citation "Epoch AI Frontier Data Centers"
+```
+
+Raw CSVs under `data/imports/manual_csv/`, local databases, and runtime outputs should remain uncommitted. The public-source rule still applies: imported rows can become review candidates only when a source URL or source document is preserved.
+
 ## Optional: Live/Mock Discovery Smoke Workflow
 
 The smoke wrapper runs the manual discovery pipeline in controlled opt-in steps. It never promotes candidates, never passes `--confirm` to auto-admit, and reports provider state without printing API keys.
