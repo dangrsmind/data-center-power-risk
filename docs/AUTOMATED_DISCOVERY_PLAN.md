@@ -140,13 +140,30 @@ python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/im
 python scripts/import_csv_dataset.py --dataset fractracker_open_us --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv
 ```
 
-With `--confirm`, the importer stores raw row JSON, normalized row JSON, source URLs, row/file provenance, license/citation notes, warnings, and dedupe status. `--create-candidates` is an additional opt-in and creates only `needs_review` ProjectCandidates when a row has enough identity and a public source URL. It never creates Projects, never marks `auto_admit_eligible`, and avoids overwriting stronger existing candidate fields with weaker CSV values.
+With `--confirm`, the importer stores raw row JSON, normalized row JSON, source URLs, row/file provenance, license/citation notes, warnings, and dedupe status. This is the audit-only import step and is the safest first pass.
+
+`--create-candidates` is a second opt-in step. It can be used with dry-run first to report what would happen without writing:
+
+```bash
+python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv --create-candidates
+python scripts/import_csv_dataset.py --dataset fractracker_open_us --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv --create-candidates
+```
+
+With `--confirm --create-candidates`, the importer creates or links only reviewable `needs_review` ProjectCandidates. Candidate creation requires a project/facility name, at least one location signal such as country, state, county, city, address, or coordinates, and provenance such as source URLs, dataset source URL, citation, license note, or source metadata. Rows that fail these checks are still imported as audit rows but do not create candidates. CSV-created candidates are marked with `dataset_import` provenance, imported row references, source URLs, citation/license notes when supplied, duplicate status, and cluster key. The importer never creates Projects, never promotes, never marks `auto_admit_eligible`, and avoids overwriting stronger existing candidate fields with weaker CSV values.
 
 Epoch `data_centers.csv` maps facility name, owner, users, power, address, evidence/source fields, project family, energy-company hints, and calculation-sheet URLs into the normalized row. Epoch `data_center_timelines.csv` maps timeline events and numeric claims and carries a candidate-key hint back to the data-center row by normalized name. Epoch cooling tower and chiller files are treated as equipment reference/profile data, not candidate inputs.
 
 FracTracker imports use flexible column-name matching for common fields such as name, status, company/operator, address, county, state, coordinates, MW, square footage, source/URL, notes, cooling, and power source. Missing columns do not fail the run; populated unmapped columns are reported in the JSON summary for analyst follow-up.
 
 CSV deduplication is conservative and non-destructive. Strong signals include identical source URL, identical external dataset ID, normalized name plus state/address, developer plus address, and very close coordinates. Soft signals include fuzzy name or owner similarity, same county/state, similar MW, shared source domains, and project-family matches. Duplicate statuses are `exact_duplicate`, `likely_same_project`, `possible_duplicate`, `distinct`, and `insufficient_information`.
+
+When a row matches an existing ProjectCandidate with an exact or likely signal, the imported row links to that candidate instead of creating a duplicate. Uncertain matches can still create separate `needs_review` candidates when the row has enough identity and provenance, with duplicate warnings preserved for analyst review. Candidate review triage can be run after import:
+
+```bash
+python scripts/triage_project_candidates.py --confirm
+```
+
+Triage treats dataset provenance as useful review context when source URLs, location, load, developer/operator, citation, or license notes exist, but it does not treat CSV provenance as official-source verification and never promotes candidates.
 
 ## Project Candidate Promotion
 

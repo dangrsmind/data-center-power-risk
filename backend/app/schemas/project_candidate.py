@@ -6,6 +6,22 @@ from datetime import datetime
 from pydantic import BaseModel, HttpUrl
 
 
+class ProjectCandidateCsvProvenance(BaseModel):
+    provenance: str | None = None
+    dataset_name: str | None = None
+    dataset_source: str | None = None
+    source_file: str | None = None
+    row_number: int | None = None
+    imported_row_ids: list[str] = []
+    imported_row_count: int = 0
+    source_urls: list[str] = []
+    citation: str | None = None
+    license_note: str | None = None
+    duplicate_status: str | None = None
+    duplicate_cluster_key: str | None = None
+    warnings: list[str] = []
+
+
 class ProjectCandidateResponse(BaseModel):
     id: uuid.UUID
     candidate_name: str
@@ -25,6 +41,7 @@ class ProjectCandidateResponse(BaseModel):
     discovered_source_claim_ids_json: list | None
     evidence_excerpt: str | None
     raw_metadata_json: dict | list | None
+    csv_provenance: ProjectCandidateCsvProvenance | None = None
     promoted_project_id: uuid.UUID | None
     verification_status: str | None
     verification_confidence: float | None

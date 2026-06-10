@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.schemas.project_candidate import (
+    ProjectCandidateCsvProvenance,
     ProjectCandidateListResponse,
+    ProjectCandidateResponse,
     ProjectCandidatePromotionRequest,
     ProjectCandidatePromotionResponse,
     ProjectCandidateVerificationResponse,
@@ -38,7 +40,7 @@ def list_project_candidates(
         min_triage_score=min_triage_score,
         limit=limit,
     )
-    return ProjectCandidateListResponse(items=candidates)
+    return ProjectCandidateListResponse(items=[project_candidate_response(candidate) for candidate in candidates])
 
 
 @router.post("/{candidate_id}/promote", response_model=ProjectCandidatePromotionResponse)
@@ -72,3 +74,38 @@ def get_project_candidate_verification(
     if candidate is None:
         raise HTTPException(status_code=404, detail="project candidate not found")
     return ProjectCandidateVerificationResponse(**verifier.verify(candidate, threshold=threshold).to_dict())
+
+
+def project_candidate_response(candidate) -> ProjectCandidateResponse:
+    payload = ProjectCandidateResponse.model_validate(candidate)
+    payload.csv_provenance = csv_provenance_from_metadata(candidate.raw_metadata_json)
+    payload.raw_metadata_json = None
+    return payload
+
+
+def csv_provenance_from_metadata(metadata: dict | list | None) -> ProjectCandidateCsvProvenance | None:
+    if not isinstance(metadata, dict) or metadata.get("provenance") != "dataset_import":
+        return None
+    imported_rows = metadata.get("imported_rows") if isinstance(metadata.get("imported_rows"), list) else []
+    imported_row_ids = [
+        str(row.get("imported_row_id"))
+        for row in imported_rows
+        if isinstance(row, dict) and row.get("imported_row_id")
+    ]
+    warnings = metadata.get("warnings") if isinstance(metadata.get("warnings"), list) else []
+    source_urls = metadata.get("source_urls") if isinstance(metadata.get("source_urls"), list) else []
+    return ProjectCandidateCsvProvenance(
+        provenance="dataset_import",
+        dataset_name=metadata.get("dataset_name"),
+        dataset_source=metadata.get("dataset_source"),
+        source_file=metadata.get("source_file"),
+        row_number=metadata.get("row_number"),
+        imported_row_ids=imported_row_ids,
+        imported_row_count=len(imported_rows) or (1 if metadata.get("row_number") else 0),
+        source_urls=[str(url) for url in source_urls if url],
+        citation=metadata.get("citation"),
+        license_note=metadata.get("license_note"),
+        duplicate_status=metadata.get("duplicate_status"),
+        duplicate_cluster_key=metadata.get("duplicate_cluster_key"),
+        warnings=[str(warning) for warning in warnings],
+    )

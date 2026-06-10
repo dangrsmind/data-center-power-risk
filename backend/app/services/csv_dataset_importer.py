@@ -102,11 +102,14 @@ class CsvDatasetImportSummary:
     rows_skipped: int = 0
     candidates_created: int = 0
     candidates_updated: int = 0
+    candidate_links_created: int = 0
     exact_duplicates: int = 0
     likely_same_project: int = 0
     possible_duplicates: int = 0
     distinct: int = 0
     insufficient_information: int = 0
+    skipped_candidate_missing_identity: int = 0
+    skipped_candidate_missing_provenance: int = 0
     unmapped_columns: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -166,7 +169,19 @@ class CsvDatasetImporter:
         if not confirm:
             summary.rows_skipped = len(normalized_rows)
             if create_candidates:
-                summary.warnings.append("dry_run_no_candidates_created")
+                for row in normalized_rows:
+                    eligibility = candidate_eligibility(row)
+                    if not eligibility.can_create:
+                        add_candidate_skip(row, eligibility, summary)
+                        continue
+                    linked_candidate = candidate_match_from_decision(row.duplicate_decision)
+                    if linked_candidate:
+                        summary.candidates_updated += 1
+                        summary.candidate_links_created += 1
+                    else:
+                        summary.candidates_created += 1
+                        summary.candidate_links_created += 1
+                summary.warnings.append("dry_run_no_records_written")
             return summary
 
         if self.db is None:
@@ -192,9 +207,14 @@ class CsvDatasetImporter:
 
         for row in normalized_rows:
             candidate = None
+            candidate_link_match = None
             if create_candidates and not dedupe_only and can_create_candidate(row):
+                candidate_link_match = candidate_match_from_decision(row.duplicate_decision)
+                if candidate_link_match is not None:
+                    candidate = self.db.get(ProjectCandidate, candidate_link_match.record_id)
                 candidate_key = candidate_key_for_row(row)
-                candidate = existing_by_key.get(candidate_key)
+                if candidate is None:
+                    candidate = existing_by_key.get(candidate_key)
                 if candidate is None:
                     candidate = build_project_candidate(row, candidate_key)
                     self.db.add(candidate)
@@ -205,8 +225,8 @@ class CsvDatasetImporter:
                     update_dataset_candidate(candidate, row)
                     summary.candidates_updated += 1
                 row.linked_project_candidate_id = str(candidate.id)
-            elif create_candidates and not can_create_candidate(row):
-                row.warnings.append("candidate_not_created_missing_identity_or_public_source")
+            elif create_candidates:
+                add_candidate_skip(row, candidate_eligibility(row), summary)
 
             imported_row = ImportedDatasetRow(
                 run_id=run.id,
@@ -226,7 +246,24 @@ class CsvDatasetImporter:
             )
             self.db.add(imported_row)
             self.db.flush()
+            if candidate is not None:
+                link_reasons = ["created_from_imported_row"] if candidate_link_match is None else candidate_link_match.reasons
+                self.db.add(
+                    ImportedCandidateLink(
+                        imported_row_id=imported_row.id,
+                        linked_record_type="project_candidate",
+                        linked_record_id=candidate.id,
+                        duplicate_status=row.duplicate_decision.status if row.duplicate_decision else "distinct",
+                        duplicate_cluster_key=row.duplicate_decision.cluster_key if row.duplicate_decision else None,
+                        match_reasons_json=link_reasons,
+                    )
+                )
+                append_imported_row_metadata(candidate, row, imported_row)
+                imported_row.linked_project_candidate_id = candidate.id
+                summary.candidate_links_created += 1
             for match in row.duplicate_decision.matches if row.duplicate_decision else []:
+                if candidate is not None and match.record_type == "project_candidate" and match.record_id == str(candidate.id):
+                    continue
                 self.db.add(
                     ImportedCandidateLink(
                         imported_row_id=imported_row.id,
@@ -509,14 +546,70 @@ def normalized_csv_row(
 
 
 def can_create_candidate(row: NormalizedCsvRow) -> bool:
+    return candidate_eligibility(row).can_create
+
+
+@dataclass(frozen=True)
+class CandidateEligibility:
+    can_create: bool
+    missing_identity: bool = False
+    missing_provenance: bool = False
+    reasons: tuple[str, ...] = ()
+
+
+def candidate_eligibility(row: NormalizedCsvRow) -> CandidateEligibility:
     normalized = row.normalized
+    reasons: list[str] = []
     if normalized.get("dataset_row_type") != "data_center":
-        return False
-    if not clean_text(normalized.get("name")):
-        return False
-    if not row.source_urls:
-        return False
-    return bool(normalized.get("state") or normalized.get("address") or normalized.get("developer"))
+        return CandidateEligibility(False, missing_identity=True, reasons=("not_project_candidate_row",))
+    has_name = bool(clean_text(normalized.get("name")))
+    has_location = bool(
+        normalized.get("state")
+        or normalized.get("country")
+        or normalized.get("address")
+        or normalized.get("county")
+        or normalized.get("city")
+        or (normalized.get("latitude") is not None and normalized.get("longitude") is not None)
+    )
+    has_provenance = bool(
+        row.source_urls
+        or clean_text(normalized.get("dataset_source"))
+        or clean_text(normalized.get("citation"))
+        or clean_text(normalized.get("license_note"))
+        or clean_text(normalized.get("evidence_text"))
+        or clean_text(normalized.get("supporting_source_url"))
+    )
+    if not has_name:
+        reasons.append("missing_candidate_name")
+    if not has_location:
+        reasons.append("missing_location_signal")
+    if not has_provenance:
+        reasons.append("missing_public_source_or_dataset_provenance")
+    return CandidateEligibility(
+        can_create=has_name and has_location and has_provenance,
+        missing_identity=not (has_name and has_location),
+        missing_provenance=not has_provenance,
+        reasons=tuple(reasons),
+    )
+
+
+def add_candidate_skip(row: NormalizedCsvRow, eligibility: CandidateEligibility, summary: CsvDatasetImportSummary) -> None:
+    if eligibility.missing_identity:
+        summary.skipped_candidate_missing_identity += 1
+    if eligibility.missing_provenance:
+        summary.skipped_candidate_missing_provenance += 1
+    reason = "candidate_not_created:" + ",".join(eligibility.reasons or ("unknown",))
+    row.warnings.append(reason)
+    summary.warnings.append(f"row {row.row_number}: {reason}")
+
+
+def candidate_match_from_decision(decision: DuplicateDecision | None):
+    if decision is None or decision.status not in {"exact_duplicate", "likely_same_project"}:
+        return None
+    for match in decision.matches:
+        if match.record_type == "project_candidate" and match.record_id and match.status in {"exact_duplicate", "likely_same_project"}:
+            return match
+    return None
 
 
 def build_project_candidate(row: NormalizedCsvRow, candidate_key: str) -> ProjectCandidate:
@@ -561,10 +654,20 @@ def update_dataset_candidate(candidate: ProjectCandidate, row: NormalizedCsvRow)
         candidate.load_mw = normalized.get("load_mw")
     if not candidate.primary_source_url and row.source_urls:
         candidate.primary_source_url = row.source_urls[0]
+    if not candidate.evidence_excerpt:
+        candidate.evidence_excerpt = clean_text(normalized.get("evidence_text")) or clean_text(normalized.get("event_text"))
+    candidate.source_count = max(candidate.source_count or 0, len(row.source_urls))
     candidate.status = "needs_review"
     candidate.auto_admit_eligible = False
     existing_metadata = candidate.raw_metadata_json if isinstance(candidate.raw_metadata_json, dict) else {}
-    candidate.raw_metadata_json = {**existing_metadata, "latest_dataset_import": metadata, "provenance": "dataset_import"}
+    candidate.raw_metadata_json = merge_candidate_metadata(existing_metadata, metadata, row)
+
+
+def append_imported_row_metadata(candidate: ProjectCandidate, row: NormalizedCsvRow, imported_row: ImportedDatasetRow) -> None:
+    existing_metadata = candidate.raw_metadata_json if isinstance(candidate.raw_metadata_json, dict) else {}
+    metadata = candidate_metadata(row)
+    metadata["imported_row_id"] = str(imported_row.id)
+    candidate.raw_metadata_json = merge_candidate_metadata(existing_metadata, metadata, row)
 
 
 def candidate_metadata(row: NormalizedCsvRow) -> dict[str, Any]:
@@ -575,11 +678,46 @@ def candidate_metadata(row: NormalizedCsvRow) -> dict[str, Any]:
         "source_file": row.source_file,
         "row_number": row.row_number,
         "source_urls": row.source_urls,
+        "citation": row.normalized.get("citation"),
+        "license_note": row.normalized.get("license_note"),
+        "duplicate_status": row.duplicate_decision.status if row.duplicate_decision else None,
+        "duplicate_cluster_key": row.duplicate_decision.cluster_key if row.duplicate_decision else None,
         "address": row.normalized.get("address"),
+        "country": row.normalized.get("country"),
         "tenant_user": row.normalized.get("tenant_user"),
         "project_family": row.normalized.get("project_family"),
         "raw_row": row.raw_row,
         "warnings": row.warnings,
+    }
+
+
+def merge_candidate_metadata(existing: dict[str, Any], metadata: dict[str, Any], row: NormalizedCsvRow) -> dict[str, Any]:
+    imported_rows = list(existing.get("imported_rows") or [])
+    row_ref = {
+        "imported_row_id": metadata.get("imported_row_id"),
+        "dataset_name": row.dataset_name,
+        "source_file": row.source_file,
+        "row_number": row.row_number,
+        "duplicate_status": metadata.get("duplicate_status"),
+        "duplicate_cluster_key": metadata.get("duplicate_cluster_key"),
+    }
+    if row_ref not in imported_rows:
+        imported_rows.append(row_ref)
+    source_urls = list(dict.fromkeys([*(existing.get("source_urls") or []), *row.source_urls]))
+    return {
+        **existing,
+        "provenance": "dataset_import",
+        "dataset_name": existing.get("dataset_name") or row.dataset_name,
+        "dataset_source": existing.get("dataset_source") or row.dataset_source,
+        "source_file": existing.get("source_file") or row.source_file,
+        "row_number": existing.get("row_number") or row.row_number,
+        "source_urls": source_urls,
+        "citation": existing.get("citation") or row.normalized.get("citation"),
+        "license_note": existing.get("license_note") or row.normalized.get("license_note"),
+        "duplicate_status": row.duplicate_decision.status if row.duplicate_decision else existing.get("duplicate_status"),
+        "duplicate_cluster_key": row.duplicate_decision.cluster_key if row.duplicate_decision else existing.get("duplicate_cluster_key"),
+        "latest_dataset_import": metadata,
+        "imported_rows": imported_rows,
     }
 
 

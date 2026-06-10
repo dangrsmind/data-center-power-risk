@@ -10,10 +10,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models import Base
-from app.models.imported_dataset import ImportedDatasetRow, ImportedDatasetRun
+from app.api.routes.project_candidates import project_candidate_response
+from app.models.imported_dataset import ImportedCandidateLink, ImportedDatasetRow, ImportedDatasetRun
 from app.models.project import Project
 from app.models.project_candidate import ProjectCandidate
 from app.services.csv_dataset_importer import CsvDatasetImporter
+from app.services.project_candidate_triage import ProjectCandidateTriageService
 
 
 class CsvDatasetImporterTest(unittest.TestCase):
@@ -160,11 +162,197 @@ class CsvDatasetImporterTest(unittest.TestCase):
             db.commit()
 
             self.assertEqual(summary.candidates_created, 1)
+            self.assertEqual(summary.candidate_links_created, 1)
             candidate = db.query(ProjectCandidate).one()
             self.assertEqual(candidate.status, "needs_review")
             self.assertFalse(candidate.auto_admit_eligible)
             self.assertEqual(candidate.raw_metadata_json["provenance"], "dataset_import")
+            self.assertEqual(candidate.raw_metadata_json["dataset_name"], "epoch_frontier")
+            self.assertEqual(candidate.raw_metadata_json["duplicate_status"], "distinct")
+            self.assertEqual(len(candidate.raw_metadata_json["imported_rows"]), 1)
+            imported_row = db.query(ImportedDatasetRow).one()
+            self.assertEqual(imported_row.linked_project_candidate_id, candidate.id)
+            self.assertEqual(db.query(ImportedCandidateLink).count(), 1)
             self.assertIsNone(candidate.promoted_project_id)
+            self.assertEqual(db.query(Project).count(), 0)
+        finally:
+            db.close()
+
+    def test_create_candidates_dry_run_reports_without_writes(self) -> None:
+        path = self.write_csv(
+            "data_centers.csv",
+            "Name,Owner,Country,Address,Selected Sources\n"
+            "Example Frontier Campus,Example Owner,USA,\"Richmond, VA\",https://example.com/source\n",
+        )
+        db = self.SessionLocal()
+        try:
+            summary = CsvDatasetImporter(db).import_file(
+                dataset="epoch_frontier",
+                input_path=path,
+                create_candidates=True,
+            )
+
+            self.assertEqual(summary.rows_read, 1)
+            self.assertEqual(summary.rows_skipped, 1)
+            self.assertEqual(summary.candidates_created, 1)
+            self.assertEqual(summary.candidate_links_created, 1)
+            self.assertEqual(db.query(ImportedDatasetRow).count(), 0)
+            self.assertEqual(db.query(ProjectCandidate).count(), 0)
+            self.assertEqual(db.query(Project).count(), 0)
+        finally:
+            db.close()
+
+    def test_rows_missing_identity_or_provenance_do_not_create_candidates(self) -> None:
+        missing_identity = self.write_csv(
+            "missing_identity.csv",
+            "Name,URL\n"
+            "No Location Campus,https://example.com/no-location\n",
+        )
+        missing_provenance = self.write_csv(
+            "missing_provenance.csv",
+            "Name,State\n"
+            "No Source Campus,VA\n",
+        )
+        db = self.SessionLocal()
+        try:
+            identity_summary = CsvDatasetImporter(db).import_file(
+                dataset="fractracker_open_us",
+                input_path=missing_identity,
+                confirm=True,
+                create_candidates=True,
+            )
+            provenance_summary = CsvDatasetImporter(db).import_file(
+                dataset="fractracker_open_us",
+                input_path=missing_provenance,
+                confirm=True,
+                create_candidates=True,
+            )
+            db.commit()
+
+            self.assertEqual(identity_summary.skipped_candidate_missing_identity, 1)
+            self.assertEqual(identity_summary.candidates_created, 0)
+            self.assertEqual(provenance_summary.skipped_candidate_missing_provenance, 1)
+            self.assertEqual(provenance_summary.candidates_created, 0)
+            self.assertEqual(db.query(ImportedDatasetRow).count(), 2)
+            self.assertEqual(db.query(ProjectCandidate).count(), 0)
+            self.assertEqual(db.query(Project).count(), 0)
+        finally:
+            db.close()
+
+    def test_matching_existing_candidate_links_instead_of_duplicating(self) -> None:
+        path = self.write_csv(
+            "fractracker_db_output_v2.csv",
+            "Name,State,URL,MW\n"
+            "Shared Campus,VA,https://example.com/shared,100\n",
+        )
+        db = self.SessionLocal()
+        try:
+            existing = ProjectCandidate(
+                candidate_key="existing-shared-campus",
+                candidate_name="Shared Campus",
+                developer=None,
+                state="VA",
+                county=None,
+                city=None,
+                utility=None,
+                load_mw=None,
+                lifecycle_state="candidate_unverified",
+                confidence=0.6,
+                status="needs_review",
+                source_count=1,
+                claim_count=0,
+                primary_source_url="https://example.com/shared",
+                discovered_source_ids_json=[],
+                discovered_source_claim_ids_json=[],
+                evidence_excerpt=None,
+                raw_metadata_json={},
+                auto_admit_eligible=False,
+            )
+            db.add(existing)
+            db.commit()
+
+            summary = CsvDatasetImporter(db).import_file(
+                dataset="fractracker_open_us",
+                input_path=path,
+                confirm=True,
+                create_candidates=True,
+            )
+            db.commit()
+
+            self.assertEqual(summary.candidates_created, 0)
+            self.assertEqual(summary.candidates_updated, 1)
+            self.assertEqual(summary.candidate_links_created, 1)
+            self.assertEqual(summary.exact_duplicates, 1)
+            self.assertEqual(db.query(ProjectCandidate).count(), 1)
+            imported_row = db.query(ImportedDatasetRow).one()
+            self.assertEqual(imported_row.linked_project_candidate_id, existing.id)
+            self.assertEqual(imported_row.duplicate_status, "exact_duplicate")
+            link = db.query(ImportedCandidateLink).filter(ImportedCandidateLink.linked_record_id == existing.id).one()
+            self.assertEqual(link.duplicate_status, "exact_duplicate")
+            db.refresh(existing)
+            self.assertEqual(existing.raw_metadata_json["duplicate_status"], "exact_duplicate")
+            self.assertFalse(existing.auto_admit_eligible)
+            self.assertEqual(db.query(Project).count(), 0)
+        finally:
+            db.close()
+
+    def test_project_candidate_api_includes_safe_csv_provenance(self) -> None:
+        path = self.write_csv(
+            "data_centers.csv",
+            "Name,Owner,Country,Address,Selected Sources\n"
+            "Example Frontier Campus,Example Owner,USA,\"Richmond, VA\",https://example.com/source\n",
+        )
+        db = self.SessionLocal()
+        try:
+            CsvDatasetImporter(db).import_file(
+                dataset="epoch_frontier",
+                input_path=path,
+                confirm=True,
+                create_candidates=True,
+                citation="Epoch citation",
+                license_note="Epoch license",
+            )
+            db.commit()
+            candidate = db.query(ProjectCandidate).one()
+
+            response = project_candidate_response(candidate)
+
+            self.assertIsNone(response.raw_metadata_json)
+            self.assertIsNotNone(response.csv_provenance)
+            assert response.csv_provenance is not None
+            self.assertEqual(response.csv_provenance.dataset_name, "epoch_frontier")
+            self.assertEqual(response.csv_provenance.citation, "Epoch citation")
+            self.assertEqual(response.csv_provenance.license_note, "Epoch license")
+            self.assertEqual(response.csv_provenance.imported_row_count, 1)
+            self.assertIn("https://example.com/source", response.csv_provenance.source_urls)
+        finally:
+            db.close()
+
+    def test_triage_works_on_csv_created_candidate(self) -> None:
+        path = self.write_csv(
+            "data_centers.csv",
+            "Name,Owner,Current power (MW),Country,Address,Selected Sources\n"
+            "Example Frontier Campus,Example Owner,240,USA,\"Richmond, VA\",https://example.com/source\n",
+        )
+        db = self.SessionLocal()
+        try:
+            CsvDatasetImporter(db).import_file(
+                dataset="epoch_frontier",
+                input_path=path,
+                confirm=True,
+                create_candidates=True,
+                citation="Epoch citation",
+            )
+            db.commit()
+            candidate = db.query(ProjectCandidate).one()
+
+            result = ProjectCandidateTriageService(db).triage(candidate, persist=True)
+            db.commit()
+
+            self.assertIn("dataset_import_provenance", result.triage_reasons)
+            self.assertIn("dataset_import_requires_source_review", result.triage_warnings)
+            self.assertEqual(candidate.status, "needs_review")
+            self.assertFalse(candidate.auto_admit_eligible)
             self.assertEqual(db.query(Project).count(), 0)
         finally:
             db.close()
