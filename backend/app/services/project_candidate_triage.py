@@ -121,6 +121,7 @@ def evaluate_candidate_triage(
     has_location = bool(candidate.state)
     has_specific_location = bool(candidate.county or candidate.city)
     has_load_or_utility = bool(candidate.utility or candidate.load_mw or {"load_mw", "utility"} & claim_types)
+    dataset_provenance = dataset_import_provenance(candidate.raw_metadata_json)
     generic_title_count = sum(1 for source in sources if generic_source_title(source.source_title))
 
     if official_count:
@@ -159,6 +160,25 @@ def evaluate_candidate_triage(
     if has_load_or_utility:
         score += 0.08
         reasons.append("utility_or_load_reference")
+    if dataset_provenance:
+        score += 0.04
+        reasons.append("dataset_import_provenance")
+        if dataset_provenance.get("source_urls") or candidate.primary_source_url:
+            score += 0.04
+            reasons.append("dataset_source_url_present")
+        if dataset_provenance.get("citation") or dataset_provenance.get("license_note"):
+            score += 0.03
+            reasons.append("dataset_citation_or_license_present")
+        if has_location:
+            score += 0.03
+            reasons.append("dataset_location_signal")
+        if candidate.developer:
+            score += 0.02
+            reasons.append("dataset_operator_or_developer_present")
+        if candidate.load_mw:
+            score += 0.03
+            reasons.append("dataset_load_reference")
+        warnings.append("dataset_import_requires_source_review")
     if len(claims) >= 4:
         score += 0.06
         reasons.append("multiple_supporting_claims")
@@ -243,6 +263,12 @@ def generic_source_title(value: str | None) -> bool:
         return False
     text = value.strip().lower()
     return text in {"data center", "planning commission", "agenda"} or text.startswith("search result")
+
+
+def dataset_import_provenance(metadata: dict | list | None) -> dict[str, Any] | None:
+    if isinstance(metadata, dict) and metadata.get("provenance") == "dataset_import":
+        return metadata
+    return None
 
 
 def persist_triage(candidate: ProjectCandidate, result: ProjectCandidateTriageResult) -> None:

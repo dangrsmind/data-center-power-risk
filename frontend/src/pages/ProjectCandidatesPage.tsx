@@ -121,6 +121,20 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function DatasetBadge({ dataset }: { dataset: string }) {
+  return (
+    <span title={dataset} style={{
+      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3,
+      color: "#67e8f9", background: "rgba(8,145,178,0.14)",
+      border: "1px solid rgba(103,232,249,0.32)",
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      Dataset
+    </span>
+  );
+}
+
 function ConfBadge({ value }: { value: number }) {
   const { color, bg } = confColor(value);
   return (
@@ -674,6 +688,69 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
               </div>
             </div>
 
+            {c.csv_provenance && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={sectionLabel}>CSV Import Provenance</div>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: "8px 18px", color: "#cbd5e1",
+                  background: "rgba(8,145,178,0.08)", border: "1px solid rgba(103,232,249,0.18)",
+                  borderRadius: 6, padding: "10px 12px",
+                }}>
+                  <div>
+                    <span style={{ color: "#64748b" }}>Dataset:</span>{" "}
+                    {c.csv_provenance.dataset_name || "—"}
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b" }}>Imported rows:</span>{" "}
+                    {c.csv_provenance.imported_row_count}
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b" }}>Source file:</span>{" "}
+                    <span style={{ wordBreak: "break-all" }}>{c.csv_provenance.source_file || "—"}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b" }}>Row:</span>{" "}
+                    {c.csv_provenance.row_number ?? "—"}
+                  </div>
+                  {(c.csv_provenance.duplicate_status || c.csv_provenance.duplicate_cluster_key) && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ color: "#64748b" }}>Duplicate:</span>{" "}
+                      {c.csv_provenance.duplicate_status || "—"}
+                      {c.csv_provenance.duplicate_cluster_key && (
+                        <span style={{ color: "#64748b" }}> · {c.csv_provenance.duplicate_cluster_key}</span>
+                      )}
+                    </div>
+                  )}
+                  {c.csv_provenance.citation && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ color: "#64748b" }}>Citation:</span>{" "}
+                      {c.csv_provenance.citation}
+                    </div>
+                  )}
+                  {c.csv_provenance.license_note && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ color: "#64748b" }}>License:</span>{" "}
+                      {c.csv_provenance.license_note}
+                    </div>
+                  )}
+                  {c.csv_provenance.source_urls.length > 0 && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ color: "#64748b" }}>Source URLs:</span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 4 }}>
+                        {c.csv_provenance.source_urls.slice(0, 5).map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                            style={{ color: "#818cf8", wordBreak: "break-all" }}>
+                            {url}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <div style={sectionLabel}>Confidence</div>
               <div style={{ color: "#cbd5e1" }}>{confDisplay(c.confidence)} (raw: {c.confidence})</div>
@@ -941,6 +1018,11 @@ function CandidateRow({
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>
               {c.utility}
+            </div>
+          )}
+          {c.csv_provenance?.dataset_name && (
+            <div style={{ marginTop: 5 }}>
+              <DatasetBadge dataset={c.csv_provenance.dataset_name} />
             </div>
           )}
         </td>

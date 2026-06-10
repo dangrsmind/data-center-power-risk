@@ -120,12 +120,24 @@ Live discovery outputs may include duplicate `source_url` values across query pa
 
 ## Optional: Import Manual CSV Datasets
 
-Manual CSV imports are disabled-by-default review inputs for external datasets. Dry-run writes nothing and reports mapping, warnings, duplicate status counts, and unmapped columns:
+Manual CSV imports are disabled-by-default review inputs for external datasets. Use them as a two-step workflow:
+
+1. Audit-only import stores imported row provenance and dedupe status.
+2. Opt-in candidate creation creates or links only reviewable ProjectCandidates.
+
+Dry-run writes nothing and reports mapping, warnings, duplicate status counts, and unmapped columns:
 
 ```bash
 cd backend
 DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv
 DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset fractracker_open_us --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv
+```
+
+To dry-run candidate creation without writing anything:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv --create-candidates
+DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset fractracker_open_us --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv --create-candidates
 ```
 
 To persist only imported row audit records:
@@ -134,11 +146,19 @@ To persist only imported row audit records:
 DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv --confirm
 ```
 
-To additionally create review-only ProjectCandidates, pass `--create-candidates` with `--confirm`. This never creates Projects, never promotes candidates, and never marks candidates `auto_admit_eligible`:
+To additionally create review-only ProjectCandidates, pass `--create-candidates` with `--confirm`. Candidate creation requires a name, at least one location signal, and source/dataset provenance. Rows that fail those checks remain imported audit rows but do not become candidates. Matching rows link to existing ProjectCandidates when the dedupe signal is exact or likely; uncertain matches are preserved as warnings for analyst review. This never creates Projects, never promotes candidates, and never marks candidates `auto_admit_eligible`:
 
 ```bash
 DATABASE_URL=sqlite:///local.db python scripts/import_csv_dataset.py --dataset epoch_frontier --input ../data/imports/manual_csv/epoch/data_centers.csv --confirm --create-candidates --source-url https://epoch.ai/data/frontier-data-centers --citation "Epoch AI Frontier Data Centers"
 ```
+
+After creating CSV-backed candidates, run triage to rank the review queue:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/triage_project_candidates.py --confirm
+```
+
+Triage uses dataset provenance, source URLs, location, load, developer/operator, citation, and license notes as review-priority signals only. It does not verify, promote, or admit candidates.
 
 Raw CSVs under `data/imports/manual_csv/`, local databases, and runtime outputs should remain uncommitted. The public-source rule still applies: imported rows can become review candidates only when a source URL or source document is preserved.
 

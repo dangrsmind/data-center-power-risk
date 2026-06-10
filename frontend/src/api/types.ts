@@ -536,6 +536,22 @@ export interface ProjectPredictionRunResponse {
 // Project Candidates
 // ---------------------------------------------------------------------------
 
+export interface ProjectCandidateCsvProvenance {
+  provenance: string | null;
+  dataset_name: string | null;
+  dataset_source: string | null;
+  source_file: string | null;
+  row_number: number | null;
+  imported_row_ids: string[];
+  imported_row_count: number;
+  source_urls: string[];
+  citation: string | null;
+  license_note: string | null;
+  duplicate_status: string | null;
+  duplicate_cluster_key: string | null;
+  warnings: string[];
+}
+
 export interface ProjectCandidate {
   id: string;
   candidate_name: string;
@@ -555,6 +571,7 @@ export interface ProjectCandidate {
   discovered_source_claim_ids_json: string[] | null;
   evidence_excerpt: string | null;
   raw_metadata_json: Record<string, unknown> | unknown[] | null;
+  csv_provenance: ProjectCandidateCsvProvenance | null;
   promoted_project_id: string | null;
   verification_status: string | null;
   verification_confidence: number | null;
