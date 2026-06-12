@@ -552,6 +552,16 @@ export interface ProjectCandidateCsvProvenance {
   warnings: string[];
 }
 
+export type ProjectCandidateReviewDecision =
+  | "needs_source"
+  | "needs_location"
+  | "likely_duplicate"
+  | "ready_for_verification"
+  | "rejected_dataset_only"
+  | "rejected_not_data_center"
+  | "rejected_stale"
+  | "keep_under_review";
+
 export interface ProjectCandidate {
   id: string;
   candidate_name: string;
@@ -585,6 +595,10 @@ export interface ProjectCandidate {
   triage_warnings_json: string[] | null;
   recommended_action: string | null;
   triaged_at: string | null;
+  review_decision: ProjectCandidateReviewDecision | null;
+  review_notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -597,6 +611,12 @@ export interface ProjectCandidatePromotionRequest {
   confirm: boolean;
   allow_unresolved_name?: boolean;
   allow_incomplete?: boolean;
+}
+
+export interface ProjectCandidateReviewDecisionRequest {
+  review_decision: ProjectCandidateReviewDecision | null;
+  review_notes?: string | null;
+  reviewed_by?: string | null;
 }
 
 export interface ProjectCandidatePromotionResponse {

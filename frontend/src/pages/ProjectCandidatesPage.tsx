@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import type { ProjectCandidate, ProjectCandidatePromotionResponse } from "../api/types";
-import { getProjectCandidates, promoteProjectCandidate } from "../api/adapter";
+import type { ProjectCandidate, ProjectCandidatePromotionResponse, ProjectCandidateReviewDecision } from "../api/types";
+import { getProjectCandidates, promoteProjectCandidate, updateProjectCandidateReviewDecision } from "../api/adapter";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +106,51 @@ const DUPE_STATUS_LABELS: Record<string, string> = {
   distinct:                 "Distinct",
   insufficient_information: "Insufficient info",
 };
+
+const REVIEW_DECISIONS: { value: ProjectCandidateReviewDecision; label: string }[] = [
+  { value: "needs_source", label: "Needs source" },
+  { value: "needs_location", label: "Needs location" },
+  { value: "likely_duplicate", label: "Likely duplicate" },
+  { value: "ready_for_verification", label: "Ready for verification" },
+  { value: "rejected_dataset_only", label: "Rejected: dataset only" },
+  { value: "rejected_not_data_center", label: "Rejected: not data center" },
+  { value: "rejected_stale", label: "Rejected: stale" },
+  { value: "keep_under_review", label: "Keep under review" },
+];
+
+const REVIEW_DECISION_LABELS: Record<string, string> = Object.fromEntries(
+  REVIEW_DECISIONS.map(item => [item.value, item.label]),
+);
+
+function reviewDecisionColor(s: string): { color: string; bg: string } {
+  const map: Record<string, { color: string; bg: string }> = {
+    needs_source:             { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+    needs_location:           { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+    likely_duplicate:         { color: "#f97316", bg: "rgba(249,115,22,0.12)" },
+    ready_for_verification:   { color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
+    rejected_dataset_only:    { color: "#ef4444", bg: "rgba(239,68,68,0.1)" },
+    rejected_not_data_center: { color: "#ef4444", bg: "rgba(239,68,68,0.1)" },
+    rejected_stale:           { color: "#ef4444", bg: "rgba(239,68,68,0.1)" },
+    keep_under_review:        { color: "#818cf8", bg: "rgba(99,102,241,0.13)" },
+  };
+  return map[s] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
+}
+
+function ReviewDecisionBadge({ decision }: { decision: string | null }) {
+  if (!decision) return null;
+  const { color, bg } = reviewDecisionColor(decision);
+  const label = REVIEW_DECISION_LABELS[decision] ?? actionLabel(decision);
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3,
+      color, background: bg, border: `1px solid ${color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      {label}
+    </span>
+  );
+}
 
 function dupeStatusColor(s: string): { color: string; bg: string } {
   const map: Record<string, { color: string; bg: string }> = {
@@ -670,7 +715,121 @@ function PromoteModal({
 // Details expansion panel
 // ---------------------------------------------------------------------------
 
-function DetailsPanel({ c }: { c: ProjectCandidate }) {
+function ReviewDecisionEditor({
+  candidate,
+  onSaved,
+}: {
+  candidate: ProjectCandidate;
+  onSaved: (candidate: ProjectCandidate) => void;
+}) {
+  const [decision, setDecision] = useState<ProjectCandidateReviewDecision | "">(candidate.review_decision ?? "");
+  const [notes, setNotes] = useState(candidate.review_notes ?? "");
+  const [reviewedBy, setReviewedBy] = useState(candidate.reviewed_by ?? "analyst");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDecision(candidate.review_decision ?? "");
+    setNotes(candidate.review_notes ?? "");
+    setReviewedBy(candidate.reviewed_by ?? "analyst");
+  }, [candidate.id, candidate.review_decision, candidate.review_notes, candidate.reviewed_by]);
+
+  const save = useCallback(() => {
+    setSaving(true);
+    setMessage(null);
+    setError(null);
+    updateProjectCandidateReviewDecision(candidate.id, {
+      review_decision: decision || null,
+      review_notes: notes.trim() || null,
+      reviewed_by: reviewedBy.trim() || null,
+    })
+      .then(updated => {
+        onSaved(updated);
+        setMessage("Saved");
+      })
+      .catch(err => setError(String(err)))
+      .finally(() => setSaving(false));
+  }, [candidate.id, decision, notes, reviewedBy, onSaved]);
+
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.035)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 6,
+      padding: "10px 12px",
+    }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 260px) 1fr minmax(120px, 180px)", gap: 10, alignItems: "start" }}>
+        <select
+          value={decision}
+          onChange={e => setDecision(e.target.value as ProjectCandidateReviewDecision | "")}
+          style={{
+            background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+          }}
+        >
+          <option value="">No decision</option>
+          {REVIEW_DECISIONS.map(item => (
+            <option key={item.value} value={item.value}>{item.label}</option>
+          ))}
+        </select>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value.slice(0, 2000))}
+          maxLength={2000}
+          placeholder="Optional analyst notes"
+          rows={3}
+          style={{
+            minWidth: 0, resize: "vertical",
+            background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+            lineHeight: 1.45,
+          }}
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <input
+            value={reviewedBy}
+            onChange={e => setReviewedBy(e.target.value.slice(0, 255))}
+            maxLength={255}
+            placeholder="reviewed by"
+            style={{
+              background: "var(--bg-surface)", color: "#e2e8f0",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 5, padding: "7px 9px", fontSize: 12,
+            }}
+          />
+          <button
+            onClick={save}
+            disabled={saving}
+            style={{
+              padding: "7px 10px", fontSize: 12, fontWeight: 700,
+              cursor: saving ? "not-allowed" : "pointer",
+              background: saving ? "rgba(99,102,241,0.08)" : "rgba(99,102,241,0.16)",
+              color: saving ? "#64748b" : "#a5b4fc",
+              border: "1px solid rgba(99,102,241,0.35)",
+              borderRadius: 5,
+            }}
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+      <div style={{ marginTop: 6, display: "flex", gap: 12, alignItems: "center", minHeight: 18 }}>
+        {candidate.reviewed_at && (
+          <span style={{ fontSize: 11, color: "#64748b" }}>
+            last reviewed {formatDateTime(candidate.reviewed_at)}
+          </span>
+        )}
+        {message && <span style={{ fontSize: 11, color: "#22c55e" }}>{message}</span>}
+        {error && <span style={{ fontSize: 11, color: "#ef4444" }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onReviewDecisionSaved: (candidate: ProjectCandidate) => void }) {
   const sourceIds: string[] = Array.isArray(c.discovered_source_ids_json)
     ? (c.discovered_source_ids_json as string[])
     : [];
@@ -835,6 +994,25 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
             <div>
               <div style={sectionLabel}>Status</div>
               <StatusBadge status={c.status} />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div style={sectionLabel}>Analyst Review Decision</div>
+              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 10, alignItems: "center", marginBottom: 8 }}>
+                {c.review_decision ? <ReviewDecisionBadge decision={c.review_decision} /> : <span style={{ color: "#64748b" }}>No decision</span>}
+                {c.reviewed_by && <span style={{ fontSize: 11, color: "#94a3b8" }}>by {c.reviewed_by}</span>}
+                {c.reviewed_at && <span style={{ fontSize: 11, color: "#64748b" }}>{formatDateTime(c.reviewed_at)}</span>}
+              </div>
+              {c.review_notes && (
+                <div style={{
+                  color: "#cbd5e1", lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  background: "rgba(255,255,255,0.04)", borderRadius: 5, padding: "8px 10px",
+                  marginBottom: 10,
+                }}>
+                  {c.review_notes}
+                </div>
+              )}
+              <ReviewDecisionEditor candidate={c} onSaved={onReviewDecisionSaved} />
             </div>
 
             {(c.triage_tier || c.recommended_action) && (
@@ -1061,9 +1239,11 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
 function CandidateRow({
   c,
   onPromote,
+  onReviewDecisionSaved,
 }: {
   c: ProjectCandidate;
   onPromote: (c: ProjectCandidate) => void;
+  onReviewDecisionSaved: (c: ProjectCandidate) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isPromoted = c.status === "promoted";
@@ -1188,6 +1368,11 @@ function CandidateRow({
               <VerifBadge status={c.verification_status} />
             </div>
           )}
+          {c.review_decision && (
+            <div style={{ marginTop: 4 }}>
+              <ReviewDecisionBadge decision={c.review_decision} />
+            </div>
+          )}
         </td>
 
         {/* Sources + Claims */}
@@ -1270,7 +1455,7 @@ function CandidateRow({
         </td>
       </tr>
 
-      {expanded && <DetailsPanel c={c} />}
+      {expanded && <DetailsPanel c={c} onReviewDecisionSaved={onReviewDecisionSaved} />}
     </>
   );
 }
@@ -1335,6 +1520,8 @@ export function ProjectCandidatesPage() {
   const [filterDupeStatus, setFilterDupeStatus] = useState("");
   const [filterRecommendedAction, setFilterRecommendedAction] = useState("");
   const [filterVerification, setFilterVerification] = useState("");
+  const [filterReviewDecision, setFilterReviewDecision] = useState("");
+  const [filterHasReviewDecision, setFilterHasReviewDecision] = useState("");
 
   const [promotingCandidate, setPromotingCandidate] = useState<ProjectCandidate | null>(null);
 
@@ -1352,6 +1539,10 @@ export function ProjectCandidatesPage() {
   const handlePromotionSuccess = useCallback((_resp: ProjectCandidatePromotionResponse) => {
     fetchCandidates();
   }, [fetchCandidates]);
+
+  const handleReviewDecisionSaved = useCallback((updated: ProjectCandidate) => {
+    setCandidates(items => items.map(item => item.id === updated.id ? updated : item));
+  }, []);
 
   const statusOptions = useMemo(() => {
     const s = [...new Set(candidates.map(c => c.status))].sort();
@@ -1393,6 +1584,11 @@ export function ProjectCandidatesPage() {
     return s.map(v => ({ value: v, label: v.replace(/_/g, " ").replace(/\b\w/g, ch => ch.toUpperCase()) }));
   }, [candidates]);
 
+  const reviewDecisionOptions = useMemo(() => {
+    const seen = new Set(candidates.flatMap(c => c.review_decision ? [c.review_decision] : []));
+    return REVIEW_DECISIONS.filter(item => seen.has(item.value));
+  }, [candidates]);
+
   const filtered = useMemo(() => {
     const needle = searchText.toLowerCase();
     const confMin = filterConf ? parseFloat(filterConf) : null;
@@ -1406,10 +1602,14 @@ export function ProjectCandidatesPage() {
       if (filterDupeStatus && c.csv_provenance?.duplicate_status !== filterDupeStatus) return false;
       if (filterRecommendedAction && c.recommended_action !== filterRecommendedAction) return false;
       if (filterVerification && c.verification_status !== filterVerification) return false;
+      if (filterReviewDecision && c.review_decision !== filterReviewDecision) return false;
+      if (filterHasReviewDecision === "reviewed" && !c.review_decision) return false;
+      if (filterHasReviewDecision === "unreviewed" && c.review_decision) return false;
       if (needle) {
         const hay = [
           c.candidate_name, c.developer, c.state,
           c.county, c.city, c.utility, c.primary_source_url, c.triage_tier, c.recommended_action,
+          c.review_decision, c.review_notes, c.reviewed_by,
           c.csv_provenance?.dataset_name, c.csv_provenance?.duplicate_status, c.csv_provenance?.source_file,
         ].join(" ").toLowerCase();
         if (!hay.includes(needle)) return false;
@@ -1417,7 +1617,8 @@ export function ProjectCandidatesPage() {
       return true;
     });
   }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
-      filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification]);
+      filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification,
+      filterReviewDecision, filterHasReviewDecision]);
 
   const countsByStatus = useMemo(() => {
     const m: Record<string, number> = {};
@@ -1427,12 +1628,15 @@ export function ProjectCandidatesPage() {
 
   const csvCount = useMemo(() => candidates.filter(c => !!c.csv_provenance).length, [candidates]);
   const webCount = useMemo(() => candidates.filter(c => !c.csv_provenance).length, [candidates]);
+  const reviewDecisionCount = useMemo(() => candidates.filter(c => !!c.review_decision).length, [candidates]);
 
   const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf ||
-    filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification);
+    filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification ||
+    filterReviewDecision || filterHasReviewDecision);
   const clearFilters = () => {
     setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
     setFilterCsvOnly(false); setFilterDataset(""); setFilterDupeStatus(""); setFilterRecommendedAction(""); setFilterVerification("");
+    setFilterReviewDecision(""); setFilterHasReviewDecision("");
   };
 
   return (
@@ -1508,6 +1712,12 @@ export function ProjectCandidatesPage() {
                 <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginTop: 2 }}>Web</div>
               </div>
             )}
+            {reviewDecisionCount > 0 && (
+              <div style={{ textAlign: "center" as const }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#a5b4fc", lineHeight: 1 }}>{reviewDecisionCount}</div>
+                <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginTop: 2 }}>Reviewed</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1553,6 +1763,18 @@ export function ProjectCandidatesPage() {
           {verificationOptions.length > 0 && (
             <FilterSelect value={filterVerification} onChange={setFilterVerification} options={verificationOptions} placeholder="All verif." />
           )}
+          {reviewDecisionOptions.length > 0 && (
+            <FilterSelect value={filterReviewDecision} onChange={setFilterReviewDecision} options={reviewDecisionOptions} placeholder="All decisions" />
+          )}
+          <FilterSelect
+            value={filterHasReviewDecision}
+            onChange={setFilterHasReviewDecision}
+            options={[
+              { value: "reviewed", label: "Has decision" },
+              { value: "unreviewed", label: "No decision" },
+            ]}
+            placeholder="Review state"
+          />
           {hasFilters && (
             <button onClick={clearFilters} style={{
               padding: "7px 12px", fontSize: 12, cursor: "pointer",
@@ -1691,6 +1913,7 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
                     key={c.id}
                     c={c}
                     onPromote={setPromotingCandidate}
+                    onReviewDecisionSaved={handleReviewDecisionSaved}
                   />
                 ))}
               </tbody>
