@@ -99,6 +99,40 @@ function actionLabel(s: string | null | undefined): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+const DUPE_STATUS_LABELS: Record<string, string> = {
+  exact_duplicate:          "Exact duplicate",
+  likely_same_project:      "Likely same project",
+  possible_duplicate:       "Possible duplicate",
+  distinct:                 "Distinct",
+  insufficient_information: "Insufficient info",
+};
+
+function dupeStatusColor(s: string): { color: string; bg: string } {
+  const map: Record<string, { color: string; bg: string }> = {
+    exact_duplicate:          { color: "#ef4444", bg: "rgba(239,68,68,0.13)" },
+    likely_same_project:      { color: "#f97316", bg: "rgba(249,115,22,0.12)" },
+    possible_duplicate:       { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+    distinct:                 { color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
+    insufficient_information: { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
+  };
+  return map[s] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
+}
+
+function DupeBadge({ status }: { status: string }) {
+  const { color, bg } = dupeStatusColor(status);
+  const label = DUPE_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3,
+      color, background: bg, border: `1px solid ${color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      {label}
+    </span>
+  );
+}
+
 function isUnresolved(name: string): boolean {
   return !name || name.trim().toLowerCase().startsWith("unresolved");
 }
@@ -122,15 +156,16 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function DatasetBadge({ dataset }: { dataset: string }) {
+  const short = dataset.length > 22 ? dataset.slice(0, 20) + "…" : dataset;
   return (
     <span title={dataset} style={{
-      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-      letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3,
+      fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
+      padding: "2px 7px", borderRadius: 3,
       color: "#67e8f9", background: "rgba(8,145,178,0.14)",
       border: "1px solid rgba(103,232,249,0.32)",
       whiteSpace: "nowrap" as const, display: "inline-block",
     }}>
-      Dataset
+      ⊞ {short}
     </span>
   );
 }
@@ -713,13 +748,39 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
                     <span style={{ color: "#64748b" }}>Row:</span>{" "}
                     {c.csv_provenance.row_number ?? "—"}
                   </div>
-                  {(c.csv_provenance.duplicate_status || c.csv_provenance.duplicate_cluster_key) && (
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <span style={{ color: "#64748b" }}>Duplicate:</span>{" "}
-                      {c.csv_provenance.duplicate_status || "—"}
+                  {c.csv_provenance.duplicate_status && (
+                    <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8 }}>
+                      <span style={{ color: "#64748b", fontSize: 11 }}>Duplicate status:</span>
+                      <DupeBadge status={c.csv_provenance.duplicate_status} />
                       {c.csv_provenance.duplicate_cluster_key && (
-                        <span style={{ color: "#64748b" }}> · {c.csv_provenance.duplicate_cluster_key}</span>
+                        <span style={{ color: "#94a3b8", fontSize: 11 }}>
+                          cluster: <span style={{ fontFamily: "monospace", color: "#67e8f9" }}>{c.csv_provenance.duplicate_cluster_key}</span>
+                        </span>
                       )}
+                    </div>
+                  )}
+                  {!c.csv_provenance.duplicate_status && c.csv_provenance.duplicate_cluster_key && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ color: "#64748b" }}>Cluster key:</span>{" "}
+                      <span style={{ fontFamily: "monospace", color: "#67e8f9", fontSize: 11 }}>{c.csv_provenance.duplicate_cluster_key}</span>
+                    </div>
+                  )}
+                  {c.csv_provenance.imported_row_ids.length > 0 && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ color: "#64748b", fontSize: 11 }}>Imported row IDs ({c.csv_provenance.imported_row_ids.length}):</span>
+                      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 4, marginTop: 4 }}>
+                        {c.csv_provenance.imported_row_ids.slice(0, 12).map((rid, i) => (
+                          <span key={i} style={{
+                            fontFamily: "monospace", fontSize: 10, color: "#94a3b8",
+                            background: "rgba(255,255,255,0.05)", padding: "1px 5px", borderRadius: 3,
+                          }}>{rid}</span>
+                        ))}
+                        {c.csv_provenance.imported_row_ids.length > 12 && (
+                          <span style={{ fontSize: 10, color: "#64748b" }}>
+                            +{c.csv_provenance.imported_row_ids.length - 12} more
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                   {c.csv_provenance.citation && (
@@ -744,7 +805,22 @@ function DetailsPanel({ c }: { c: ProjectCandidate }) {
                             {url}
                           </a>
                         ))}
+                        {c.csv_provenance.source_urls.length > 5 && (
+                          <span style={{ fontSize: 10, color: "#64748b" }}>+{c.csv_provenance.source_urls.length - 5} more</span>
+                        )}
                       </div>
+                    </div>
+                  )}
+                  {c.csv_provenance.warnings.length > 0 && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", marginBottom: 4 }}>
+                        Import Warnings
+                      </div>
+                      <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                        {c.csv_provenance.warnings.map((w, i) => (
+                          <li key={i} style={{ fontSize: 11, color: "#fbbf24", lineHeight: 1.5 }}>{w}</li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
@@ -1025,6 +1101,11 @@ function CandidateRow({
               <DatasetBadge dataset={c.csv_provenance.dataset_name} />
             </div>
           )}
+          {c.csv_provenance?.duplicate_status && c.csv_provenance.duplicate_status !== "distinct" && (
+            <div style={{ marginTop: 3 }}>
+              <DupeBadge status={c.csv_provenance.duplicate_status} />
+            </div>
+          )}
         </td>
 
         {/* Developer */}
@@ -1249,6 +1330,11 @@ export function ProjectCandidatesPage() {
   const [filterState, setFilterState] = useState("");
   const [filterTriage, setFilterTriage] = useState("");
   const [filterConf, setFilterConf] = useState("");
+  const [filterCsvOnly, setFilterCsvOnly] = useState(false);
+  const [filterDataset, setFilterDataset] = useState("");
+  const [filterDupeStatus, setFilterDupeStatus] = useState("");
+  const [filterRecommendedAction, setFilterRecommendedAction] = useState("");
+  const [filterVerification, setFilterVerification] = useState("");
 
   const [promotingCandidate, setPromotingCandidate] = useState<ProjectCandidate | null>(null);
 
@@ -1286,6 +1372,27 @@ export function ProjectCandidatesPage() {
     return order.filter(t => tiers.has(t)).map(v => ({ value: v, label: actionLabel(v) }));
   }, [candidates]);
 
+  const datasetOptions = useMemo(() => {
+    const names = [...new Set(candidates.flatMap(c => c.csv_provenance?.dataset_name ? [c.csv_provenance.dataset_name] : []))].sort();
+    return names.map(v => ({ value: v, label: v }));
+  }, [candidates]);
+
+  const dupeStatusOptions = useMemo(() => {
+    const order = ["exact_duplicate", "likely_same_project", "possible_duplicate", "distinct", "insufficient_information"];
+    const seen = new Set(candidates.flatMap(c => c.csv_provenance?.duplicate_status ? [c.csv_provenance.duplicate_status] : []));
+    return order.filter(s => seen.has(s)).map(v => ({ value: v, label: DUPE_STATUS_LABELS[v] ?? actionLabel(v) }));
+  }, [candidates]);
+
+  const recommendedActionOptions = useMemo(() => {
+    const s = [...new Set(candidates.map(c => c.recommended_action).filter(Boolean) as string[])].sort();
+    return s.map(v => ({ value: v, label: actionLabel(v) }));
+  }, [candidates]);
+
+  const verificationOptions = useMemo(() => {
+    const s = [...new Set(candidates.map(c => c.verification_status).filter(Boolean) as string[])].sort();
+    return s.map(v => ({ value: v, label: v.replace(/_/g, " ").replace(/\b\w/g, ch => ch.toUpperCase()) }));
+  }, [candidates]);
+
   const filtered = useMemo(() => {
     const needle = searchText.toLowerCase();
     const confMin = filterConf ? parseFloat(filterConf) : null;
@@ -1294,16 +1401,23 @@ export function ProjectCandidatesPage() {
       if (filterState && c.state !== filterState) return false;
       if (filterTriage && c.triage_tier !== filterTriage) return false;
       if (confMin !== null && c.confidence < confMin) return false;
+      if (filterCsvOnly && !c.csv_provenance) return false;
+      if (filterDataset && c.csv_provenance?.dataset_name !== filterDataset) return false;
+      if (filterDupeStatus && c.csv_provenance?.duplicate_status !== filterDupeStatus) return false;
+      if (filterRecommendedAction && c.recommended_action !== filterRecommendedAction) return false;
+      if (filterVerification && c.verification_status !== filterVerification) return false;
       if (needle) {
         const hay = [
           c.candidate_name, c.developer, c.state,
           c.county, c.city, c.utility, c.primary_source_url, c.triage_tier, c.recommended_action,
+          c.csv_provenance?.dataset_name, c.csv_provenance?.duplicate_status, c.csv_provenance?.source_file,
         ].join(" ").toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
     });
-  }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf]);
+  }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
+      filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification]);
 
   const countsByStatus = useMemo(() => {
     const m: Record<string, number> = {};
@@ -1311,9 +1425,14 @@ export function ProjectCandidatesPage() {
     return m;
   }, [candidates]);
 
-  const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf);
+  const csvCount = useMemo(() => candidates.filter(c => !!c.csv_provenance).length, [candidates]);
+  const webCount = useMemo(() => candidates.filter(c => !c.csv_provenance).length, [candidates]);
+
+  const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf ||
+    filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification);
   const clearFilters = () => {
     setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
+    setFilterCsvOnly(false); setFilterDataset(""); setFilterDupeStatus(""); setFilterRecommendedAction(""); setFilterVerification("");
   };
 
   return (
@@ -1377,6 +1496,18 @@ export function ProjectCandidatesPage() {
                 </div>
               );
             })}
+            {csvCount > 0 && (
+              <div style={{ textAlign: "center" as const, borderLeft: "1px solid rgba(255,255,255,0.08)", paddingLeft: 24 }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#67e8f9", lineHeight: 1 }}>{csvCount}</div>
+                <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginTop: 2 }}>CSV</div>
+              </div>
+            )}
+            {webCount > 0 && csvCount > 0 && (
+              <div style={{ textAlign: "center" as const }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#818cf8", lineHeight: 1 }}>{webCount}</div>
+                <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginTop: 2 }}>Web</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1399,6 +1530,29 @@ export function ProjectCandidatesPage() {
           <FilterSelect value={filterState} onChange={setFilterState} options={stateOptions} placeholder="All states" />
           <FilterSelect value={filterTriage} onChange={setFilterTriage} options={triageOptions} placeholder="All triage" />
           <FilterSelect value={filterConf} onChange={setFilterConf} options={CONF_OPTIONS} placeholder="All confidence" />
+          <button
+            onClick={() => setFilterCsvOnly(v => !v)}
+            style={{
+              padding: "7px 12px", fontSize: 12, cursor: "pointer", borderRadius: 6, fontWeight: 600,
+              background: filterCsvOnly ? "rgba(8,145,178,0.2)" : "rgba(255,255,255,0.04)",
+              color: filterCsvOnly ? "#67e8f9" : "#64748b",
+              border: filterCsvOnly ? "1px solid rgba(103,232,249,0.4)" : "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            CSV only
+          </button>
+          {datasetOptions.length > 0 && (
+            <FilterSelect value={filterDataset} onChange={setFilterDataset} options={datasetOptions} placeholder="All datasets" />
+          )}
+          {dupeStatusOptions.length > 0 && (
+            <FilterSelect value={filterDupeStatus} onChange={setFilterDupeStatus} options={dupeStatusOptions} placeholder="All dupe status" />
+          )}
+          {recommendedActionOptions.length > 0 && (
+            <FilterSelect value={filterRecommendedAction} onChange={setFilterRecommendedAction} options={recommendedActionOptions} placeholder="All actions" />
+          )}
+          {verificationOptions.length > 0 && (
+            <FilterSelect value={filterVerification} onChange={setFilterVerification} options={verificationOptions} placeholder="All verif." />
+          )}
           {hasFilters && (
             <button onClick={clearFilters} style={{
               padding: "7px 12px", fontSize: 12, cursor: "pointer",
