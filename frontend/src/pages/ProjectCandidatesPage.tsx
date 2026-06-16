@@ -735,22 +735,25 @@ function ReviewDecisionEditor({
     setReviewedBy(candidate.reviewed_by ?? "analyst");
   }, [candidate.id, candidate.review_decision, candidate.review_notes, candidate.reviewed_by]);
 
-  const save = useCallback(() => {
+  const save = useCallback(async () => {
+    if (saving) return;
     setSaving(true);
     setMessage(null);
     setError(null);
-    updateProjectCandidateReviewDecision(candidate.id, {
-      review_decision: decision || null,
-      review_notes: notes.trim() || null,
-      reviewed_by: reviewedBy.trim() || null,
-    })
-      .then(updated => {
-        onSaved(updated);
-        setMessage("Saved");
-      })
-      .catch(err => setError(String(err)))
-      .finally(() => setSaving(false));
-  }, [candidate.id, decision, notes, reviewedBy, onSaved]);
+    try {
+      const updated = await updateProjectCandidateReviewDecision(candidate.id, {
+        review_decision: decision || null,
+        review_notes: notes.trim() || null,
+        reviewed_by: reviewedBy.trim() || null,
+      });
+      onSaved(updated);
+      setMessage(decision ? "Saved" : "Decision cleared");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [candidate.id, decision, notes, reviewedBy, saving, onSaved]);
 
   return (
     <div style={{
@@ -762,11 +765,13 @@ function ReviewDecisionEditor({
       <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 260px) 1fr minmax(120px, 180px)", gap: 10, alignItems: "start" }}>
         <select
           value={decision}
+          disabled={saving}
           onChange={e => setDecision(e.target.value as ProjectCandidateReviewDecision | "")}
           style={{
             background: "var(--bg-surface)", color: "#e2e8f0",
             border: "1px solid rgba(255,255,255,0.12)",
             borderRadius: 5, padding: "7px 9px", fontSize: 12,
+            cursor: saving ? "not-allowed" : "pointer",
           }}
         >
           <option value="">No decision</option>
@@ -776,6 +781,7 @@ function ReviewDecisionEditor({
         </select>
         <textarea
           value={notes}
+          disabled={saving}
           onChange={e => setNotes(e.target.value.slice(0, 2000))}
           maxLength={2000}
           placeholder="Optional analyst notes"
@@ -785,12 +791,14 @@ function ReviewDecisionEditor({
             background: "var(--bg-surface)", color: "#e2e8f0",
             border: "1px solid rgba(255,255,255,0.12)",
             borderRadius: 5, padding: "7px 9px", fontSize: 12,
-            lineHeight: 1.45,
+            lineHeight: 1.45, wordBreak: "break-word",
+            cursor: saving ? "not-allowed" : "text",
           }}
         />
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           <input
             value={reviewedBy}
+            disabled={saving}
             onChange={e => setReviewedBy(e.target.value.slice(0, 255))}
             maxLength={255}
             placeholder="reviewed by"
@@ -798,6 +806,8 @@ function ReviewDecisionEditor({
               background: "var(--bg-surface)", color: "#e2e8f0",
               border: "1px solid rgba(255,255,255,0.12)",
               borderRadius: 5, padding: "7px 9px", fontSize: 12,
+              minWidth: 0, wordBreak: "break-word",
+              cursor: saving ? "not-allowed" : "text",
             }}
           />
           <button
@@ -823,7 +833,7 @@ function ReviewDecisionEditor({
           </span>
         )}
         {message && <span style={{ fontSize: 11, color: "#22c55e" }}>{message}</span>}
-        {error && <span style={{ fontSize: 11, color: "#ef4444" }}>{error}</span>}
+        {error && <span style={{ fontSize: 11, color: "#ef4444", overflowWrap: "anywhere" }}>{error}</span>}
       </div>
     </div>
   );

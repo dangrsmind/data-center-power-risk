@@ -160,7 +160,7 @@ DATABASE_URL=sqlite:///local.db python scripts/triage_project_candidates.py --co
 
 Triage uses dataset provenance, source URLs, location, load, developer/operator, citation, and license notes as review-priority signals only. It does not verify, promote, or admit candidates.
 
-In the Project Candidates UI, expand a candidate row to set an analyst review decision and optional notes. Decisions such as `needs_source`, `needs_location`, `likely_duplicate`, `ready_for_verification`, and rejected/keep-under-review labels are workflow metadata only. They never create Projects, never promote, never delete candidates, and never merge duplicates. `ready_for_verification` still requires the normal verifier; it is not an override.
+In the Project Candidates UI, expand a candidate row to set, update, or clear an analyst review decision. Notes and reviewer are optional; blank values are stored as empty metadata. Decisions such as `needs_source`, `needs_location`, `likely_duplicate`, `ready_for_verification`, and rejected/keep-under-review labels are workflow metadata only. They never create Projects, never promote, never delete candidates, and never merge duplicates. `ready_for_verification` still requires the normal verifier; it is not an override. Rejected labels leave the candidate record in place for auditability, and `likely_duplicate` marks review intent without merging records.
 
 The API equivalent is:
 
@@ -168,6 +168,14 @@ The API equivalent is:
 curl -X PATCH http://127.0.0.1:8000/project-candidates/<CANDIDATE_UUID>/review-decision \
   -H 'Content-Type: application/json' \
   -d '{"review_decision":"needs_source","review_notes":"Need official utility interconnection or permit source.","reviewed_by":"analyst"}'
+```
+
+To clear a decision, send `null` or an empty string for `review_decision`; whitespace-only notes or reviewer values are normalized to empty metadata:
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/project-candidates/<CANDIDATE_UUID>/review-decision \
+  -H 'Content-Type: application/json' \
+  -d '{"review_decision":null,"review_notes":null,"reviewed_by":null}'
 ```
 
 Raw CSVs under `data/imports/manual_csv/`, local databases, and runtime outputs should remain uncommitted. The public-source rule still applies: imported rows can become review candidates only when a source URL or source document is preserved.

@@ -47,6 +47,7 @@ def list_project_candidates(
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> ProjectCandidateListResponse:
+    review_decision = clean_optional_text(review_decision)
     if review_decision and review_decision not in ALLOWED_REVIEW_DECISIONS:
         raise HTTPException(status_code=422, detail="invalid review_decision")
     candidates = ProjectCandidateGenerator(db).list_candidates(
@@ -82,7 +83,7 @@ def promote_project_candidate(
     return ProjectCandidatePromotionResponse(**summary.to_dict())
 
 
-@router.patch("/{candidate_id}/review-decision", response_model=ProjectCandidateResponse, response_model_exclude_none=True)
+@router.patch("/{candidate_id}/review-decision", response_model=ProjectCandidateResponse)
 def update_project_candidate_review_decision(
     candidate_id: uuid.UUID,
     request: ProjectCandidateReviewDecisionRequest,
@@ -92,8 +93,8 @@ def update_project_candidate_review_decision(
     if candidate is None:
         raise HTTPException(status_code=404, detail="project candidate not found")
     candidate.review_decision = request.review_decision
-    candidate.review_notes = clean_optional_text(request.review_notes)
-    candidate.reviewed_by = clean_optional_text(request.reviewed_by)
+    candidate.review_notes = request.review_notes
+    candidate.reviewed_by = request.reviewed_by
     candidate.reviewed_at = datetime.now(timezone.utc) if request.review_decision else None
     db.commit()
     db.refresh(candidate)

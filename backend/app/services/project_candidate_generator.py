@@ -15,6 +15,7 @@ from app.models.project_candidate import ProjectCandidate
 
 VALID_PROJECT_CANDIDATE_STATUSES = {"candidate", "needs_review", "rejected", "promoted"}
 FIELD_CLAIM_TYPES = {"possible_project_name", "developer", "state", "county", "city", "utility", "load_mw"}
+ANALYST_REVIEW_FIELDS = {"review_decision", "review_notes", "reviewed_by", "reviewed_at"}
 
 
 @dataclass
@@ -290,6 +291,6 @@ class ProjectCandidateGenerator:
 
 def update_project_candidate(record: ProjectCandidate, candidate: CandidateDraft) -> None:
     for field_name, value in asdict(candidate).items():
-        if field_name == "candidate_key":
+        if field_name == "candidate_key" or field_name in ANALYST_REVIEW_FIELDS:
             continue
         setattr(record, field_name, value)

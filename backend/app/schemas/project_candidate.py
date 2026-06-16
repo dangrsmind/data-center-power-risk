@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 
 ProjectCandidateReviewDecision = Literal[
@@ -86,6 +86,22 @@ class ProjectCandidateReviewDecisionRequest(BaseModel):
     review_decision: ProjectCandidateReviewDecision | None = None
     review_notes: str | None = Field(default=None, max_length=2000)
     reviewed_by: str | None = Field(default=None, max_length=255)
+
+    @field_validator("review_decision", mode="before")
+    @classmethod
+    def normalize_review_decision(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return value
+
+    @field_validator("review_notes", "reviewed_by", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return value
 
 
 class ProjectCandidatePromotionRequest(BaseModel):
