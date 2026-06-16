@@ -66,3 +66,27 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProjectCandidateSourceAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "project_candidate_source_attachments"
+    __table_args__ = (
+        UniqueConstraint("project_candidate_id", "source_url", name="uq_candidate_source_attachment_url"),
+        CheckConstraint(
+            "source_type in ('official', 'utility', 'permit', 'media', 'dataset', 'other') or source_type is null",
+            name="source_attachment_type_valid",
+        ),
+        Index("ix_project_candidate_source_attachments_candidate_id", "project_candidate_id"),
+        Index("ix_project_candidate_source_attachments_source_type", "source_type"),
+    )
+
+    project_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("project_candidates.id"), nullable=False
+    )
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analyst_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attached_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attached_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

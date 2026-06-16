@@ -171,6 +171,12 @@ ProjectCandidates can carry analyst workflow decisions through `PATCH /project-c
 
 These decisions are durable review metadata only. They do not create Projects, do not promote candidates, do not delete candidates, do not merge duplicates, and do not change verification or auto-admission rules. `ready_for_verification` means an analyst thinks the candidate is ready for the existing verifier; it does not bypass verifier requirements. Rejected decisions keep the candidate record available for audit. `likely_duplicate` is a label for analyst organization and does not perform an automatic merge.
 
+## Candidate Source Attachments
+
+Analysts can attach public-source references to ProjectCandidates through `POST /project-candidates/{candidate_id}/source-attachments` and review them with `GET /project-candidates/{candidate_id}/source-attachments`. Attachments store candidate-review metadata such as source URL, title, source type, excerpt, analyst notes, reviewer, and attachment time.
+
+These attached URLs are evidence candidates, not final `Evidence` records. They do not create Projects, do not promote candidates, do not mark candidates auto-admit eligible, and do not bypass verification. Triage may use the presence of source attachments as review context, but the existing verifier and guarded single-candidate promotion flow remain separate protections. Promotion remains the only path that can create final Project/Evidence records, and it still requires public-source-backed candidate data.
+
 ## Project Candidate Promotion
 
 Project candidates can now be promoted through an explicit single-candidate review action with `backend/scripts/promote_project_candidate.py --candidate-id <id> --confirm`, or the guarded `POST /project-candidates/{candidate_id}/promote` endpoint with `{"confirm": true}`. Without confirmation the promotion script and API run as dry-runs and do not create final records.

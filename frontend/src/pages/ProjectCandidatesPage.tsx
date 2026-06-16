@@ -1,6 +1,18 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import type { ProjectCandidate, ProjectCandidatePromotionResponse, ProjectCandidateReviewDecision } from "../api/types";
-import { getProjectCandidates, promoteProjectCandidate, updateProjectCandidateReviewDecision } from "../api/adapter";
+import type {
+  ProjectCandidate,
+  ProjectCandidatePromotionResponse,
+  ProjectCandidateReviewDecision,
+  ProjectCandidateSourceAttachment,
+  ProjectCandidateSourceType,
+} from "../api/types";
+import {
+  createProjectCandidateSourceAttachment,
+  getProjectCandidateSourceAttachments,
+  getProjectCandidates,
+  promoteProjectCandidate,
+  updateProjectCandidateReviewDecision,
+} from "../api/adapter";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,6 +129,19 @@ const REVIEW_DECISIONS: { value: ProjectCandidateReviewDecision; label: string }
   { value: "rejected_stale", label: "Rejected: stale" },
   { value: "keep_under_review", label: "Keep under review" },
 ];
+
+const SOURCE_ATTACHMENT_TYPES: { value: ProjectCandidateSourceType; label: string }[] = [
+  { value: "official", label: "Official" },
+  { value: "utility", label: "Utility" },
+  { value: "permit", label: "Permit" },
+  { value: "media", label: "Media" },
+  { value: "dataset", label: "Dataset" },
+  { value: "other", label: "Other" },
+];
+
+const SOURCE_ATTACHMENT_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  SOURCE_ATTACHMENT_TYPES.map(item => [item.value, item.label]),
+);
 
 const REVIEW_DECISION_LABELS: Record<string, string> = Object.fromEntries(
   REVIEW_DECISIONS.map(item => [item.value, item.label]),
@@ -839,7 +864,262 @@ function ReviewDecisionEditor({
   );
 }
 
-function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onReviewDecisionSaved: (candidate: ProjectCandidate) => void }) {
+function SourceAttachmentsSection({
+  candidate,
+  onAttachmentSaved,
+}: {
+  candidate: ProjectCandidate;
+  onAttachmentSaved: (candidateId: string, attachment: ProjectCandidateSourceAttachment) => void;
+}) {
+  const [attachments, setAttachments] = useState<ProjectCandidateSourceAttachment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceType, setSourceType] = useState<ProjectCandidateSourceType | "">("");
+  const [sourceTitle, setSourceTitle] = useState("");
+  const [sourceExcerpt, setSourceExcerpt] = useState("");
+  const [analystNotes, setAnalystNotes] = useState("");
+  const [attachedBy, setAttachedBy] = useState("analyst");
+
+  const loadAttachments = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    getProjectCandidateSourceAttachments(candidate.id)
+      .then(resp => setAttachments(resp.items))
+      .catch(err => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, [candidate.id]);
+
+  useEffect(() => {
+    loadAttachments();
+  }, [loadAttachments]);
+
+  const save = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const attachment = await createProjectCandidateSourceAttachment(candidate.id, {
+        source_url: sourceUrl.trim(),
+        source_type: sourceType || null,
+        source_title: sourceTitle.trim() || null,
+        source_excerpt: sourceExcerpt.trim() || null,
+        analyst_notes: analystNotes.trim() || null,
+        attached_by: attachedBy.trim() || null,
+      });
+      const alreadyKnown = attachments.some(item => item.id === attachment.id);
+      setAttachments(items => {
+        const existing = items.filter(item => item.id !== attachment.id);
+        return [attachment, ...existing].sort((a, b) => b.attached_at.localeCompare(a.attached_at));
+      });
+      if (!alreadyKnown) {
+        onAttachmentSaved(candidate.id, attachment);
+      }
+      setSourceUrl("");
+      setSourceType("");
+      setSourceTitle("");
+      setSourceExcerpt("");
+      setAnalystNotes("");
+      setMessage("Source attached");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [analystNotes, attachedBy, attachments, candidate.id, onAttachmentSaved, saving, sourceExcerpt, sourceTitle, sourceType, sourceUrl]);
+
+  const canSave = sourceUrl.trim().length > 0 && !saving;
+  const displayedCount = attachments.length || candidate.source_attachment_count || 0;
+
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.035)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 6,
+      padding: "10px 12px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "#cbd5e1", fontWeight: 700 }}>
+          {displayedCount} attached source{displayedCount !== 1 ? "s" : ""}
+        </div>
+        {candidate.latest_source_attachment_at && (
+          <div style={{ fontSize: 11, color: "#64748b" }}>
+            latest {formatDateTime(candidate.latest_source_attachment_at)}
+          </div>
+        )}
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>Loading attachments...</div>}
+
+      {attachments.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {attachments.map(attachment => (
+            <div key={attachment.id} style={{
+              background: "rgba(15,23,42,0.72)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 5,
+              padding: "9px 10px",
+            }}>
+              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "center", marginBottom: 5 }}>
+                {attachment.source_type && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+                    letterSpacing: "0.05em", color: "#67e8f9",
+                    background: "rgba(8,145,178,0.14)",
+                    border: "1px solid rgba(103,232,249,0.3)",
+                    borderRadius: 3, padding: "2px 7px",
+                  }}>
+                    {SOURCE_ATTACHMENT_TYPE_LABELS[attachment.source_type] ?? actionLabel(attachment.source_type)}
+                  </span>
+                )}
+                {attachment.source_title && (
+                  <span style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 700, overflowWrap: "anywhere" }}>
+                    {attachment.source_title}
+                  </span>
+                )}
+                <span style={{ fontSize: 11, color: "#64748b" }}>
+                  {formatDateTime(attachment.attached_at)}
+                </span>
+                {attachment.attached_by && (
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>by {attachment.attached_by}</span>
+                )}
+              </div>
+              <a href={attachment.source_url} target="_blank" rel="noopener noreferrer"
+                style={{ color: "#818cf8", fontSize: 12, wordBreak: "break-all" }}>
+                {attachment.source_url}
+              </a>
+              {attachment.source_excerpt && (
+                <div style={{ marginTop: 6, color: "#cbd5e1", fontSize: 11, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {attachment.source_excerpt}
+                </div>
+              )}
+              {attachment.analyst_notes && (
+                <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 11, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {attachment.analyst_notes}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) minmax(140px, 180px) minmax(120px, 180px)", gap: 8, alignItems: "start" }}>
+        <input
+          value={sourceUrl}
+          disabled={saving}
+          onChange={e => setSourceUrl(e.target.value)}
+          placeholder="https://public-source.example/page"
+          style={{
+            minWidth: 0, background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+          }}
+        />
+        <select
+          value={sourceType}
+          disabled={saving}
+          onChange={e => setSourceType(e.target.value as ProjectCandidateSourceType | "")}
+          style={{
+            background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+          }}
+        >
+          <option value="">Source type</option>
+          {SOURCE_ATTACHMENT_TYPES.map(item => (
+            <option key={item.value} value={item.value}>{item.label}</option>
+          ))}
+        </select>
+        <input
+          value={attachedBy}
+          disabled={saving}
+          onChange={e => setAttachedBy(e.target.value.slice(0, 255))}
+          maxLength={255}
+          placeholder="attached by"
+          style={{
+            minWidth: 0, background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+          }}
+        />
+        <input
+          value={sourceTitle}
+          disabled={saving}
+          onChange={e => setSourceTitle(e.target.value.slice(0, 500))}
+          maxLength={500}
+          placeholder="Optional source title"
+          style={{
+            minWidth: 0, background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+          }}
+        />
+        <textarea
+          value={sourceExcerpt}
+          disabled={saving}
+          onChange={e => setSourceExcerpt(e.target.value.slice(0, 5000))}
+          maxLength={5000}
+          placeholder="Optional excerpt"
+          rows={3}
+          style={{
+            minWidth: 0, resize: "vertical", gridColumn: "span 2",
+            background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+            lineHeight: 1.45, wordBreak: "break-word",
+          }}
+        />
+        <textarea
+          value={analystNotes}
+          disabled={saving}
+          onChange={e => setAnalystNotes(e.target.value.slice(0, 2000))}
+          maxLength={2000}
+          placeholder="Optional analyst notes"
+          rows={2}
+          style={{
+            minWidth: 0, resize: "vertical", gridColumn: "span 2",
+            background: "var(--bg-surface)", color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 5, padding: "7px 9px", fontSize: 12,
+            lineHeight: 1.45, wordBreak: "break-word",
+          }}
+        />
+        <button
+          onClick={save}
+          disabled={!canSave}
+          style={{
+            padding: "7px 10px", fontSize: 12, fontWeight: 700,
+            cursor: canSave ? "pointer" : "not-allowed",
+            background: canSave ? "rgba(99,102,241,0.16)" : "rgba(99,102,241,0.08)",
+            color: canSave ? "#a5b4fc" : "#64748b",
+            border: "1px solid rgba(99,102,241,0.35)",
+            borderRadius: 5,
+          }}
+        >
+          {saving ? "Attaching..." : "Attach source"}
+        </button>
+      </div>
+
+      <div style={{ marginTop: 6, display: "flex", gap: 12, alignItems: "center", minHeight: 18 }}>
+        {message && <span style={{ fontSize: 11, color: "#22c55e" }}>{message}</span>}
+        {error && <span style={{ fontSize: 11, color: "#ef4444", overflowWrap: "anywhere" }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+function DetailsPanel({
+  c,
+  onReviewDecisionSaved,
+  onSourceAttachmentSaved,
+}: {
+  c: ProjectCandidate;
+  onReviewDecisionSaved: (candidate: ProjectCandidate) => void;
+  onSourceAttachmentSaved: (candidateId: string, attachment: ProjectCandidateSourceAttachment) => void;
+}) {
   const sourceIds: string[] = Array.isArray(c.discovered_source_ids_json)
     ? (c.discovered_source_ids_json as string[])
     : [];
@@ -1023,6 +1303,24 @@ function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onRev
                 </div>
               )}
               <ReviewDecisionEditor candidate={c} onSaved={onReviewDecisionSaved} />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div style={sectionLabel}>Source Attachments</div>
+              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 8 }}>
+                {(c.source_attachment_types || []).map(sourceType => (
+                  <span key={sourceType} style={{
+                    fontSize: 10, fontWeight: 700, color: "#67e8f9",
+                    background: "rgba(8,145,178,0.14)",
+                    border: "1px solid rgba(103,232,249,0.3)",
+                    borderRadius: 3, padding: "2px 7px",
+                    textTransform: "uppercase" as const,
+                  }}>
+                    {SOURCE_ATTACHMENT_TYPE_LABELS[sourceType] ?? actionLabel(sourceType)}
+                  </span>
+                ))}
+              </div>
+              <SourceAttachmentsSection candidate={c} onAttachmentSaved={onSourceAttachmentSaved} />
             </div>
 
             {(c.triage_tier || c.recommended_action) && (
@@ -1250,10 +1548,12 @@ function CandidateRow({
   c,
   onPromote,
   onReviewDecisionSaved,
+  onSourceAttachmentSaved,
 }: {
   c: ProjectCandidate;
   onPromote: (c: ProjectCandidate) => void;
   onReviewDecisionSaved: (c: ProjectCandidate) => void;
+  onSourceAttachmentSaved: (candidateId: string, attachment: ProjectCandidateSourceAttachment) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isPromoted = c.status === "promoted";
@@ -1395,6 +1695,12 @@ function CandidateRow({
               <div style={{ fontSize: 10, color: "#64748b" }}>claims</div>
             </>
           )}
+          {c.source_attachment_count > 0 && (
+            <>
+              <div style={{ color: "#67e8f9", fontSize: 12, fontWeight: 600, marginTop: 3 }}>{c.source_attachment_count}</div>
+              <div style={{ fontSize: 10, color: "#64748b" }}>attached</div>
+            </>
+          )}
         </td>
 
         {/* Actions — sticky right */}
@@ -1465,7 +1771,13 @@ function CandidateRow({
         </td>
       </tr>
 
-      {expanded && <DetailsPanel c={c} onReviewDecisionSaved={onReviewDecisionSaved} />}
+      {expanded && (
+        <DetailsPanel
+          c={c}
+          onReviewDecisionSaved={onReviewDecisionSaved}
+          onSourceAttachmentSaved={onSourceAttachmentSaved}
+        />
+      )}
     </>
   );
 }
@@ -1552,6 +1864,24 @@ export function ProjectCandidatesPage() {
 
   const handleReviewDecisionSaved = useCallback((updated: ProjectCandidate) => {
     setCandidates(items => items.map(item => item.id === updated.id ? updated : item));
+  }, []);
+
+  const handleSourceAttachmentSaved = useCallback((candidateId: string, attachment: ProjectCandidateSourceAttachment) => {
+    setCandidates(items => items.map(item => {
+      if (item.id !== candidateId) return item;
+      const typeSet = new Set(item.source_attachment_types || []);
+      if (attachment.source_type) typeSet.add(attachment.source_type);
+      const latest =
+        !item.latest_source_attachment_at || attachment.attached_at > item.latest_source_attachment_at
+          ? attachment.attached_at
+          : item.latest_source_attachment_at;
+      return {
+        ...item,
+        source_attachment_count: Math.max(item.source_attachment_count || 0, 0) + 1,
+        latest_source_attachment_at: latest,
+        source_attachment_types: [...typeSet].sort(),
+      };
+    }));
   }, []);
 
   const statusOptions = useMemo(() => {
@@ -1924,6 +2254,7 @@ DATABASE_URL=sqlite:///local.db python scripts/generate_project_candidates.py`}
                     c={c}
                     onPromote={setPromotingCandidate}
                     onReviewDecisionSaved={handleReviewDecisionSaved}
+                    onSourceAttachmentSaved={handleSourceAttachmentSaved}
                   />
                 ))}
               </tbody>

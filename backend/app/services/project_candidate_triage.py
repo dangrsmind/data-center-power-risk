@@ -5,11 +5,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.discovered_source import DiscoveredSourceClaim, DiscoveredSourceRecord
-from app.models.project_candidate import ProjectCandidate
+from app.models.project_candidate import ProjectCandidate, ProjectCandidateSourceAttachment
 from app.services.project_candidate_verifier import (
     NEEDS_REVIEW,
     PROJECT_SPECIFIC_CLAIMS,
@@ -27,6 +27,7 @@ RECOMMENDED_ACTIONS = {
     "needs_location",
     "needs_project_name",
     "likely_context_only",
+    "ready_for_verification",
     "defer",
 }
 
@@ -57,11 +58,13 @@ class ProjectCandidateTriageService:
         sources = self._sources(candidate.discovered_source_ids_json or [])
         claims = self._claims(candidate.discovered_source_claim_ids_json or [])
         verification = ProjectCandidateVerifier(self.db).verify(candidate)
+        source_attachment_count = self._source_attachment_count(candidate.id)
         result = evaluate_candidate_triage(
             candidate,
             sources=sources,
             claims=claims,
             verification=verification.to_dict(),
+            source_attachment_count=source_attachment_count,
         )
         if persist:
             persist_triage(candidate, result)
@@ -91,6 +94,16 @@ class ProjectCandidateTriageService:
             return []
         return list(self.db.scalars(select(DiscoveredSourceClaim).where(DiscoveredSourceClaim.id.in_(claim_ids))))
 
+    def _source_attachment_count(self, candidate_id: uuid.UUID) -> int:
+        return int(
+            self.db.scalar(
+                select(func.count(ProjectCandidateSourceAttachment.id)).where(
+                    ProjectCandidateSourceAttachment.project_candidate_id == candidate_id
+                )
+            )
+            or 0
+        )
+
 
 def valid_uuid_refs(refs: list[str]) -> list[uuid.UUID]:
     ids: list[uuid.UUID] = []
@@ -108,6 +121,7 @@ def evaluate_candidate_triage(
     sources: list[DiscoveredSourceRecord],
     claims: list[DiscoveredSourceClaim],
     verification: dict[str, Any],
+    source_attachment_count: int = 0,
 ) -> ProjectCandidateTriageResult:
     reasons: list[str] = []
     warnings: list[str] = []
@@ -123,6 +137,7 @@ def evaluate_candidate_triage(
     has_load_or_utility = bool(candidate.utility or candidate.load_mw or {"load_mw", "utility"} & claim_types)
     dataset_provenance = dataset_import_provenance(candidate.raw_metadata_json)
     generic_title_count = sum(1 for source in sources if generic_source_title(source.source_title))
+    has_source_attachment = source_attachment_count > 0
 
     if official_count:
         score += 0.18
@@ -179,6 +194,9 @@ def evaluate_candidate_triage(
             score += 0.03
             reasons.append("dataset_load_reference")
         warnings.append("dataset_import_requires_source_review")
+    if has_source_attachment:
+        score += 0.05
+        reasons.append("analyst_source_attachment_present")
     if len(claims) >= 4:
         score += 0.06
         reasons.append("multiple_supporting_claims")
@@ -216,6 +234,7 @@ def evaluate_candidate_triage(
         has_project_claim=has_project_claim,
         has_location=has_location,
         has_named_project=has_named_project,
+        has_source_attachment=has_source_attachment,
         official_count=official_count,
     )
     return ProjectCandidateTriageResult(
@@ -243,6 +262,7 @@ def recommended_action_for(
     has_project_claim: bool,
     has_location: bool,
     has_named_project: bool,
+    has_source_attachment: bool,
     official_count: int,
 ) -> str:
     if has_context_only_source:
@@ -251,6 +271,8 @@ def recommended_action_for(
         return "needs_project_name"
     if not has_location:
         return "needs_location"
+    if has_source_attachment:
+        return "ready_for_verification"
     if not has_project_claim or not official_count:
         return "needs_source_detail"
     if score >= 0.7:

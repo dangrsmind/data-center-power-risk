@@ -6,7 +6,7 @@ from app.models.event import Adjudication, Event
 from app.models.graph import GraphEdge, GraphNode
 from app.models.imported_dataset import ImportedCandidateLink, ImportedDatasetRow, ImportedDatasetRun
 from app.models.project import Phase, PhaseLoad, Project, ProjectAlias, ProjectCoordinateHistory
-from app.models.project_candidate import ProjectCandidate
+from app.models.project_candidate import ProjectCandidate, ProjectCandidateSourceAttachment
 from app.models.prediction import ProjectPrediction
 from app.models.quarterly import (
     PhaseQuarterScore,
@@ -40,6 +40,7 @@ __all__ = [
     "Project",
     "ProjectAlias",
     "ProjectCandidate",
+    "ProjectCandidateSourceAttachment",
     "ProjectCoordinateHistory",
     "ProjectEnrichmentSnapshot",
     "ProjectPrediction",

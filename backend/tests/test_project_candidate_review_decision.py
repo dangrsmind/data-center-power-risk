@@ -20,13 +20,18 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.api.routes.project_candidates import (  # noqa: E402
+    create_project_candidate_source_attachment,
     list_project_candidates,
+    list_project_candidate_source_attachments,
     update_project_candidate_review_decision,
 )
 from app.models import Base  # noqa: E402
 from app.models.project import Project  # noqa: E402
-from app.models.project_candidate import ProjectCandidate  # noqa: E402
-from app.schemas.project_candidate import ProjectCandidateReviewDecisionRequest  # noqa: E402
+from app.models.project_candidate import ProjectCandidate, ProjectCandidateSourceAttachment  # noqa: E402
+from app.schemas.project_candidate import (  # noqa: E402
+    ProjectCandidateReviewDecisionRequest,
+    ProjectCandidateSourceAttachmentRequest,
+)
 from app.services.project_candidate_generator import CandidateDraft, update_project_candidate  # noqa: E402
 from app.services.project_candidate_triage import ProjectCandidateTriageService  # noqa: E402
 
@@ -328,6 +333,166 @@ class ProjectCandidateReviewDecisionTest(unittest.TestCase):
             self.assertEqual(candidate.review_notes, "Looks like an existing row.")
             self.assertEqual(candidate.reviewed_by, "analyst")
             self.assertEqual(candidate.reviewed_at, reviewed_at)
+        finally:
+            db.close()
+
+    def test_source_attachment_model_table_exists(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self.candidate(db)
+            attachment = ProjectCandidateSourceAttachment(
+                project_candidate_id=candidate.id,
+                source_url="https://example.gov/permit-page",
+                source_title="County permit agenda",
+                source_type="permit",
+                source_excerpt="Agenda item references data center substation request.",
+                analyst_notes="Potential official source for candidate.",
+                attached_by="analyst",
+                attached_at=datetime.now(timezone.utc),
+            )
+            db.add(attachment)
+            db.commit()
+
+            self.assertEqual(db.query(ProjectCandidateSourceAttachment).count(), 1)
+        finally:
+            db.close()
+
+    def test_create_source_attachment_and_summary_do_not_mutate_candidate_state(self) -> None:
+        db = self.SessionLocal()
+        try:
+            project = Project(canonical_name="Existing Project", state="VA", lifecycle_state="candidate_unverified")
+            db.add(project)
+            db.flush()
+            candidate = self.candidate(
+                db,
+                promoted_project_id=project.id,
+                verification_status="needs_review",
+                auto_admit_eligible=True,
+            )
+            db.commit()
+
+            response = create_project_candidate_source_attachment(
+                candidate.id,
+                ProjectCandidateSourceAttachmentRequest(
+                    source_url=" https://example.gov/permit-page ",
+                    source_title=" County permit agenda ",
+                    source_type="permit",
+                    source_excerpt=" Agenda item references data center substation request. ",
+                    analyst_notes=" Potential official source for candidate. ",
+                    attached_by=" analyst ",
+                ),
+                db=db,
+            )
+            db.refresh(candidate)
+            listed = list_project_candidate_source_attachments(candidate.id, db=db)
+            candidate_response = list_project_candidates(review_decision=None, min_triage_score=None, limit=100, db=db)
+            matching = [item for item in candidate_response.items if item.id == candidate.id][0]
+
+            self.assertEqual(response.source_url, "https://example.gov/permit-page")
+            self.assertEqual(response.source_title, "County permit agenda")
+            self.assertEqual(response.source_type, "permit")
+            self.assertEqual(response.source_excerpt, "Agenda item references data center substation request.")
+            self.assertEqual(response.analyst_notes, "Potential official source for candidate.")
+            self.assertEqual(response.attached_by, "analyst")
+            self.assertIsNotNone(response.attached_at)
+            self.assertEqual(len(listed.items), 1)
+            self.assertEqual(listed.items[0].id, response.id)
+            self.assertEqual(matching.source_attachment_count, 1)
+            self.assertIsNotNone(matching.latest_source_attachment_at)
+            self.assertEqual(matching.source_attachment_types, ["permit"])
+            self.assertEqual(candidate.status, "needs_review")
+            self.assertEqual(candidate.verification_status, "needs_review")
+            self.assertTrue(candidate.auto_admit_eligible)
+            self.assertEqual(candidate.promoted_project_id, project.id)
+        finally:
+            db.close()
+
+    def test_source_attachment_candidate_not_found_returns_404(self) -> None:
+        db = self.SessionLocal()
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                create_project_candidate_source_attachment(
+                    uuid.UUID("11111111-1111-1111-1111-111111111111"),
+                    ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov/permit-page"),
+                    db=db,
+                )
+        finally:
+            db.close()
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_invalid_source_attachment_request_validation(self) -> None:
+        with self.assertRaises(ValidationError):
+            ProjectCandidateSourceAttachmentRequest(source_url="ftp://example.gov/file")
+        with self.assertRaises(ValidationError):
+            ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov", source_type="blog")
+        with self.assertRaises(ValidationError):
+            ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov", source_title="x" * 501)
+        with self.assertRaises(ValidationError):
+            ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov", source_excerpt="x" * 5001)
+        with self.assertRaises(ValidationError):
+            ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov", analyst_notes="x" * 2001)
+        with self.assertRaises(ValidationError):
+            ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov", attached_by="x" * 256)
+
+    def test_duplicate_source_attachment_url_returns_existing_record(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self.candidate(db)
+            db.commit()
+
+            first = create_project_candidate_source_attachment(
+                candidate.id,
+                ProjectCandidateSourceAttachmentRequest(
+                    source_url="https://example.gov/permit-page",
+                    source_title="First title",
+                    source_type="official",
+                ),
+                db=db,
+            )
+            duplicate = create_project_candidate_source_attachment(
+                candidate.id,
+                ProjectCandidateSourceAttachmentRequest(
+                    source_url="https://example.gov/permit-page",
+                    source_title="Second title",
+                    source_type="media",
+                ),
+                db=db,
+            )
+
+            self.assertEqual(first.id, duplicate.id)
+            self.assertEqual(duplicate.source_title, "First title")
+            self.assertEqual(duplicate.source_type, "official")
+            self.assertEqual(db.query(ProjectCandidateSourceAttachment).count(), 1)
+        finally:
+            db.close()
+
+    def test_triage_uses_source_attachment_context_without_overwriting_review_fields(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self.candidate(
+                db,
+                review_decision="needs_source",
+                review_notes="Existing analyst note.",
+                reviewed_by="analyst",
+            )
+            create_project_candidate_source_attachment(
+                candidate.id,
+                ProjectCandidateSourceAttachmentRequest(source_url="https://example.gov/permit-page", source_type="permit"),
+                db=db,
+            )
+            db.refresh(candidate)
+
+            result = ProjectCandidateTriageService(db).triage(candidate, persist=True)
+            db.commit()
+            db.refresh(candidate)
+
+            self.assertIn("analyst_source_attachment_present", result.triage_reasons)
+            self.assertEqual(result.recommended_action, "ready_for_verification")
+            self.assertEqual(candidate.review_decision, "needs_source")
+            self.assertEqual(candidate.review_notes, "Existing analyst note.")
+            self.assertEqual(candidate.reviewed_by, "analyst")
+            self.assertTrue(candidate.auto_admit_eligible)
+            self.assertIsNone(candidate.promoted_project_id)
         finally:
             db.close()
 

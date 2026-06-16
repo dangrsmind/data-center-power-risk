@@ -178,6 +178,20 @@ curl -X PATCH http://127.0.0.1:8000/project-candidates/<CANDIDATE_UUID>/review-d
   -d '{"review_decision":null,"review_notes":null,"reviewed_by":null}'
 ```
 
+Analysts can also attach public-source references to a ProjectCandidate during review. These attachments are candidate-review metadata: they store URLs, titles, excerpts, notes, source type, and reviewer context for later analyst work. They do not create final `Evidence` rows, do not create Projects, do not bypass verification, and do not change the guarded promotion flow.
+
+```bash
+curl -X POST http://127.0.0.1:8000/project-candidates/<CANDIDATE_UUID>/source-attachments \
+  -H 'Content-Type: application/json' \
+  -d '{"source_url":"https://example.gov/permit-page","source_title":"County permit agenda","source_type":"permit","source_excerpt":"Agenda item references data center substation request.","analyst_notes":"Potential official source for candidate.","attached_by":"analyst"}'
+```
+
+To review saved attachments:
+
+```bash
+curl http://127.0.0.1:8000/project-candidates/<CANDIDATE_UUID>/source-attachments
+```
+
 Raw CSVs under `data/imports/manual_csv/`, local databases, and runtime outputs should remain uncommitted. The public-source rule still applies: imported rows can become review candidates only when a source URL or source document is preserved.
 
 ## Optional: Live/Mock Discovery Smoke Workflow

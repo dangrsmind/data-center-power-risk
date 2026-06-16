@@ -37,6 +37,9 @@ import type {
   ProjectCandidatePromotionResponse,
   ProjectCandidateReviewDecision,
   ProjectCandidateReviewDecisionRequest,
+  ProjectCandidateSourceAttachment,
+  ProjectCandidateSourceAttachmentListResponse,
+  ProjectCandidateSourceAttachmentRequest,
   DiscoveredSource,
   DiscoveredSourceClaimListResponse,
   DiscoverDecisions,
@@ -584,6 +587,23 @@ export async function updateProjectCandidateReviewDecision(
   req: ProjectCandidateReviewDecisionRequest,
 ): Promise<ProjectCandidate> {
   return patchJson<ProjectCandidate>(`/project-candidates/${candidateId}/review-decision`, req);
+}
+
+export async function getProjectCandidateSourceAttachments(
+  candidateId: string,
+): Promise<ProjectCandidateSourceAttachmentListResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return { items: [] };
+  }
+  return fetchJson<ProjectCandidateSourceAttachmentListResponse>(`/project-candidates/${candidateId}/source-attachments`);
+}
+
+export async function createProjectCandidateSourceAttachment(
+  candidateId: string,
+  req: ProjectCandidateSourceAttachmentRequest,
+): Promise<ProjectCandidateSourceAttachment> {
+  return postJson<ProjectCandidateSourceAttachment>(`/project-candidates/${candidateId}/source-attachments`, req);
 }
 
 export async function getDiscoveredSourceClaims(params?: {

@@ -17,6 +17,7 @@ ProjectCandidateReviewDecision = Literal[
     "rejected_stale",
     "keep_under_review",
 ]
+ProjectCandidateSourceType = Literal["official", "utility", "permit", "media", "dataset", "other"]
 
 
 class ProjectCandidateCsvProvenance(BaseModel):
@@ -72,6 +73,9 @@ class ProjectCandidateResponse(BaseModel):
     review_notes: str | None
     reviewed_by: str | None
     reviewed_at: datetime | None
+    source_attachment_count: int = 0
+    latest_source_attachment_at: datetime | None = None
+    source_attachment_types: list[str] = []
     created_at: datetime
     updated_at: datetime
 
@@ -102,6 +106,55 @@ class ProjectCandidateReviewDecisionRequest(BaseModel):
             text = value.strip()
             return text or None
         return value
+
+
+class ProjectCandidateSourceAttachmentRequest(BaseModel):
+    source_url: HttpUrl
+    source_title: str | None = Field(default=None, max_length=500)
+    source_type: ProjectCandidateSourceType | None = None
+    source_excerpt: str | None = Field(default=None, max_length=5000)
+    analyst_notes: str | None = Field(default=None, max_length=2000)
+    attached_by: str | None = Field(default=None, max_length=255)
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def strip_source_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("source_title", "source_type", "source_excerpt", "analyst_notes", "attached_by", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return value
+
+    @field_validator("source_url")
+    @classmethod
+    def normalize_source_url(cls, value: HttpUrl) -> str:
+        return str(value).strip()
+
+
+class ProjectCandidateSourceAttachmentResponse(BaseModel):
+    id: uuid.UUID
+    project_candidate_id: uuid.UUID
+    source_url: str
+    source_title: str | None
+    source_type: str | None
+    source_excerpt: str | None
+    analyst_notes: str | None
+    attached_by: str | None
+    attached_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProjectCandidateSourceAttachmentListResponse(BaseModel):
+    items: list[ProjectCandidateSourceAttachmentResponse]
 
 
 class ProjectCandidatePromotionRequest(BaseModel):

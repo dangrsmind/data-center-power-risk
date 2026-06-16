@@ -562,6 +562,41 @@ export type ProjectCandidateReviewDecision =
   | "rejected_stale"
   | "keep_under_review";
 
+export type ProjectCandidateSourceType =
+  | "official"
+  | "utility"
+  | "permit"
+  | "media"
+  | "dataset"
+  | "other";
+
+export interface ProjectCandidateSourceAttachment {
+  id: string;
+  project_candidate_id: string;
+  source_url: string;
+  source_title: string | null;
+  source_type: ProjectCandidateSourceType | null;
+  source_excerpt: string | null;
+  analyst_notes: string | null;
+  attached_by: string | null;
+  attached_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCandidateSourceAttachmentListResponse {
+  items: ProjectCandidateSourceAttachment[];
+}
+
+export interface ProjectCandidateSourceAttachmentRequest {
+  source_url: string;
+  source_title?: string | null;
+  source_type?: ProjectCandidateSourceType | null;
+  source_excerpt?: string | null;
+  analyst_notes?: string | null;
+  attached_by?: string | null;
+}
+
 export interface ProjectCandidate {
   id: string;
   candidate_name: string;
@@ -599,6 +634,9 @@ export interface ProjectCandidate {
   review_notes: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  source_attachment_count: number;
+  latest_source_attachment_at: string | null;
+  source_attachment_types: string[];
   created_at: string;
   updated_at: string;
 }

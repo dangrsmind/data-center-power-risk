@@ -4,15 +4,19 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, func, select
+from sqlalchemy.orm import Session, object_session
 
 from app.api.deps import get_db
-from app.models.project_candidate import ProjectCandidate
+from app.models.project_candidate import ProjectCandidate, ProjectCandidateSourceAttachment
 from app.schemas.project_candidate import (
     ProjectCandidateCsvProvenance,
     ProjectCandidateListResponse,
     ProjectCandidateResponse,
     ProjectCandidateReviewDecisionRequest,
+    ProjectCandidateSourceAttachmentListResponse,
+    ProjectCandidateSourceAttachmentRequest,
+    ProjectCandidateSourceAttachmentResponse,
     ProjectCandidatePromotionRequest,
     ProjectCandidatePromotionResponse,
     ProjectCandidateVerificationResponse,
@@ -101,6 +105,64 @@ def update_project_candidate_review_decision(
     return project_candidate_response(candidate)
 
 
+@router.get(
+    "/{candidate_id}/source-attachments",
+    response_model=ProjectCandidateSourceAttachmentListResponse,
+)
+def list_project_candidate_source_attachments(
+    candidate_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> ProjectCandidateSourceAttachmentListResponse:
+    candidate = db.get(ProjectCandidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="project candidate not found")
+    attachments = db.scalars(
+        select(ProjectCandidateSourceAttachment)
+        .where(ProjectCandidateSourceAttachment.project_candidate_id == candidate_id)
+        .order_by(desc(ProjectCandidateSourceAttachment.attached_at), desc(ProjectCandidateSourceAttachment.created_at))
+    ).all()
+    return ProjectCandidateSourceAttachmentListResponse(
+        items=[ProjectCandidateSourceAttachmentResponse.model_validate(attachment) for attachment in attachments]
+    )
+
+
+@router.post(
+    "/{candidate_id}/source-attachments",
+    response_model=ProjectCandidateSourceAttachmentResponse,
+)
+def create_project_candidate_source_attachment(
+    candidate_id: uuid.UUID,
+    request: ProjectCandidateSourceAttachmentRequest,
+    db: Session = Depends(get_db),
+) -> ProjectCandidateSourceAttachmentResponse:
+    candidate = db.get(ProjectCandidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="project candidate not found")
+    source_url = str(request.source_url).strip()
+    existing = db.scalar(
+        select(ProjectCandidateSourceAttachment).where(
+            ProjectCandidateSourceAttachment.project_candidate_id == candidate_id,
+            ProjectCandidateSourceAttachment.source_url == source_url,
+        )
+    )
+    if existing is not None:
+        return ProjectCandidateSourceAttachmentResponse.model_validate(existing)
+    attachment = ProjectCandidateSourceAttachment(
+        project_candidate_id=candidate_id,
+        source_url=source_url,
+        source_title=request.source_title,
+        source_type=request.source_type,
+        source_excerpt=request.source_excerpt,
+        analyst_notes=request.analyst_notes,
+        attached_by=request.attached_by,
+        attached_at=datetime.now(timezone.utc),
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+    return ProjectCandidateSourceAttachmentResponse.model_validate(attachment)
+
+
 @router.get("/{candidate_id}/verification", response_model=ProjectCandidateVerificationResponse)
 def get_project_candidate_verification(
     candidate_id: uuid.UUID,
@@ -125,7 +187,32 @@ def project_candidate_response(candidate) -> ProjectCandidateResponse:
     payload = ProjectCandidateResponse.model_validate(candidate)
     payload.csv_provenance = csv_provenance_from_metadata(candidate.raw_metadata_json)
     payload.raw_metadata_json = None
+    apply_source_attachment_summary(candidate, payload)
     return payload
+
+
+def apply_source_attachment_summary(candidate, payload: ProjectCandidateResponse) -> None:
+    session = object_session(candidate)
+    if session is None:
+        return
+    rows = session.execute(
+        select(
+            func.count(ProjectCandidateSourceAttachment.id),
+            func.max(ProjectCandidateSourceAttachment.attached_at),
+        ).where(ProjectCandidateSourceAttachment.project_candidate_id == candidate.id)
+    ).one()
+    payload.source_attachment_count = int(rows[0] or 0)
+    payload.latest_source_attachment_at = rows[1]
+    types = session.scalars(
+        select(ProjectCandidateSourceAttachment.source_type)
+        .where(
+            ProjectCandidateSourceAttachment.project_candidate_id == candidate.id,
+            ProjectCandidateSourceAttachment.source_type.is_not(None),
+        )
+        .distinct()
+        .order_by(ProjectCandidateSourceAttachment.source_type)
+    ).all()
+    payload.source_attachment_types = [str(source_type) for source_type in types if source_type]
 
 
 def csv_provenance_from_metadata(metadata: dict | list | None) -> ProjectCandidateCsvProvenance | None:
