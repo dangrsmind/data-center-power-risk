@@ -165,6 +165,12 @@ python scripts/triage_project_candidates.py --confirm
 
 Triage treats dataset provenance as useful review context when source URLs, location, load, developer/operator, citation, or license notes exist, but it does not treat CSV provenance as official-source verification and never promotes candidates.
 
+## Analyst Review Decisions
+
+ProjectCandidates can carry analyst workflow decisions through `PATCH /project-candidates/{candidate_id}/review-decision` and the Project Candidates UI. Supported decisions include `needs_source`, `needs_location`, `likely_duplicate`, `ready_for_verification`, `rejected_dataset_only`, `rejected_not_data_center`, `rejected_stale`, and `keep_under_review`.
+
+These decisions are durable review metadata only. They do not create Projects, do not promote candidates, do not delete candidates, do not merge duplicates, and do not change verification or auto-admission rules. `ready_for_verification` means an analyst thinks the candidate is ready for the existing verifier; it does not bypass verifier requirements. Rejected decisions keep the candidate record available for audit. `likely_duplicate` is a label for analyst organization and does not perform an automatic merge.
+
 ## Project Candidate Promotion
 
 Project candidates can now be promoted through an explicit single-candidate review action with `backend/scripts/promote_project_candidate.py --candidate-id <id> --confirm`, or the guarded `POST /project-candidates/{candidate_id}/promote` endpoint with `{"confirm": true}`. Without confirmation the promotion script and API run as dry-runs and do not create final records.
@@ -188,6 +194,8 @@ Only candidates with valid public source URLs, discovered source references, ext
 Triage is separate from automated admission. It helps analysts prioritize `needs_review` candidates by favoring official/high-trust sources, project-specific claims, resolved names, location detail, utility/load evidence, multiple supporting claims, and high candidate confidence. It penalizes unresolved names, missing location, context-only sources, weak source quality, low confidence, and generic source titles.
 
 Triage never creates Projects, never auto-promotes candidates, and never marks a candidate auto-admit eligible. Auto-admit remains strict, dry-run by default, and separate from review triage.
+
+Triage can continue to update `triage_score`, `triage_tier`, and `recommended_action`, but it does not overwrite analyst `review_decision`, `review_notes`, `reviewed_by`, or `reviewed_at`.
 
 ## Optional: Live/Mock Discovery Smoke Workflow
 

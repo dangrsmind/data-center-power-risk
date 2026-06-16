@@ -26,6 +26,7 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_project_candidates_verification_status", "verification_status"),
         Index("ix_project_candidates_triage_tier", "triage_tier"),
         Index("ix_project_candidates_recommended_action", "recommended_action"),
+        Index("ix_project_candidates_review_decision", "review_decision"),
     )
 
     candidate_key: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -61,3 +62,7 @@ class ProjectCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     triage_warnings_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     recommended_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
     triaged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_decision: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

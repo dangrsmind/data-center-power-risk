@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.models.project_candidate import ProjectCandidate
 from app.schemas.project_candidate import (
     ProjectCandidateCsvProvenance,
     ProjectCandidateListResponse,
     ProjectCandidateResponse,
+    ProjectCandidateReviewDecisionRequest,
     ProjectCandidatePromotionRequest,
     ProjectCandidatePromotionResponse,
     ProjectCandidateVerificationResponse,
@@ -20,6 +23,16 @@ from app.services.project_candidate_verifier import ProjectCandidateVerifier
 
 
 router = APIRouter(prefix="/project-candidates", tags=["project-candidates"])
+ALLOWED_REVIEW_DECISIONS = {
+    "needs_source",
+    "needs_location",
+    "likely_duplicate",
+    "ready_for_verification",
+    "rejected_dataset_only",
+    "rejected_not_data_center",
+    "rejected_stale",
+    "keep_under_review",
+}
 
 
 @router.get("", response_model=ProjectCandidateListResponse, response_model_exclude_none=True)
@@ -28,15 +41,21 @@ def list_project_candidates(
     state: str | None = None,
     triage_tier: str | None = None,
     recommended_action: str | None = None,
+    review_decision: str | None = None,
+    has_review_decision: bool | None = None,
     min_triage_score: float | None = Query(default=None, ge=0, le=1),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> ProjectCandidateListResponse:
+    if review_decision and review_decision not in ALLOWED_REVIEW_DECISIONS:
+        raise HTTPException(status_code=422, detail="invalid review_decision")
     candidates = ProjectCandidateGenerator(db).list_candidates(
         status=status,
         state=state,
         triage_tier=triage_tier,
         recommended_action=recommended_action,
+        review_decision=review_decision,
+        has_review_decision=has_review_decision,
         min_triage_score=min_triage_score,
         limit=limit,
     )
@@ -63,6 +82,24 @@ def promote_project_candidate(
     return ProjectCandidatePromotionResponse(**summary.to_dict())
 
 
+@router.patch("/{candidate_id}/review-decision", response_model=ProjectCandidateResponse, response_model_exclude_none=True)
+def update_project_candidate_review_decision(
+    candidate_id: uuid.UUID,
+    request: ProjectCandidateReviewDecisionRequest,
+    db: Session = Depends(get_db),
+) -> ProjectCandidateResponse:
+    candidate = db.get(ProjectCandidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="project candidate not found")
+    candidate.review_decision = request.review_decision
+    candidate.review_notes = clean_optional_text(request.review_notes)
+    candidate.reviewed_by = clean_optional_text(request.reviewed_by)
+    candidate.reviewed_at = datetime.now(timezone.utc) if request.review_decision else None
+    db.commit()
+    db.refresh(candidate)
+    return project_candidate_response(candidate)
+
+
 @router.get("/{candidate_id}/verification", response_model=ProjectCandidateVerificationResponse)
 def get_project_candidate_verification(
     candidate_id: uuid.UUID,
@@ -74,6 +111,13 @@ def get_project_candidate_verification(
     if candidate is None:
         raise HTTPException(status_code=404, detail="project candidate not found")
     return ProjectCandidateVerificationResponse(**verifier.verify(candidate, threshold=threshold).to_dict())
+
+
+def clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
 
 
 def project_candidate_response(candidate) -> ProjectCandidateResponse:

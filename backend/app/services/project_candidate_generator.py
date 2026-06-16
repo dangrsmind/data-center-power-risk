@@ -241,6 +241,8 @@ class ProjectCandidateGenerator:
         triage_tier: str | None = None,
         recommended_action: str | None = None,
         min_triage_score: float | None = None,
+        review_decision: str | None = None,
+        has_review_decision: bool | None = None,
         limit: int = 100,
     ) -> list[ProjectCandidate]:
         query = select(ProjectCandidate).order_by(ProjectCandidate.triage_score.desc().nullslast(), ProjectCandidate.created_at.desc())
@@ -254,6 +256,12 @@ class ProjectCandidateGenerator:
             query = query.where(ProjectCandidate.recommended_action == recommended_action)
         if min_triage_score is not None:
             query = query.where(ProjectCandidate.triage_score >= min_triage_score)
+        if review_decision:
+            query = query.where(ProjectCandidate.review_decision == review_decision)
+        if has_review_decision is True:
+            query = query.where(ProjectCandidate.review_decision.is_not(None))
+        elif has_review_decision is False:
+            query = query.where(ProjectCandidate.review_decision.is_(None))
         return list(self.db.scalars(query.limit(max(1, min(limit, 500)))))
 
     def _load_claims(
