@@ -1619,6 +1619,8 @@ export function ProjectCandidatesPage() {
         const hay = [
           c.candidate_name, c.developer, c.state,
           c.county, c.city, c.utility, c.primary_source_url, c.triage_tier, c.recommended_action,
+          ...(Array.isArray(c.triage_reasons_json) ? c.triage_reasons_json : []),
+          ...(Array.isArray(c.triage_warnings_json) ? c.triage_warnings_json : []),
           c.review_decision, c.review_notes, c.reviewed_by,
           c.csv_provenance?.dataset_name, c.csv_provenance?.duplicate_status, c.csv_provenance?.source_file,
         ].join(" ").toLowerCase();
@@ -1678,7 +1680,7 @@ export function ProjectCandidatesPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const, marginBottom: 12 }}>
           {[
             { text: "Candidate records only — not final projects", amber: true },
-            { text: "Review required before promotion", amber: false },
+            { text: "Build-constraint triage, not grid-only scoring", amber: false },
             { text: "No public source, no project record", amber: false },
           ].map(({ text, amber }) => (
             <span key={text} style={{
@@ -1735,7 +1737,7 @@ export function ProjectCandidatesPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const, alignItems: "center" }}>
           <input
             type="text"
-            placeholder="Search name, developer, state, city, utility, URL…"
+            placeholder="Search name, developer, place, utility, source, risk signal..."
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
             style={{

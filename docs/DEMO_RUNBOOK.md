@@ -2,6 +2,8 @@
 
 This runbook creates a reproducible local demo from a clean SQLite database. The demo data is loaded from committed CSVs under `data/demo/`; it does not scrape live sources at demo time.
 
+The project is a data center build-constraint risk system. Grid interconnection and transmission capacity remain important, but the demo should also be read as a workflow for surfacing onsite generation, air/emissions, water/cooling, community, legal, permitting, cost, and schedule credibility risks when those signals are supported by public sources.
+
 ## Prerequisites
 
 - Python virtualenv created and activated under `backend/.venv`
@@ -116,6 +118,8 @@ WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_
 
 Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted.
 
+Discovery and triage may surface build-constraint context such as grid interconnection, transmission capacity, onsite generation, diesel generation, gas turbine generation, nuclear or SMR proposals, fuel supply, air permitting, emissions compliance, water/cooling, community opposition, zoning/land use, litigation, utility regulatory approval, cost/financing, supply chain, schedule credibility, or political/institutional resistance. These signals are review cues, not final project facts.
+
 Live discovery outputs may include duplicate `source_url` values across query patterns or repeat runs. Ingestion is expected to be duplicate-safe and idempotent by `source_url`: duplicate input URLs and already-ingested URLs are skipped unless safe metadata updates are requested with `--allow-existing`.
 
 ## Optional: Import Manual CSV Datasets
@@ -158,7 +162,14 @@ After creating CSV-backed candidates, run triage to rank the review queue:
 DATABASE_URL=sqlite:///local.db python scripts/triage_project_candidates.py --confirm
 ```
 
-Triage uses dataset provenance, source URLs, location, load, developer/operator, citation, and license notes as review-priority signals only. It does not verify, promote, or admit candidates.
+Triage uses dataset provenance, source URLs, location, load, developer/operator, citation, license notes, and conservative build-constraint signals as review-priority cues only. It does not verify, promote, or admit candidates. It also does not overwrite analyst review decisions.
+
+Important causal pathways to watch during review:
+
+- Grid constraints can push a campus toward onsite generation or hybrid grid-plus-onsite systems.
+- Onsite generation can create air permit, emissions, fuel supply, cost, and community opposition risk.
+- Community opposition can lead to litigation, zoning delay, or political/institutional resistance.
+- Nuclear or SMR proposals can reduce grid dependence while increasing regulatory, schedule, cost, and public-acceptance uncertainty.
 
 In the Project Candidates UI, expand a candidate row to set, update, or clear an analyst review decision. Notes and reviewer are optional; blank values are stored as empty metadata. Decisions such as `needs_source`, `needs_location`, `likely_duplicate`, `ready_for_verification`, and rejected/keep-under-review labels are workflow metadata only. They never create Projects, never promote, never delete candidates, and never merge duplicates. `ready_for_verification` still requires the normal verifier; it is not an override. Rejected labels leave the candidate record in place for auditability, and `likely_duplicate` marks review intent without merging records.
 

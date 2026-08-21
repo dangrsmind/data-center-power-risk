@@ -2,7 +2,9 @@
 
 ## Goal
 
-Build an automated discovery system for U.S. data center projects that are discoverable through public evidence. The system should make it easier to find, triage, and eventually ingest public-source-backed project candidates from regulatory dockets, utility filings, local planning records, economic development announcements, company/developer sources, data center news, and grid context sources.
+Build an automated data center build-constraint intelligence system for U.S. projects that are discoverable through public evidence. The system should make it easier to find, triage, and eventually ingest public-source-backed project candidates from regulatory dockets, utility filings, local planning records, economic development announcements, company/developer sources, data center news, and infrastructure context sources.
+
+The system no longer assumes grid interconnection is the only or always-primary bottleneck. Large data center campuses may outgrow the available grid on desired timelines and may respond with behind-the-meter or dedicated power strategies such as diesel generators, gas turbines, fuel cells, nuclear or small modular reactor proposals, or hybrid grid-plus-onsite systems. Those responses can create separate build risks around permits, emissions, fuel supply, cost, community resistance, and schedule credibility.
 
 ## Non-goal
 
@@ -18,7 +20,39 @@ A project can enter the dataset only when it has a source URL or source document
 
 Project evidence directly supports a project record or project claim. Examples include a developer announcement naming a campus, a county planning agenda describing a data center application, a utility filing identifying a large-load customer, or an economic development release naming a project.
 
-Context data helps interpret risk, geography, grid exposure, utility territory, or regional constraints, but does not by itself create a project record. Examples include EIA/EIA-861 utility data, HIFLD utility territories, interconnection queues, regional grid reports, or transmission context. Context sources can enrich or validate project records only after project evidence exists.
+Context data helps interpret risk, geography, grid exposure, utility territory, onsite generation pathways, water/cooling exposure, permitting context, or regional constraints, but does not by itself create a project record. Examples include EIA/EIA-861 utility data, HIFLD utility territories, interconnection queues, regional grid reports, transmission context, air permit materials, water authority records, and public meeting records. Context sources can enrich or validate project records only after project evidence exists.
+
+## Build-Constraint Risk Taxonomy
+
+Candidate triage and later analysis should recognize these risk classes without treating any one class as always-primary:
+
+- `grid_interconnection`
+- `transmission_capacity`
+- `onsite_generation`
+- `diesel_generation`
+- `gas_turbine_generation`
+- `nuclear_or_smr`
+- `fuel_supply`
+- `air_permitting`
+- `emissions_compliance`
+- `water_cooling`
+- `community_opposition`
+- `zoning_land_use`
+- `litigation`
+- `utility_regulatory_approval`
+- `cost_financing`
+- `supply_chain`
+- `schedule_credibility`
+- `political_institutional`
+
+These classes can be causally linked rather than isolated labels:
+
+- Grid constraints can push projects toward onsite generation, behind-the-meter systems, dedicated plants, or hybrid grid-plus-onsite plans.
+- Onsite generation can trigger air permit, emissions compliance, fuel supply, cost, and community opposition risk.
+- Community opposition can trigger litigation, zoning delays, political resistance, and institutional review delays.
+- Nuclear or SMR proposals may reduce dependence on near-term grid upgrades but increase regulatory, schedule, cost, and public-acceptance uncertainty.
+
+Triage can surface these signals for analyst prioritization, but it must not treat them as verified facts unless the underlying source supports the claim. Detection of a build-constraint signal does not create a Project, promote a candidate, or make a candidate auto-admit eligible.
 
 ## Confidence Categories
 
@@ -37,7 +71,7 @@ Context data helps interpret risk, geography, grid exposure, utility territory, 
 5. Project candidate extraction
 6. Evidence claim extraction
 7. Entity resolution/deduplication
-8. Coordinate/utility/ISO enrichment
+8. Coordinate/utility/ISO and build-constraint enrichment
 9. Confidence scoring
 10. Quarantine
 11. Publish dataset/report
@@ -56,6 +90,9 @@ Initial registry categories:
 - `developer_websites`
 - `data_center_news`
 - `grid_context`
+- `air_permitting_context`
+- `water_cooling_context`
+- `community_legal_context`
 
 ## First Adapter: Virginia SCC
 
@@ -98,7 +135,7 @@ WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_
 
 If `WEB_SEARCH_PROVIDER=brave` is set without `WEB_SEARCH_API_KEY`, the adapter returns `web_search_api_key_missing` and emits no discovered source records. Provider request failures are reported as structured warnings and do not crash the whole discovery run. The discovery summary reports the active provider name and result limit but never prints API keys.
 
-Relevant provider results are converted into discovered source records with URL, title, source type from the registry, inferred publisher when possible, geography, discovery method, search term/source query, snippet, adapter/source registry IDs, analyst-review confidence, and raw provider metadata. Results are deduplicated by normalized `source_url` and filtered to plausible data center, large-load, utility filing, planning, permitting, economic development, company announcement, developer page, or data center news contexts. The adapter does not fabricate project names, developers, locations, loads, titles, or snippets.
+Relevant provider results are converted into discovered source records with URL, title, source type from the registry, inferred publisher when possible, geography, discovery method, search term/source query, snippet, adapter/source registry IDs, analyst-review confidence, and raw provider metadata. Results are deduplicated by normalized `source_url` and filtered to plausible data center, large-load, utility filing, planning, permitting, air/emissions, water/cooling, onsite-generation, economic development, company announcement, developer page, or data center news contexts. The adapter does not fabricate project names, developers, locations, loads, titles, or snippets.
 
 ## Targeted Official-Source Expansion
 
@@ -191,7 +228,9 @@ Only candidates with valid public source URLs, discovered source references, ext
 
 `backend/scripts/triage_project_candidates.py` ranks ProjectCandidates for analyst review without changing verification or promotion rules. It produces a `triage_score`, `triage_tier`, reasons, warnings, and a recommended review action such as `review_for_promotion`, `needs_source_detail`, `needs_location`, `needs_project_name`, `likely_context_only`, or `defer`.
 
-Triage is separate from automated admission. It helps analysts prioritize `needs_review` candidates by favoring official/high-trust sources, project-specific claims, resolved names, location detail, utility/load evidence, multiple supporting claims, and high candidate confidence. It penalizes unresolved names, missing location, context-only sources, weak source quality, low confidence, and generic source titles.
+Triage is separate from automated admission. It helps analysts prioritize `needs_review` candidates by favoring official/high-trust sources, project-specific claims, resolved names, location detail, utility/load evidence, multiple supporting claims, high candidate confidence, and conservative build-constraint signals. It penalizes unresolved names, missing location, context-only sources, weak source quality, low confidence, and generic source titles.
+
+Current build-constraint triage signals include community opposition, litigation/legal challenges, permitting or regulatory review, onsite generation, diesel generation, gas turbine generation, nuclear or SMR references, air/emissions issues, water/cooling issues, and cost/financing pressure. These reasons are review-priority cues only. They do not overwrite analyst decisions, weaken verifier rules, or imply that the source conclusively proves a risk.
 
 Triage never creates Projects, never auto-promotes candidates, and never marks a candidate auto-admit eligible. Auto-admit remains strict, dry-run by default, and separate from review triage.
 
