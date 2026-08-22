@@ -54,6 +54,14 @@ These classes can be causally linked rather than isolated labels:
 
 Triage can surface these signals for analyst prioritization, but it must not treat them as verified facts unless the underlying source supports the claim. Detection of a build-constraint signal does not create a Project, promote a candidate, or make a candidate auto-admit eligible.
 
+## Energy Strategy Classification
+
+ProjectCandidates may carry a conservative energy strategy review signal derived from existing candidate fields, extracted claims, source snippets, triage context, or CSV import metadata. The current taxonomy is `grid_only`, `grid_plus_backup`, `grid_plus_onsite`, `dedicated_gas_generation`, `diesel_generation`, `fuel_cell`, `nuclear_or_smr`, `hybrid_power`, and `unknown`. Unknown is acceptable and should remain common when source text does not explicitly describe the power strategy.
+
+Classification is analyst-reviewable context, not proof of viability. Onsite or dedicated power does not prove that the project can be built on the desired schedule, and backup power is not the same as primary power. References to substations, transmission upgrades, utility service, or interconnection alone should not be treated as onsite generation. Diesel, gas turbine, fuel cell, nuclear/SMR, battery, renewable PPA, air permit, emissions, fuel supply, substation, and transmission tags should be read as review cues tied to source wording.
+
+Nuclear and SMR references are especially uncertain unless a source clearly states an operational power source. Proposals or evaluations should carry regulatory, cost, schedule, and public-acceptance uncertainty. Energy strategy classification does not create Projects, does not promote candidates, does not mark candidates `auto_admit_eligible`, and does not overwrite analyst review decisions.
+
 ## Confidence Categories
 
 - `confirmed_discovered`: Public source directly names or clearly identifies a data center project and at least one core project attribute such as developer, location, load, phase, or schedule.
@@ -202,6 +210,8 @@ python scripts/triage_project_candidates.py --confirm
 
 Triage treats dataset provenance as useful review context when source URLs, location, load, developer/operator, citation, or license notes exist, but it does not treat CSV provenance as official-source verification and never promotes candidates.
 
+CSV-backed candidates can also be classified for energy strategy when imported metadata contains explicit power, generator, diesel, gas turbine, fuel cell, nuclear/SMR, or hybrid-power text. Raw CSV files are not required for triage; the persisted row provenance and bounded candidate metadata are enough for review signals.
+
 ## Analyst Review Decisions
 
 ProjectCandidates can carry analyst workflow decisions through `PATCH /project-candidates/{candidate_id}/review-decision` and the Project Candidates UI. Supported decisions include `needs_source`, `needs_location`, `likely_duplicate`, `ready_for_verification`, `rejected_dataset_only`, `rejected_not_data_center`, `rejected_stale`, and `keep_under_review`.
@@ -231,6 +241,8 @@ Only candidates with valid public source URLs, discovered source references, ext
 Triage is separate from automated admission. It helps analysts prioritize `needs_review` candidates by favoring official/high-trust sources, project-specific claims, resolved names, location detail, utility/load evidence, multiple supporting claims, high candidate confidence, and conservative build-constraint signals. It penalizes unresolved names, missing location, context-only sources, weak source quality, low confidence, and generic source titles.
 
 Current build-constraint triage signals include community opposition, litigation/legal challenges, permitting or regulatory review, onsite generation, diesel generation, gas turbine generation, nuclear or SMR references, air/emissions issues, water/cooling issues, and cost/financing pressure. These reasons are review-priority cues only. They do not overwrite analyst decisions, weaken verifier rules, or imply that the source conclusively proves a risk.
+
+Energy strategy classification is part of this triage context. Triage may add reasons such as `energy_strategy_diesel`, `energy_strategy_gas_turbine`, `energy_strategy_nuclear_or_smr`, `energy_strategy_fuel_cell`, `energy_strategy_hybrid_power`, or `energy_strategy_unknown`, plus warnings such as `backup_generation_not_primary_power`, `onsite_generation_requires_permit_review`, `fuel_supply_risk_possible`, `air_emissions_review_needed`, or `nuclear_strategy_uncertain`. These reasons and warnings do not increase auto-admission eligibility.
 
 Triage never creates Projects, never auto-promotes candidates, and never marks a candidate auto-admit eligible. Auto-admit remains strict, dry-run by default, and separate from review triage.
 

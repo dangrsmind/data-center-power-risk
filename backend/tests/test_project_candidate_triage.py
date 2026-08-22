@@ -254,6 +254,179 @@ class ProjectCandidateTriageTest(unittest.TestCase):
         self.assertEqual(refreshed.review_notes, "Preserve analyst note")
         self.assertEqual(refreshed.reviewed_by, "analyst-a")
 
+    def test_energy_strategy_unknown_without_explicit_energy_signal(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate(db)
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate, persist=True)
+            db.commit()
+            refreshed = db.get(ProjectCandidate, candidate.id)
+        finally:
+            db.close()
+
+        self.assertEqual(result.energy_strategy_classification["energy_strategy"], "unknown")
+        self.assertIn("energy_strategy_unknown", result.triage_reasons)
+        self.assertEqual(refreshed.raw_metadata_json["energy_strategy_classification"]["energy_strategy"], "unknown")
+
+    def test_energy_strategy_grid_interconnection_does_not_imply_onsite_generation(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The campus requires a substation, transmission upgrades, and utility interconnection study.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        classification = result.energy_strategy_classification
+        self.assertEqual(classification["energy_strategy"], "unknown")
+        self.assertIn("substation", classification["energy_risk_tags"])
+        self.assertIn("transmission", classification["energy_risk_tags"])
+        self.assertIn("grid_or_interconnection_only_not_onsite_generation", classification["energy_strategy_warnings"])
+        self.assertNotIn("energy_strategy_onsite_generation", result.triage_reasons)
+
+    def test_energy_strategy_diesel_generator_farm_is_diesel_generation(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The filing describes a dedicated onsite diesel generator farm with an air permit for emissions.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        classification = result.energy_strategy_classification
+        self.assertEqual(classification["energy_strategy"], "diesel_generation")
+        self.assertIn("diesel", classification["energy_risk_tags"])
+        self.assertIn("air_permit", classification["energy_risk_tags"])
+        self.assertIn("emissions", classification["energy_risk_tags"])
+        self.assertIn("energy_strategy_diesel", result.triage_reasons)
+        self.assertIn("air_emissions_review_needed", result.triage_warnings)
+
+    def test_energy_strategy_backup_generators_are_grid_plus_backup(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The project lists emergency backup diesel generators for outage support.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        classification = result.energy_strategy_classification
+        self.assertEqual(classification["energy_strategy"], "grid_plus_backup")
+        self.assertIn("diesel", classification["energy_risk_tags"])
+        self.assertIn("backup_generation_not_primary_power", result.triage_warnings)
+        self.assertNotIn("energy_strategy_onsite_generation", result.triage_reasons)
+
+    def test_energy_strategy_gas_turbine_classification_depends_on_wording(self) -> None:
+        cases = [
+            (
+                "The developer proposes a dedicated power plant with natural gas generation and combustion turbines.",
+                "dedicated_gas_generation",
+            ),
+            (
+                "The campus may add onsite generation using gas turbines alongside utility service.",
+                "grid_plus_onsite",
+            ),
+        ]
+        for excerpt, expected in cases:
+            with self.subTest(expected=expected):
+                db = self.SessionLocal()
+                try:
+                    candidate = self._build_constraint_candidate(db, excerpt)
+                    db.commit()
+                    result = ProjectCandidateTriageService(db).triage(candidate)
+                finally:
+                    db.close()
+
+                classification = result.energy_strategy_classification
+                self.assertEqual(classification["energy_strategy"], expected)
+                self.assertIn("gas_turbine", classification["energy_risk_tags"])
+                self.assertIn("fuel_supply", classification["energy_risk_tags"])
+
+    def test_energy_strategy_nuclear_smr_is_uncertain(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The developer is evaluating small modular reactors as a future power option.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        classification = result.energy_strategy_classification
+        self.assertEqual(classification["energy_strategy"], "nuclear_or_smr")
+        self.assertIn("nuclear", classification["energy_risk_tags"])
+        self.assertIn("nuclear_strategy_uncertain", classification["energy_strategy_warnings"])
+        self.assertIn("nuclear_strategy_uncertain", result.triage_warnings)
+
+    def test_energy_strategy_fuel_cell_is_distinct(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The campus will use onsite fuel cells for power.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        classification = result.energy_strategy_classification
+        self.assertEqual(classification["energy_strategy"], "fuel_cell")
+        self.assertIn("fuel_cell", classification["energy_risk_tags"])
+        self.assertNotIn("gas_turbine", classification["energy_risk_tags"])
+
+    def test_energy_strategy_multiple_signals_are_hybrid(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The plan combines gas turbines, fuel cells, and battery storage for a hybrid campus power system.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        classification = result.energy_strategy_classification
+        self.assertEqual(classification["energy_strategy"], "hybrid_power")
+        self.assertIn("gas_turbine", classification["energy_risk_tags"])
+        self.assertIn("fuel_cell", classification["energy_risk_tags"])
+        self.assertIn("battery_storage", classification["energy_risk_tags"])
+        self.assertIn("energy_strategy_hybrid_power", result.triage_reasons)
+
+    def test_csv_metadata_energy_text_can_be_classified(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate(
+                db,
+                evidence_excerpt=None,
+                raw_metadata_json={
+                    "provenance": "dataset_import",
+                    "raw_row": {
+                        "Power Source": "Fuel cell array with utility interconnection",
+                        "Notes": "Imported fixture row",
+                    },
+                },
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertEqual(result.energy_strategy_classification["energy_strategy"], "fuel_cell")
+
     def test_triage_cli_dry_run_does_not_write(self) -> None:
         db = self.SessionLocal()
         try:
@@ -327,6 +500,9 @@ class ProjectCandidateTriageTest(unittest.TestCase):
         self.assertEqual(item.triage_tier, "high")
         self.assertIsNotNone(item.triage_score)
         self.assertEqual(item.recommended_action, "review_for_promotion")
+        self.assertEqual(item.energy_strategy, "unknown")
+        self.assertIsNotNone(item.energy_strategy_confidence)
+        self.assertIn("no_explicit_energy_strategy_signal", item.energy_strategy_reasons)
 
 
 if __name__ == "__main__":

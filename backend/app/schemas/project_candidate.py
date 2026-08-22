@@ -18,6 +18,18 @@ ProjectCandidateReviewDecision = Literal[
     "keep_under_review",
 ]
 
+ProjectCandidateEnergyStrategy = Literal[
+    "grid_only",
+    "grid_plus_backup",
+    "grid_plus_onsite",
+    "dedicated_gas_generation",
+    "diesel_generation",
+    "fuel_cell",
+    "nuclear_or_smr",
+    "hybrid_power",
+    "unknown",
+]
+
 
 class ProjectCandidateCsvProvenance(BaseModel):
     provenance: str | None = None
@@ -55,6 +67,10 @@ class ProjectCandidateResponse(BaseModel):
     evidence_excerpt: str | None
     raw_metadata_json: dict | list | None
     csv_provenance: ProjectCandidateCsvProvenance | None = None
+    energy_strategy: ProjectCandidateEnergyStrategy | None = None
+    energy_strategy_confidence: float | None = None
+    energy_strategy_reasons: list[str] = Field(default_factory=list)
+    energy_risk_tags: list[str] = Field(default_factory=list)
     promoted_project_id: uuid.UUID | None
     verification_status: str | None
     verification_confidence: float | None

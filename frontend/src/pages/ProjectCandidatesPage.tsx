@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import type { ProjectCandidate, ProjectCandidatePromotionResponse, ProjectCandidateReviewDecision } from "../api/types";
+import type { ProjectCandidate, ProjectCandidateEnergyStrategy, ProjectCandidatePromotionResponse, ProjectCandidateReviewDecision } from "../api/types";
 import { getProjectCandidates, promoteProjectCandidate, updateProjectCandidateReviewDecision } from "../api/adapter";
 
 // ---------------------------------------------------------------------------
@@ -99,6 +99,37 @@ function actionLabel(s: string | null | undefined): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function energyStrategyLabel(s: string | null | undefined): string {
+  if (!s) return "—";
+  const labels: Record<string, string> = {
+    grid_only: "Grid only",
+    grid_plus_backup: "Grid + backup",
+    grid_plus_onsite: "Grid + onsite",
+    dedicated_gas_generation: "Dedicated gas",
+    diesel_generation: "Diesel",
+    fuel_cell: "Fuel cell",
+    nuclear_or_smr: "Nuclear / SMR",
+    hybrid_power: "Hybrid power",
+    unknown: "Unknown power",
+  };
+  return labels[s] ?? actionLabel(s);
+}
+
+function energyStrategyColor(s: string | null | undefined): { color: string; bg: string } {
+  const map: Record<string, { color: string; bg: string }> = {
+    grid_only:                 { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    grid_plus_backup:          { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    grid_plus_onsite:          { color: "#fb7185", bg: "rgba(251,113,133,0.12)" },
+    dedicated_gas_generation:  { color: "#f97316", bg: "rgba(249,115,22,0.12)" },
+    diesel_generation:         { color: "#f97316", bg: "rgba(249,115,22,0.12)" },
+    fuel_cell:                 { color: "#2dd4bf", bg: "rgba(45,212,191,0.12)" },
+    nuclear_or_smr:            { color: "#c084fc", bg: "rgba(192,132,252,0.12)" },
+    hybrid_power:              { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    unknown:                   { color: "#94a3b8", bg: "rgba(148,163,184,0.08)" },
+  };
+  return map[s ?? ""] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.08)" };
+}
+
 const DUPE_STATUS_LABELS: Record<string, string> = {
   exact_duplicate:          "Exact duplicate",
   likely_same_project:      "Likely same project",
@@ -174,6 +205,21 @@ function DupeBadge({ status }: { status: string }) {
       whiteSpace: "nowrap" as const, display: "inline-block",
     }}>
       {label}
+    </span>
+  );
+}
+
+function EnergyStrategyBadge({ strategy }: { strategy: string | null }) {
+  if (!strategy) return null;
+  const { color, bg } = energyStrategyColor(strategy);
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3,
+      color, background: bg, border: `1px solid ${color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      {energyStrategyLabel(strategy)}
     </span>
   );
 }
@@ -892,6 +938,49 @@ function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onRev
               </div>
             </div>
 
+            {c.energy_strategy && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={sectionLabel}>Energy Strategy Signal</div>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "minmax(160px, 220px) 1fr",
+                  gap: "8px 18px", alignItems: "start",
+                  background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 6, padding: "10px 12px",
+                }}>
+                  <div>
+                    <EnergyStrategyBadge strategy={c.energy_strategy} />
+                    {c.energy_strategy_confidence !== null && c.energy_strategy_confidence !== undefined && (
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 5 }}>
+                        confidence {Math.round(c.energy_strategy_confidence * 100)}%
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    {Array.isArray(c.energy_risk_tags) && c.energy_risk_tags.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 5, marginBottom: 8 }}>
+                        {c.energy_risk_tags.map(tag => (
+                          <span key={tag} style={{
+                            fontSize: 10, color: "#cbd5e1", background: "rgba(148,163,184,0.09)",
+                            border: "1px solid rgba(148,163,184,0.18)", borderRadius: 3,
+                            padding: "2px 6px", whiteSpace: "nowrap" as const,
+                          }}>{tag.replace(/_/g, " ")}</span>
+                        ))}
+                      </div>
+                    )}
+                    {Array.isArray(c.energy_strategy_reasons) && c.energy_strategy_reasons.length > 0 && (
+                      <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                        {c.energy_strategy_reasons.map((reason, i) => (
+                          <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
+                            {reason}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {c.csv_provenance && (
               <div style={{ gridColumn: "1 / -1" }}>
                 <div style={sectionLabel}>CSV Import Provenance</div>
@@ -1291,6 +1380,11 @@ function CandidateRow({
               <DatasetBadge dataset={c.csv_provenance.dataset_name} />
             </div>
           )}
+          {c.energy_strategy && (
+            <div style={{ marginTop: 4 }}>
+              <EnergyStrategyBadge strategy={c.energy_strategy} />
+            </div>
+          )}
           {c.csv_provenance?.duplicate_status && c.csv_provenance.duplicate_status !== "distinct" && (
             <div style={{ marginTop: 3 }}>
               <DupeBadge status={c.csv_provenance.duplicate_status} />
@@ -1532,6 +1626,7 @@ export function ProjectCandidatesPage() {
   const [filterVerification, setFilterVerification] = useState("");
   const [filterReviewDecision, setFilterReviewDecision] = useState("");
   const [filterHasReviewDecision, setFilterHasReviewDecision] = useState("");
+  const [filterEnergyStrategy, setFilterEnergyStrategy] = useState("");
 
   const [promotingCandidate, setPromotingCandidate] = useState<ProjectCandidate | null>(null);
 
@@ -1599,6 +1694,22 @@ export function ProjectCandidatesPage() {
     return REVIEW_DECISIONS.filter(item => seen.has(item.value));
   }, [candidates]);
 
+  const energyStrategyOptions = useMemo(() => {
+    const order: ProjectCandidateEnergyStrategy[] = [
+      "grid_only",
+      "grid_plus_backup",
+      "grid_plus_onsite",
+      "dedicated_gas_generation",
+      "diesel_generation",
+      "fuel_cell",
+      "nuclear_or_smr",
+      "hybrid_power",
+      "unknown",
+    ];
+    const seen = new Set(candidates.flatMap(c => c.energy_strategy ? [c.energy_strategy] : []));
+    return order.filter(s => seen.has(s)).map(v => ({ value: v, label: energyStrategyLabel(v) }));
+  }, [candidates]);
+
   const filtered = useMemo(() => {
     const needle = searchText.toLowerCase();
     const confMin = filterConf ? parseFloat(filterConf) : null;
@@ -1615,12 +1726,16 @@ export function ProjectCandidatesPage() {
       if (filterReviewDecision && c.review_decision !== filterReviewDecision) return false;
       if (filterHasReviewDecision === "reviewed" && !c.review_decision) return false;
       if (filterHasReviewDecision === "unreviewed" && c.review_decision) return false;
+      if (filterEnergyStrategy && c.energy_strategy !== filterEnergyStrategy) return false;
       if (needle) {
         const hay = [
           c.candidate_name, c.developer, c.state,
           c.county, c.city, c.utility, c.primary_source_url, c.triage_tier, c.recommended_action,
           ...(Array.isArray(c.triage_reasons_json) ? c.triage_reasons_json : []),
           ...(Array.isArray(c.triage_warnings_json) ? c.triage_warnings_json : []),
+          c.energy_strategy,
+          ...(Array.isArray(c.energy_strategy_reasons) ? c.energy_strategy_reasons : []),
+          ...(Array.isArray(c.energy_risk_tags) ? c.energy_risk_tags : []),
           c.review_decision, c.review_notes, c.reviewed_by,
           c.csv_provenance?.dataset_name, c.csv_provenance?.duplicate_status, c.csv_provenance?.source_file,
         ].join(" ").toLowerCase();
@@ -1630,7 +1745,7 @@ export function ProjectCandidatesPage() {
     });
   }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
       filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification,
-      filterReviewDecision, filterHasReviewDecision]);
+      filterReviewDecision, filterHasReviewDecision, filterEnergyStrategy]);
 
   const countsByStatus = useMemo(() => {
     const m: Record<string, number> = {};
@@ -1644,11 +1759,11 @@ export function ProjectCandidatesPage() {
 
   const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf ||
     filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification ||
-    filterReviewDecision || filterHasReviewDecision);
+    filterReviewDecision || filterHasReviewDecision || filterEnergyStrategy);
   const clearFilters = () => {
     setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
     setFilterCsvOnly(false); setFilterDataset(""); setFilterDupeStatus(""); setFilterRecommendedAction(""); setFilterVerification("");
-    setFilterReviewDecision(""); setFilterHasReviewDecision("");
+    setFilterReviewDecision(""); setFilterHasReviewDecision(""); setFilterEnergyStrategy("");
   };
 
   return (
@@ -1771,6 +1886,9 @@ export function ProjectCandidatesPage() {
           )}
           {recommendedActionOptions.length > 0 && (
             <FilterSelect value={filterRecommendedAction} onChange={setFilterRecommendedAction} options={recommendedActionOptions} placeholder="All actions" />
+          )}
+          {energyStrategyOptions.length > 0 && (
+            <FilterSelect value={filterEnergyStrategy} onChange={setFilterEnergyStrategy} options={energyStrategyOptions} placeholder="All power" />
           )}
           {verificationOptions.length > 0 && (
             <FilterSelect value={filterVerification} onChange={setFilterVerification} options={verificationOptions} placeholder="All verif." />

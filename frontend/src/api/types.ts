@@ -562,6 +562,17 @@ export type ProjectCandidateReviewDecision =
   | "rejected_stale"
   | "keep_under_review";
 
+export type ProjectCandidateEnergyStrategy =
+  | "grid_only"
+  | "grid_plus_backup"
+  | "grid_plus_onsite"
+  | "dedicated_gas_generation"
+  | "diesel_generation"
+  | "fuel_cell"
+  | "nuclear_or_smr"
+  | "hybrid_power"
+  | "unknown";
+
 export interface ProjectCandidate {
   id: string;
   candidate_name: string;
@@ -582,6 +593,10 @@ export interface ProjectCandidate {
   evidence_excerpt: string | null;
   raw_metadata_json: Record<string, unknown> | unknown[] | null;
   csv_provenance: ProjectCandidateCsvProvenance | null;
+  energy_strategy: ProjectCandidateEnergyStrategy | null;
+  energy_strategy_confidence: number | null;
+  energy_strategy_reasons: string[];
+  energy_risk_tags: string[];
   promoted_project_id: string | null;
   verification_status: string | null;
   verification_confidence: number | null;
