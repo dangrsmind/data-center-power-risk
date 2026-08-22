@@ -122,6 +122,8 @@ Discovery and triage may surface build-constraint context such as grid interconn
 
 ProjectCandidates may also show an energy strategy badge such as `unknown`, `grid_plus_backup`, `grid_plus_onsite`, `diesel_generation`, `dedicated_gas_generation`, `fuel_cell`, `nuclear_or_smr`, or `hybrid_power`. This is a review signal only. Unknown is acceptable; substations, transmission, utility service, or interconnection text alone should not be read as onsite generation. Backup generators are not primary power. Nuclear or SMR proposals should be treated as uncertain because regulatory, cost, schedule, and public-acceptance risks remain unresolved unless a source says otherwise.
 
+ProjectCandidates may also show siting-friction signals for categories such as public hearing, community opposition, zoning or land use, litigation, moratorium, permit delay, air/emissions, water/cooling, cost/financing, or political opposition. These are review signals only. Public hearings do not automatically mean opposition; cost signals do not automatically prove delay; water/cooling and air/emissions risks need source support; and litigation, moratorium, or political opposition should require explicit source language. These signals do not bypass verification or guarded promotion.
+
 Live discovery outputs may include duplicate `source_url` values across query patterns or repeat runs. Ingestion is expected to be duplicate-safe and idempotent by `source_url`: duplicate input URLs and already-ingested URLs are skipped unless safe metadata updates are requested with `--allow-existing`.
 
 ## Optional: Import Manual CSV Datasets
@@ -167,6 +169,8 @@ DATABASE_URL=sqlite:///local.db python scripts/triage_project_candidates.py --co
 Triage uses dataset provenance, source URLs, location, load, developer/operator, citation, license notes, and conservative build-constraint signals as review-priority cues only. It does not verify, promote, or admit candidates. It also does not overwrite analyst review decisions.
 
 If CSV-imported candidate metadata includes explicit power/generator wording, triage can classify the energy strategy from the persisted candidate metadata without needing raw CSV files in the repo. Treat the classification as analyst-reviewable context, not as confirmation that a campus is viable or publicly verified.
+
+If CSV-imported metadata includes explicit siting-friction wording, triage can surface bounded siting categories and warnings from persisted candidate metadata. Treat them as analyst-reviewable context, not as final verification or delay proof.
 
 Important causal pathways to watch during review:
 

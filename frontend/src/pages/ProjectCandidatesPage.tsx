@@ -1,5 +1,11 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import type { ProjectCandidate, ProjectCandidateEnergyStrategy, ProjectCandidatePromotionResponse, ProjectCandidateReviewDecision } from "../api/types";
+import type {
+  ProjectCandidate,
+  ProjectCandidateEnergyStrategy,
+  ProjectCandidatePromotionResponse,
+  ProjectCandidateReviewDecision,
+  ProjectCandidateSitingFrictionCategory,
+} from "../api/types";
 import { getProjectCandidates, promoteProjectCandidate, updateProjectCandidateReviewDecision } from "../api/adapter";
 
 // ---------------------------------------------------------------------------
@@ -130,6 +136,45 @@ function energyStrategyColor(s: string | null | undefined): { color: string; bg:
   return map[s ?? ""] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.08)" };
 }
 
+function sitingFrictionLabel(s: string | null | undefined): string {
+  if (!s) return "—";
+  const labels: Record<string, string> = {
+    community_opposition: "Community opposition",
+    public_hearing: "Public hearing",
+    moratorium: "Moratorium",
+    zoning_land_use: "Zoning / land use",
+    litigation: "Litigation",
+    permit_delay: "Permit delay",
+    environmental_review: "Environmental review",
+    air_permitting: "Air permitting",
+    emissions_concern: "Emissions",
+    water_cooling: "Water / cooling",
+    noise_concern: "Noise",
+    traffic_concern: "Traffic",
+    tax_incentive_backlash: "Tax backlash",
+    political_opposition: "Political opposition",
+    utility_regulatory_approval: "Utility approval",
+    cost_financing: "Cost / financing",
+    schedule_credibility: "Schedule",
+    unknown: "No siting signal",
+  };
+  return labels[s] ?? actionLabel(s);
+}
+
+function sitingFrictionColor(categories: string[] | null | undefined): { color: string; bg: string } {
+  const has = (category: string) => Array.isArray(categories) && categories.includes(category);
+  if (!categories || categories.length === 0 || (categories.length === 1 && categories[0] === "unknown")) {
+    return { color: "#94a3b8", bg: "rgba(148,163,184,0.08)" };
+  }
+  if (has("litigation") || has("moratorium") || has("community_opposition")) {
+    return { color: "#fb7185", bg: "rgba(251,113,133,0.12)" };
+  }
+  if (has("air_permitting") || has("emissions_concern") || has("water_cooling")) {
+    return { color: "#f97316", bg: "rgba(249,115,22,0.12)" };
+  }
+  return { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" };
+}
+
 const DUPE_STATUS_LABELS: Record<string, string> = {
   exact_duplicate:          "Exact duplicate",
   likely_same_project:      "Likely same project",
@@ -220,6 +265,22 @@ function EnergyStrategyBadge({ strategy }: { strategy: string | null }) {
       whiteSpace: "nowrap" as const, display: "inline-block",
     }}>
       {energyStrategyLabel(strategy)}
+    </span>
+  );
+}
+
+function SitingFrictionBadge({ categories }: { categories: string[] | null | undefined }) {
+  if (!categories || categories.length === 0 || (categories.length === 1 && categories[0] === "unknown")) return null;
+  const { color, bg } = sitingFrictionColor(categories);
+  const count = categories.filter(c => c !== "unknown").length;
+  return (
+    <span title={categories.map(sitingFrictionLabel).join(", ")} style={{
+      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
+      letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3,
+      color, background: bg, border: `1px solid ${color}44`,
+      whiteSpace: "nowrap" as const, display: "inline-block",
+    }}>
+      Siting {count}
     </span>
   );
 }
@@ -981,6 +1042,61 @@ function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onRev
               </div>
             )}
 
+            {Array.isArray(c.siting_friction_categories) && c.siting_friction_categories.length > 0 && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={sectionLabel}>Siting Friction Signals</div>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "minmax(160px, 220px) 1fr",
+                  gap: "8px 18px", alignItems: "start",
+                  background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 6, padding: "10px 12px",
+                }}>
+                  <div>
+                    <SitingFrictionBadge categories={c.siting_friction_categories} />
+                    {(!c.siting_friction_categories.length || c.siting_friction_categories[0] === "unknown") && (
+                      <span style={{ fontSize: 11, color: "#64748b" }}>No explicit signal</span>
+                    )}
+                    {c.siting_friction_confidence !== null && c.siting_friction_confidence !== undefined && (
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 5 }}>
+                        confidence {Math.round(c.siting_friction_confidence * 100)}%
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    {c.siting_friction_categories.filter(category => category !== "unknown").length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 5, marginBottom: 8 }}>
+                        {c.siting_friction_categories.filter(category => category !== "unknown").map(category => (
+                          <span key={category} style={{
+                            fontSize: 10, color: "#cbd5e1", background: "rgba(148,163,184,0.09)",
+                            border: "1px solid rgba(148,163,184,0.18)", borderRadius: 3,
+                            padding: "2px 6px", whiteSpace: "nowrap" as const,
+                          }}>{sitingFrictionLabel(category)}</span>
+                        ))}
+                      </div>
+                    )}
+                    {Array.isArray(c.siting_friction_reasons) && c.siting_friction_reasons.length > 0 && (
+                      <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
+                        {c.siting_friction_reasons.map((reason, i) => (
+                          <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
+                            {reason}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {Array.isArray(c.siting_friction_warnings) && c.siting_friction_warnings.length > 0 && (
+                      <ul style={{ margin: "6px 0 0", padding: "0 0 0 16px" }}>
+                        {c.siting_friction_warnings.map((warning, i) => (
+                          <li key={i} style={{ fontSize: 11, color: "#fbbf24", lineHeight: 1.55 }}>
+                            {warning}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {c.csv_provenance && (
               <div style={{ gridColumn: "1 / -1" }}>
                 <div style={sectionLabel}>CSV Import Provenance</div>
@@ -1385,6 +1501,11 @@ function CandidateRow({
               <EnergyStrategyBadge strategy={c.energy_strategy} />
             </div>
           )}
+          {Array.isArray(c.siting_friction_categories) && c.siting_friction_categories.some(category => category !== "unknown") && (
+            <div style={{ marginTop: 4 }}>
+              <SitingFrictionBadge categories={c.siting_friction_categories} />
+            </div>
+          )}
           {c.csv_provenance?.duplicate_status && c.csv_provenance.duplicate_status !== "distinct" && (
             <div style={{ marginTop: 3 }}>
               <DupeBadge status={c.csv_provenance.duplicate_status} />
@@ -1627,6 +1748,7 @@ export function ProjectCandidatesPage() {
   const [filterReviewDecision, setFilterReviewDecision] = useState("");
   const [filterHasReviewDecision, setFilterHasReviewDecision] = useState("");
   const [filterEnergyStrategy, setFilterEnergyStrategy] = useState("");
+  const [filterSitingFriction, setFilterSitingFriction] = useState("");
 
   const [promotingCandidate, setPromotingCandidate] = useState<ProjectCandidate | null>(null);
 
@@ -1710,6 +1832,31 @@ export function ProjectCandidatesPage() {
     return order.filter(s => seen.has(s)).map(v => ({ value: v, label: energyStrategyLabel(v) }));
   }, [candidates]);
 
+  const sitingFrictionOptions = useMemo(() => {
+    const order: ProjectCandidateSitingFrictionCategory[] = [
+      "community_opposition",
+      "public_hearing",
+      "moratorium",
+      "zoning_land_use",
+      "litigation",
+      "permit_delay",
+      "environmental_review",
+      "air_permitting",
+      "emissions_concern",
+      "water_cooling",
+      "noise_concern",
+      "traffic_concern",
+      "tax_incentive_backlash",
+      "political_opposition",
+      "utility_regulatory_approval",
+      "cost_financing",
+      "schedule_credibility",
+      "unknown",
+    ];
+    const seen = new Set(candidates.flatMap(c => Array.isArray(c.siting_friction_categories) ? c.siting_friction_categories : []));
+    return order.filter(s => seen.has(s)).map(v => ({ value: v, label: sitingFrictionLabel(v) }));
+  }, [candidates]);
+
   const filtered = useMemo(() => {
     const needle = searchText.toLowerCase();
     const confMin = filterConf ? parseFloat(filterConf) : null;
@@ -1727,6 +1874,7 @@ export function ProjectCandidatesPage() {
       if (filterHasReviewDecision === "reviewed" && !c.review_decision) return false;
       if (filterHasReviewDecision === "unreviewed" && c.review_decision) return false;
       if (filterEnergyStrategy && c.energy_strategy !== filterEnergyStrategy) return false;
+      if (filterSitingFriction && !c.siting_friction_categories?.includes(filterSitingFriction as ProjectCandidateSitingFrictionCategory)) return false;
       if (needle) {
         const hay = [
           c.candidate_name, c.developer, c.state,
@@ -1736,6 +1884,9 @@ export function ProjectCandidatesPage() {
           c.energy_strategy,
           ...(Array.isArray(c.energy_strategy_reasons) ? c.energy_strategy_reasons : []),
           ...(Array.isArray(c.energy_risk_tags) ? c.energy_risk_tags : []),
+          ...(Array.isArray(c.siting_friction_categories) ? c.siting_friction_categories : []),
+          ...(Array.isArray(c.siting_friction_reasons) ? c.siting_friction_reasons : []),
+          ...(Array.isArray(c.siting_friction_warnings) ? c.siting_friction_warnings : []),
           c.review_decision, c.review_notes, c.reviewed_by,
           c.csv_provenance?.dataset_name, c.csv_provenance?.duplicate_status, c.csv_provenance?.source_file,
         ].join(" ").toLowerCase();
@@ -1745,7 +1896,7 @@ export function ProjectCandidatesPage() {
     });
   }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
       filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification,
-      filterReviewDecision, filterHasReviewDecision, filterEnergyStrategy]);
+      filterReviewDecision, filterHasReviewDecision, filterEnergyStrategy, filterSitingFriction]);
 
   const countsByStatus = useMemo(() => {
     const m: Record<string, number> = {};
@@ -1759,11 +1910,11 @@ export function ProjectCandidatesPage() {
 
   const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf ||
     filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification ||
-    filterReviewDecision || filterHasReviewDecision || filterEnergyStrategy);
+    filterReviewDecision || filterHasReviewDecision || filterEnergyStrategy || filterSitingFriction);
   const clearFilters = () => {
     setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
     setFilterCsvOnly(false); setFilterDataset(""); setFilterDupeStatus(""); setFilterRecommendedAction(""); setFilterVerification("");
-    setFilterReviewDecision(""); setFilterHasReviewDecision(""); setFilterEnergyStrategy("");
+    setFilterReviewDecision(""); setFilterHasReviewDecision(""); setFilterEnergyStrategy(""); setFilterSitingFriction("");
   };
 
   return (
@@ -1889,6 +2040,9 @@ export function ProjectCandidatesPage() {
           )}
           {energyStrategyOptions.length > 0 && (
             <FilterSelect value={filterEnergyStrategy} onChange={setFilterEnergyStrategy} options={energyStrategyOptions} placeholder="All power" />
+          )}
+          {sitingFrictionOptions.length > 0 && (
+            <FilterSelect value={filterSitingFriction} onChange={setFilterSitingFriction} options={sitingFrictionOptions} placeholder="All siting" />
           )}
           {verificationOptions.length > 0 && (
             <FilterSelect value={filterVerification} onChange={setFilterVerification} options={verificationOptions} placeholder="All verif." />
