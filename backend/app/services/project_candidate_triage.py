@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -28,6 +29,106 @@ RECOMMENDED_ACTIONS = {
     "needs_project_name",
     "likely_context_only",
     "defer",
+}
+
+BUILD_CONSTRAINT_SIGNAL_PATTERNS = {
+    "community_opposition": (
+        "community opposition",
+        "public opposition",
+        "residents oppose",
+        "resident opposition",
+        "neighbors oppose",
+        "neighborhood opposition",
+        "citizen opposition",
+        "public hearing opposition",
+        "petition against",
+        "moratorium",
+    ),
+    "litigation_or_legal": (
+        "lawsuit",
+        "litigation",
+        "legal challenge",
+        "court challenge",
+        "appeal filed",
+        "sued",
+    ),
+    "permitting_or_regulatory": (
+        "permit application",
+        "permit approval",
+        "permitting",
+        "regulatory approval",
+        "regulatory review",
+        "certificate of public convenience",
+        "site plan approval",
+        "special use permit",
+        "conditional use permit",
+        "rezoning application",
+    ),
+    "onsite_generation": (
+        "onsite generation",
+        "on-site generation",
+        "behind-the-meter",
+        "behind the meter",
+        "dedicated power plant",
+        "self generation",
+        "microgrid",
+        "fuel cell",
+    ),
+    "diesel_generation": (
+        "diesel generator",
+        "diesel generators",
+        "backup generator",
+        "backup generators",
+        "emergency generator",
+        "emergency generators",
+    ),
+    "gas_turbine_generation": (
+        "gas turbine",
+        "gas turbines",
+        "combustion turbine",
+        "combustion turbines",
+        "natural gas generation",
+        "gas-fired generation",
+        "gas fired generation",
+    ),
+    "nuclear_or_smr": (
+        "small modular reactor",
+        "small modular reactors",
+        "smr",
+        "nuclear power",
+        "nuclear reactor",
+        "advanced nuclear",
+    ),
+    "air_emissions": (
+        "air permit",
+        "air quality permit",
+        "air emissions",
+        "emissions permit",
+        "emissions compliance",
+        "greenhouse gas",
+        "nox emissions",
+        "particulate emissions",
+    ),
+    "water_cooling": (
+        "water use",
+        "water usage",
+        "water withdrawal",
+        "cooling water",
+        "cooling tower",
+        "cooling towers",
+        "chiller",
+        "wastewater",
+    ),
+    "cost_financing": (
+        "capital cost",
+        "project cost",
+        "financing",
+        "funding gap",
+        "cost overrun",
+        "ratepayer cost",
+        "bond financing",
+        "tax incentive",
+    ),
 }
 
 
@@ -123,6 +224,7 @@ def evaluate_candidate_triage(
     has_load_or_utility = bool(candidate.utility or candidate.load_mw or {"load_mw", "utility"} & claim_types)
     dataset_provenance = dataset_import_provenance(candidate.raw_metadata_json)
     generic_title_count = sum(1 for source in sources if generic_source_title(source.source_title))
+    build_constraint_signals = detect_build_constraint_signals(candidate, sources, claims)
 
     if official_count:
         score += 0.18
@@ -207,6 +309,10 @@ def evaluate_candidate_triage(
     if generic_title_count:
         warnings.append("generic_or_duplicate_source_title")
         score -= 0.04
+    if build_constraint_signals:
+        signal_bonus = min(0.08, 0.015 * len(build_constraint_signals))
+        score += signal_bonus
+        reasons.extend(f"build_constraint_signal_{signal}" for signal in build_constraint_signals)
 
     score = round(max(0.0, min(1.0, score)), 3)
     tier = tier_for_score(score)
@@ -269,6 +375,79 @@ def dataset_import_provenance(metadata: dict | list | None) -> dict[str, Any] | 
     if isinstance(metadata, dict) and metadata.get("provenance") == "dataset_import":
         return metadata
     return None
+
+
+def detect_build_constraint_signals(
+    candidate: ProjectCandidate,
+    sources: list[DiscoveredSourceRecord],
+    claims: list[DiscoveredSourceClaim],
+) -> list[str]:
+    text = searchable_candidate_text(candidate, sources, claims)
+    detected = [
+        signal
+        for signal, patterns in BUILD_CONSTRAINT_SIGNAL_PATTERNS.items()
+        if any(text_contains_pattern(text, pattern) for pattern in patterns)
+    ]
+    return sorted(detected)
+
+
+def text_contains_pattern(text: str, pattern: str) -> bool:
+    escaped = re.escape(pattern)
+    if pattern.replace("-", "").replace(" ", "").isalnum():
+        return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
+    return pattern in text
+
+
+def searchable_candidate_text(
+    candidate: ProjectCandidate,
+    sources: list[DiscoveredSourceRecord],
+    claims: list[DiscoveredSourceClaim],
+) -> str:
+    parts: list[str] = [
+        candidate.candidate_name,
+        candidate.developer,
+        candidate.state,
+        candidate.county,
+        candidate.city,
+        candidate.utility,
+        candidate.primary_source_url,
+        candidate.evidence_excerpt,
+    ]
+    for source in sources:
+        parts.extend(
+            [
+                source.source_url,
+                source.source_title,
+                source.source_type,
+                source.publisher,
+                source.geography,
+                source.search_term,
+                source.snippet,
+                source.document_type,
+            ]
+        )
+        parts.extend(metadata_text_parts(source.raw_metadata_json))
+    for claim in claims:
+        parts.extend([claim.claim_type, claim.claim_value, claim.evidence_excerpt])
+        parts.extend(metadata_text_parts(claim.raw_metadata_json))
+    parts.extend(metadata_text_parts(candidate.raw_metadata_json))
+    return " ".join(str(part).lower() for part in parts if part)
+
+
+def metadata_text_parts(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for item in value.values():
+            parts.extend(metadata_text_parts(item))
+        return parts
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            parts.extend(metadata_text_parts(item))
+        return parts
+    if isinstance(value, str):
+        return [value]
+    return []
 
 
 def persist_triage(candidate: ProjectCandidate, result: ProjectCandidateTriageResult) -> None:

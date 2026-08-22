@@ -75,6 +75,27 @@ class ProjectCandidateTriageTest(unittest.TestCase):
         db.flush()
         return claim
 
+    def _build_constraint_candidate(self, db, excerpt: str) -> ProjectCandidate:
+        source = self._source(
+            db,
+            source_url=f"https://www.example.gov/planning/{uuid.uuid4()}",
+            publisher="Example County .gov",
+            source_title="Planning Commission data center permit agenda",
+            snippet=excerpt,
+        )
+        claims = [
+            self._claim(db, source, "possible_project_name", "Example Data Center Campus"),
+            self._claim(db, source, "state", "Virginia"),
+            self._claim(db, source, "developer", "Example Developer"),
+            self._claim(db, source, "general_relevance", excerpt),
+        ]
+        return self._candidate(
+            db,
+            source=source,
+            claims=claims,
+            evidence_excerpt=excerpt,
+        )
+
     def _candidate(self, db, **kwargs) -> ProjectCandidate:
         source = kwargs.pop("source", None) or self._source(db, source_suffix=kwargs.get("candidate_key"))
         claims = kwargs.pop("claims", None)
@@ -177,6 +198,61 @@ class ProjectCandidateTriageTest(unittest.TestCase):
         self.assertEqual(result.triage_tier, "low")
         self.assertEqual(result.recommended_action, "likely_context_only")
         self.assertIn("context_only_source", result.triage_warnings)
+
+    def test_triage_detects_broader_build_constraint_signals(self) -> None:
+        cases = {
+            "community_opposition": "Residents oppose the proposed data center after a public hearing opposition campaign.",
+            "litigation_or_legal": "A lawsuit and legal challenge were filed over the project approval.",
+            "permitting_or_regulatory": "The site plan approval and air permit application remain under regulatory review.",
+            "onsite_generation": "The applicant describes behind-the-meter onsite generation and a dedicated power plant.",
+            "diesel_generation": "The permit lists emergency generators and diesel generators for backup power.",
+            "gas_turbine_generation": "The campus may use natural gas generation with combustion turbines.",
+            "nuclear_or_smr": "The developer is evaluating small modular reactors and advanced nuclear power.",
+            "air_emissions": "The proposal requires an air quality permit for NOx emissions.",
+            "water_cooling": "Cooling towers would increase water withdrawal for cooling water.",
+            "cost_financing": "The filing cites capital cost pressure and bond financing.",
+        }
+        for signal, excerpt in cases.items():
+            with self.subTest(signal=signal):
+                db = self.SessionLocal()
+                try:
+                    candidate = self._build_constraint_candidate(db, excerpt)
+                    db.commit()
+                    result = ProjectCandidateTriageService(db).triage(candidate)
+                finally:
+                    db.close()
+
+                self.assertIn(f"build_constraint_signal_{signal}", result.triage_reasons)
+
+    def test_triage_constraint_signals_do_not_auto_promote_or_auto_admit(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "Residents oppose onsite generation, air emissions, water use, and project financing.",
+            )
+            candidate.review_decision = "keep_under_review"
+            candidate.review_notes = "Preserve analyst note"
+            candidate.reviewed_by = "analyst-a"
+            db.commit()
+
+            ProjectCandidateTriageService(db).triage(candidate, persist=True)
+            db.commit()
+
+            refreshed = db.get(ProjectCandidate, candidate.id)
+            project_count = db.scalar(select(func.count()).select_from(Project))
+        finally:
+            db.close()
+
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(project_count, 0)
+        self.assertIsNone(refreshed.promoted_project_id)
+        self.assertNotEqual(refreshed.status, "promoted")
+        self.assertFalse(refreshed.auto_admit_eligible)
+        self.assertIsNone(refreshed.verification_status)
+        self.assertEqual(refreshed.review_decision, "keep_under_review")
+        self.assertEqual(refreshed.review_notes, "Preserve analyst note")
+        self.assertEqual(refreshed.reviewed_by, "analyst-a")
 
     def test_triage_cli_dry_run_does_not_write(self) -> None:
         db = self.SessionLocal()
