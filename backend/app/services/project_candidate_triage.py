@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.models.discovered_source import DiscoveredSourceClaim, DiscoveredSourceRecord
 from app.models.project_candidate import ProjectCandidate
+from app.services.project_candidate_energy_strategy import (
+    classify_project_candidate_energy_strategy,
+)
 from app.services.project_candidate_verifier import (
     NEEDS_REVIEW,
     PROJECT_SPECIFIC_CLAIMS,
@@ -140,6 +143,7 @@ class ProjectCandidateTriageResult:
     triage_reasons: list[str] = field(default_factory=list)
     triage_warnings: list[str] = field(default_factory=list)
     recommended_action: str = "defer"
+    energy_strategy_classification: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -225,6 +229,7 @@ def evaluate_candidate_triage(
     dataset_provenance = dataset_import_provenance(candidate.raw_metadata_json)
     generic_title_count = sum(1 for source in sources if generic_source_title(source.source_title))
     build_constraint_signals = detect_build_constraint_signals(candidate, sources, claims)
+    energy_strategy = classify_project_candidate_energy_strategy(candidate, sources=sources, claims=claims)
 
     if official_count:
         score += 0.18
@@ -313,6 +318,7 @@ def evaluate_candidate_triage(
         signal_bonus = min(0.08, 0.015 * len(build_constraint_signals))
         score += signal_bonus
         reasons.extend(f"build_constraint_signal_{signal}" for signal in build_constraint_signals)
+    apply_energy_strategy_triage(energy_strategy.to_dict(), reasons, warnings)
 
     score = round(max(0.0, min(1.0, score)), 3)
     tier = tier_for_score(score)
@@ -331,6 +337,7 @@ def evaluate_candidate_triage(
         triage_reasons=reasons,
         triage_warnings=warnings,
         recommended_action=action,
+        energy_strategy_classification=energy_strategy.to_dict(),
     )
 
 
@@ -389,6 +396,37 @@ def detect_build_constraint_signals(
         if any(text_contains_pattern(text, pattern) for pattern in patterns)
     ]
     return sorted(detected)
+
+
+def apply_energy_strategy_triage(
+    classification: dict[str, Any],
+    reasons: list[str],
+    warnings: list[str],
+) -> None:
+    strategy = classification.get("energy_strategy") or "unknown"
+    tags = set(classification.get("energy_risk_tags") or [])
+    strategy_reason_map = {
+        "grid_plus_onsite": "energy_strategy_onsite_generation",
+        "diesel_generation": "energy_strategy_diesel",
+        "dedicated_gas_generation": "energy_strategy_gas_turbine",
+        "nuclear_or_smr": "energy_strategy_nuclear_or_smr",
+        "fuel_cell": "energy_strategy_fuel_cell",
+        "hybrid_power": "energy_strategy_hybrid_power",
+        "unknown": "energy_strategy_unknown",
+    }
+    reason = strategy_reason_map.get(str(strategy))
+    if reason:
+        reasons.append(reason)
+    if strategy == "grid_plus_backup":
+        warnings.append("backup_generation_not_primary_power")
+    if strategy in {"grid_plus_onsite", "diesel_generation", "dedicated_gas_generation", "fuel_cell", "hybrid_power"}:
+        warnings.append("onsite_generation_requires_permit_review")
+    if strategy == "nuclear_or_smr":
+        warnings.append("nuclear_strategy_uncertain")
+    if "fuel_supply" in tags:
+        warnings.append("fuel_supply_risk_possible")
+    if {"air_permit", "emissions"} & tags:
+        warnings.append("air_emissions_review_needed")
 
 
 def text_contains_pattern(text: str, pattern: str) -> bool:
@@ -457,3 +495,9 @@ def persist_triage(candidate: ProjectCandidate, result: ProjectCandidateTriageRe
     candidate.triage_warnings_json = result.triage_warnings
     candidate.recommended_action = result.recommended_action
     candidate.triaged_at = datetime.now(timezone.utc)
+    if result.energy_strategy_classification:
+        metadata = candidate.raw_metadata_json if isinstance(candidate.raw_metadata_json, dict) else {}
+        candidate.raw_metadata_json = {
+            **metadata,
+            "energy_strategy_classification": result.energy_strategy_classification,
+        }

@@ -517,6 +517,7 @@ export async function getProjectCandidates(params?: {
   recommended_action?: string;
   review_decision?: ProjectCandidateReviewDecision;
   has_review_decision?: boolean;
+  energy_strategy?: ProjectCandidate["energy_strategy"];
   min_triage_score?: number;
   limit?: number;
 }): Promise<ProjectCandidateListResponse> {
@@ -531,6 +532,7 @@ export async function getProjectCandidates(params?: {
   if (params?.recommended_action) qs.set("recommended_action", params.recommended_action);
   if (params?.review_decision) qs.set("review_decision", params.review_decision);
   if (params?.has_review_decision != null) qs.set("has_review_decision", String(params.has_review_decision));
+  if (params?.energy_strategy) qs.set("energy_strategy", params.energy_strategy);
   if (params?.min_triage_score != null) qs.set("min_triage_score", String(params.min_triage_score));
   if (params?.limit != null) qs.set("limit", String(params.limit));
   const query = qs.toString() ? `?${qs.toString()}` : "";
