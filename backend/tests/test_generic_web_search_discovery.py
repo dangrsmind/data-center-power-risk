@@ -28,6 +28,7 @@ from app.services.discovery_adapters.generic_web_search import (  # noqa: E402
 from app.services.public_fetch import FetchResult  # noqa: E402
 from app.services.source_registry import load_source_registry  # noqa: E402
 from run_public_discovery import run_sources  # noqa: E402
+from run_public_discovery import build_discovery_plan_report, format_discovery_plan_report  # noqa: E402
 
 
 class StubFetchClient:
@@ -170,6 +171,56 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
             any(result["source_id"] == "loudoun_county_data_center_planning_search" for result in generic_results)
         )
         self.assertTrue(any("no adapter implemented" in warning for warning in payload["warnings"]))
+
+    def test_discovery_plan_report_groups_queries_and_warns_without_live_provider(self) -> None:
+        with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "disabled"}, clear=False):
+            report = build_discovery_plan_report(query_count_warning_threshold=100)
+
+        summary = report["summary"]
+        self.assertEqual(summary["total_planned_queries"], 117)
+        self.assertEqual(summary["web_search_provider"], "disabled")
+        self.assertEqual(summary["count_by_adapter"]["generic_web_search"], 113)
+        self.assertEqual(summary["count_by_adapter"]["virginia_scc"], 4)
+        self.assertGreaterEqual(summary["count_by_source_type"]["air_permit"], 6)
+        self.assertGreaterEqual(summary["count_by_risk_category"]["onsite_generation"], 1)
+        self.assertGreaterEqual(summary["count_by_scope"]["generic"], 1)
+        self.assertEqual(summary["duplicate_query_count"], 0)
+        self.assertTrue(any("query_count_above_threshold" in warning for warning in report["warnings"]))
+        self.assertTrue(any("web_search_provider_disabled" in warning for warning in report["warnings"]))
+        self.assertTrue(any("potentially_overbroad_query" in warning for warning in report["warnings"]))
+        self.assertTrue(
+            any(row["query"] == '"data center air permit"' and row["source_type"] == "air_permit" for row in report["details"])
+        )
+
+    def test_discovery_plan_report_text_is_readable(self) -> None:
+        report = build_discovery_plan_report(query_count_warning_threshold=100)
+
+        text = format_discovery_plan_report(report)
+
+        self.assertIn("Discovery Dry-Run Plan Report", text)
+        self.assertIn("Total planned queries: 117", text)
+        self.assertIn("Counts By Source Type", text)
+        self.assertIn("No live search", text)
+
+    def test_discovery_plan_report_cli_supports_text_output(self) -> None:
+        text_result = subprocess.run(
+            [sys.executable, "scripts/run_public_discovery.py", "--dry-run", "--report"],
+            cwd=BACKEND_DIR,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(text_result.returncode, 0, text_result.stderr)
+        self.assertIn("Discovery Dry-Run Plan Report", text_result.stdout)
+        self.assertIn("No live search", text_result.stdout)
+
+    def test_discovery_plan_report_json_shape_is_serializable(self) -> None:
+        payload = json.loads(json.dumps(build_discovery_plan_report()))
+
+        self.assertEqual(payload["summary"]["total_planned_queries"], 117)
+        self.assertEqual(payload["details"][0]["provider"], payload["summary"]["web_search_provider"])
 
     def test_targeted_official_entries_plan_queries_without_provider_calls(self) -> None:
         provider = MockWebSearchProvider({"unused": []})
