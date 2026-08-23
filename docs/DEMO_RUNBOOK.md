@@ -172,6 +172,14 @@ If CSV-imported candidate metadata includes explicit power/generator wording, tr
 
 If CSV-imported metadata includes explicit siting-friction wording, triage can surface bounded siting categories and warnings from persisted candidate metadata. Treat them as analyst-reviewable context, not as final verification or delay proof.
 
+Dashboards should use the read-only constraint summary endpoint instead of aggregating the full candidate list client-side:
+
+```bash
+curl http://127.0.0.1:8000/project-candidates/constraint-summary
+```
+
+The endpoint returns candidate review counts by status, verification, triage tier, review decision, CSV/web provenance, energy strategy, energy risk tags, siting-friction categories, and siting-friction warnings, plus a bounded top review-priority candidate list. These counts are review signals only; they do not verify projects, imply promotion, or change guarded admission rules.
+
 Important causal pathways to watch during review:
 
 - Grid constraints can push a campus toward onsite generation or hybrid grid-plus-onsite systems.

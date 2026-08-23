@@ -254,6 +254,8 @@ Energy strategy classification is part of this triage context. Triage may add re
 
 Siting-friction classification is also part of triage context. Triage may add reasons such as `siting_community_opposition`, `siting_public_hearing`, `siting_zoning_land_use`, `siting_litigation`, `siting_permit_delay`, `siting_air_emissions`, `siting_water_cooling`, `siting_cost_financing`, or `siting_political_opposition`, plus warnings such as `public_hearing_not_opposition`, `litigation_requires_source_review`, `water_risk_requires_source_review`, `air_emissions_requires_permit_review`, or `cost_signal_not_delay_proof`. These signals do not bypass verification or guarded promotion.
 
+The read-only `GET /project-candidates/constraint-summary` endpoint summarizes this candidate review state for dashboards without requiring the frontend to fetch and aggregate the full candidate list. It returns counts by status, verification status, triage tier, review decision, CSV/web provenance, energy strategy, energy risk tag, siting-friction category, and siting-friction warning, plus a bounded list of top review-priority candidates. The summary is a review workload snapshot only: energy strategy and siting-friction counts do not imply verification, viability, promotion, or final project evidence.
+
 Triage never creates Projects, never auto-promotes candidates, and never marks a candidate auto-admit eligible. Auto-admit remains strict, dry-run by default, and separate from review triage.
 
 Triage can continue to update `triage_score`, `triage_tier`, and `recommended_action`, but it does not overwrite analyst `review_decision`, `review_notes`, `reviewed_by`, or `reviewed_at`.
