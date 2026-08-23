@@ -14,6 +14,9 @@ from app.models.project_candidate import ProjectCandidate
 from app.services.project_candidate_energy_strategy import (
     classify_project_candidate_energy_strategy,
 )
+from app.services.project_candidate_siting_friction import (
+    classify_project_candidate_siting_friction,
+)
 from app.services.project_candidate_verifier import (
     NEEDS_REVIEW,
     PROJECT_SPECIFIC_CLAIMS,
@@ -144,6 +147,7 @@ class ProjectCandidateTriageResult:
     triage_warnings: list[str] = field(default_factory=list)
     recommended_action: str = "defer"
     energy_strategy_classification: dict[str, Any] = field(default_factory=dict)
+    siting_friction_classification: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -230,6 +234,7 @@ def evaluate_candidate_triage(
     generic_title_count = sum(1 for source in sources if generic_source_title(source.source_title))
     build_constraint_signals = detect_build_constraint_signals(candidate, sources, claims)
     energy_strategy = classify_project_candidate_energy_strategy(candidate, sources=sources, claims=claims)
+    siting_friction = classify_project_candidate_siting_friction(candidate, sources=sources, claims=claims)
 
     if official_count:
         score += 0.18
@@ -319,6 +324,7 @@ def evaluate_candidate_triage(
         score += signal_bonus
         reasons.extend(f"build_constraint_signal_{signal}" for signal in build_constraint_signals)
     apply_energy_strategy_triage(energy_strategy.to_dict(), reasons, warnings)
+    apply_siting_friction_triage(siting_friction.to_dict(), reasons, warnings)
 
     score = round(max(0.0, min(1.0, score)), 3)
     tier = tier_for_score(score)
@@ -338,6 +344,7 @@ def evaluate_candidate_triage(
         triage_warnings=warnings,
         recommended_action=action,
         energy_strategy_classification=energy_strategy.to_dict(),
+        siting_friction_classification=siting_friction.to_dict(),
     )
 
 
@@ -429,6 +436,40 @@ def apply_energy_strategy_triage(
         warnings.append("air_emissions_review_needed")
 
 
+def apply_siting_friction_triage(
+    classification: dict[str, Any],
+    reasons: list[str],
+    warnings: list[str],
+) -> None:
+    categories = set(classification.get("siting_friction_categories") or [])
+    category_reason_map = {
+        "community_opposition": "siting_community_opposition",
+        "public_hearing": "siting_public_hearing",
+        "zoning_land_use": "siting_zoning_land_use",
+        "litigation": "siting_litigation",
+        "permit_delay": "siting_permit_delay",
+        "environmental_review": "siting_permit_delay",
+        "air_permitting": "siting_air_emissions",
+        "emissions_concern": "siting_air_emissions",
+        "water_cooling": "siting_water_cooling",
+        "cost_financing": "siting_cost_financing",
+        "political_opposition": "siting_political_opposition",
+    }
+    for category, reason in category_reason_map.items():
+        if category in categories:
+            reasons.append(reason)
+    if "public_hearing" in categories and "community_opposition" not in categories:
+        warnings.append("public_hearing_not_opposition")
+    if "litigation" in categories:
+        warnings.append("litigation_requires_source_review")
+    if "water_cooling" in categories:
+        warnings.append("water_risk_requires_source_review")
+    if {"air_permitting", "emissions_concern"} & categories:
+        warnings.append("air_emissions_requires_permit_review")
+    if "cost_financing" in categories:
+        warnings.append("cost_signal_not_delay_proof")
+
+
 def text_contains_pattern(text: str, pattern: str) -> bool:
     escaped = re.escape(pattern)
     if pattern.replace("-", "").replace(" ", "").isalnum():
@@ -500,4 +541,10 @@ def persist_triage(candidate: ProjectCandidate, result: ProjectCandidateTriageRe
         candidate.raw_metadata_json = {
             **metadata,
             "energy_strategy_classification": result.energy_strategy_classification,
+        }
+    if result.siting_friction_classification:
+        metadata = candidate.raw_metadata_json if isinstance(candidate.raw_metadata_json, dict) else {}
+        candidate.raw_metadata_json = {
+            **metadata,
+            "siting_friction_classification": result.siting_friction_classification,
         }

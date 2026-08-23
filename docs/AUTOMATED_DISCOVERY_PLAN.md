@@ -62,6 +62,14 @@ Classification is analyst-reviewable context, not proof of viability. Onsite or 
 
 Nuclear and SMR references are especially uncertain unless a source clearly states an operational power source. Proposals or evaluations should carry regulatory, cost, schedule, and public-acceptance uncertainty. Energy strategy classification does not create Projects, does not promote candidates, does not mark candidates `auto_admit_eligible`, and does not overwrite analyst review decisions.
 
+## Siting-Friction Classification
+
+ProjectCandidates may also carry conservative siting-friction review signals. The taxonomy is `community_opposition`, `public_hearing`, `moratorium`, `zoning_land_use`, `litigation`, `permit_delay`, `environmental_review`, `air_permitting`, `emissions_concern`, `water_cooling`, `noise_concern`, `traffic_concern`, `tax_incentive_backlash`, `political_opposition`, `utility_regulatory_approval`, `cost_financing`, `schedule_credibility`, and `unknown`. Unknown is acceptable when source text does not explicitly support a category.
+
+These signals are review cues, not proof of delay or cancellation. Public hearings and public meetings do not automatically mean opposition. Cost and financing references do not automatically prove delay unless the source explicitly says the project was delayed, cancelled, paused, or revised because of cost. Water/cooling and air/emissions risks need source support: cooling alone is not water risk, and electricity demand alone is not air/emissions risk. Litigation, moratoriums, and political opposition require explicit source language such as lawsuit, legal challenge, appeal, moratorium, pause, ban, freeze, suspension, or named political opposition.
+
+Siting-friction classification does not create Projects, does not promote candidates, does not mark candidates `auto_admit_eligible`, does not bypass verification, and does not overwrite analyst review decisions.
+
 ## Confidence Categories
 
 - `confirmed_discovered`: Public source directly names or clearly identifies a data center project and at least one core project attribute such as developer, location, load, phase, or schedule.
@@ -243,6 +251,8 @@ Triage is separate from automated admission. It helps analysts prioritize `needs
 Current build-constraint triage signals include community opposition, litigation/legal challenges, permitting or regulatory review, onsite generation, diesel generation, gas turbine generation, nuclear or SMR references, air/emissions issues, water/cooling issues, and cost/financing pressure. These reasons are review-priority cues only. They do not overwrite analyst decisions, weaken verifier rules, or imply that the source conclusively proves a risk.
 
 Energy strategy classification is part of this triage context. Triage may add reasons such as `energy_strategy_diesel`, `energy_strategy_gas_turbine`, `energy_strategy_nuclear_or_smr`, `energy_strategy_fuel_cell`, `energy_strategy_hybrid_power`, or `energy_strategy_unknown`, plus warnings such as `backup_generation_not_primary_power`, `onsite_generation_requires_permit_review`, `fuel_supply_risk_possible`, `air_emissions_review_needed`, or `nuclear_strategy_uncertain`. These reasons and warnings do not increase auto-admission eligibility.
+
+Siting-friction classification is also part of triage context. Triage may add reasons such as `siting_community_opposition`, `siting_public_hearing`, `siting_zoning_land_use`, `siting_litigation`, `siting_permit_delay`, `siting_air_emissions`, `siting_water_cooling`, `siting_cost_financing`, or `siting_political_opposition`, plus warnings such as `public_hearing_not_opposition`, `litigation_requires_source_review`, `water_risk_requires_source_review`, `air_emissions_requires_permit_review`, or `cost_signal_not_delay_proof`. These signals do not bypass verification or guarded promotion.
 
 Triage never creates Projects, never auto-promotes candidates, and never marks a candidate auto-admit eligible. Auto-admit remains strict, dry-run by default, and separate from review triage.
 

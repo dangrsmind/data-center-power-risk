@@ -573,6 +573,26 @@ export type ProjectCandidateEnergyStrategy =
   | "hybrid_power"
   | "unknown";
 
+export type ProjectCandidateSitingFrictionCategory =
+  | "community_opposition"
+  | "public_hearing"
+  | "moratorium"
+  | "zoning_land_use"
+  | "litigation"
+  | "permit_delay"
+  | "environmental_review"
+  | "air_permitting"
+  | "emissions_concern"
+  | "water_cooling"
+  | "noise_concern"
+  | "traffic_concern"
+  | "tax_incentive_backlash"
+  | "political_opposition"
+  | "utility_regulatory_approval"
+  | "cost_financing"
+  | "schedule_credibility"
+  | "unknown";
+
 export interface ProjectCandidate {
   id: string;
   candidate_name: string;
@@ -597,6 +617,10 @@ export interface ProjectCandidate {
   energy_strategy_confidence: number | null;
   energy_strategy_reasons: string[];
   energy_risk_tags: string[];
+  siting_friction_categories: ProjectCandidateSitingFrictionCategory[];
+  siting_friction_confidence: number | null;
+  siting_friction_reasons: string[];
+  siting_friction_warnings: string[];
   promoted_project_id: string | null;
   verification_status: string | null;
   verification_confidence: number | null;

@@ -23,6 +23,11 @@ from app.services.project_candidate_energy_strategy import (
     classify_project_candidate_energy_strategy,
     energy_strategy_from_metadata,
 )
+from app.services.project_candidate_siting_friction import (
+    SITING_FRICTION_CATEGORIES,
+    classify_project_candidate_siting_friction,
+    siting_friction_from_metadata,
+)
 from app.services.project_candidate_promotion import ProjectCandidatePromotionService
 from app.services.project_candidate_verifier import ProjectCandidateVerifier
 
@@ -49,16 +54,20 @@ def list_project_candidates(
     review_decision: str | None = None,
     has_review_decision: bool | None = None,
     energy_strategy: str | None = None,
+    siting_friction_category: str | None = None,
     min_triage_score: float | None = Query(default=None, ge=0, le=1),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> ProjectCandidateListResponse:
     review_decision = clean_optional_text(review_decision)
     energy_strategy = clean_optional_text(energy_strategy)
+    siting_friction_category = clean_optional_text(siting_friction_category)
     if review_decision and review_decision not in ALLOWED_REVIEW_DECISIONS:
         raise HTTPException(status_code=422, detail="invalid review_decision")
     if energy_strategy and energy_strategy not in ENERGY_STRATEGIES:
         raise HTTPException(status_code=422, detail="invalid energy_strategy")
+    if siting_friction_category and siting_friction_category not in SITING_FRICTION_CATEGORIES:
+        raise HTTPException(status_code=422, detail="invalid siting_friction_category")
     candidates = ProjectCandidateGenerator(db).list_candidates(
         status=status,
         state=state,
@@ -72,6 +81,8 @@ def list_project_candidates(
     items = [project_candidate_response(candidate) for candidate in candidates]
     if energy_strategy:
         items = [item for item in items if item.energy_strategy == energy_strategy]
+    if siting_friction_category:
+        items = [item for item in items if siting_friction_category in item.siting_friction_categories]
     return ProjectCandidateListResponse(items=items)
 
 
@@ -143,6 +154,13 @@ def project_candidate_response(candidate) -> ProjectCandidateResponse:
     payload.energy_strategy_confidence = classification.energy_strategy_confidence
     payload.energy_strategy_reasons = classification.energy_strategy_reasons
     payload.energy_risk_tags = classification.energy_risk_tags
+    siting = siting_friction_from_metadata(candidate.raw_metadata_json)
+    if siting is None:
+        siting = classify_project_candidate_siting_friction(candidate)
+    payload.siting_friction_categories = siting.siting_friction_categories
+    payload.siting_friction_confidence = siting.siting_friction_confidence
+    payload.siting_friction_reasons = siting.siting_friction_reasons
+    payload.siting_friction_warnings = siting.siting_friction_warnings
     payload.raw_metadata_json = None
     return payload
 

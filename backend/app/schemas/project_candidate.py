@@ -30,6 +30,27 @@ ProjectCandidateEnergyStrategy = Literal[
     "unknown",
 ]
 
+ProjectCandidateSitingFrictionCategory = Literal[
+    "community_opposition",
+    "public_hearing",
+    "moratorium",
+    "zoning_land_use",
+    "litigation",
+    "permit_delay",
+    "environmental_review",
+    "air_permitting",
+    "emissions_concern",
+    "water_cooling",
+    "noise_concern",
+    "traffic_concern",
+    "tax_incentive_backlash",
+    "political_opposition",
+    "utility_regulatory_approval",
+    "cost_financing",
+    "schedule_credibility",
+    "unknown",
+]
+
 
 class ProjectCandidateCsvProvenance(BaseModel):
     provenance: str | None = None
@@ -71,6 +92,10 @@ class ProjectCandidateResponse(BaseModel):
     energy_strategy_confidence: float | None = None
     energy_strategy_reasons: list[str] = Field(default_factory=list)
     energy_risk_tags: list[str] = Field(default_factory=list)
+    siting_friction_categories: list[ProjectCandidateSitingFrictionCategory] = Field(default_factory=list)
+    siting_friction_confidence: float | None = None
+    siting_friction_reasons: list[str] = Field(default_factory=list)
+    siting_friction_warnings: list[str] = Field(default_factory=list)
     promoted_project_id: uuid.UUID | None
     verification_status: str | None
     verification_confidence: float | None

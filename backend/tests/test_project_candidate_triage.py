@@ -427,6 +427,226 @@ class ProjectCandidateTriageTest(unittest.TestCase):
 
         self.assertEqual(result.energy_strategy_classification["energy_strategy"], "fuel_cell")
 
+    def test_siting_friction_unknown_without_explicit_signal(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._candidate(db)
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate, persist=True)
+            db.commit()
+            refreshed = db.get(ProjectCandidate, candidate.id)
+        finally:
+            db.close()
+
+        self.assertEqual(result.siting_friction_classification["siting_friction_categories"], ["unknown"])
+        self.assertIn("no_explicit_siting_friction_signal", result.siting_friction_classification["siting_friction_reasons"])
+        self.assertEqual(
+            refreshed.raw_metadata_json["siting_friction_classification"]["siting_friction_categories"],
+            ["unknown"],
+        )
+
+    def test_siting_public_hearing_is_review_signal_not_opposition(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The county scheduled a public hearing and public meeting for the data center application.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        categories = result.siting_friction_classification["siting_friction_categories"]
+        self.assertIn("public_hearing", categories)
+        self.assertNotIn("community_opposition", categories)
+        self.assertIn("siting_public_hearing", result.triage_reasons)
+        self.assertIn("public_hearing_not_opposition", result.triage_warnings)
+
+    def test_siting_detects_community_opposition_language(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "Residents oppose the proposed data center and filed a petition against the rezoning.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        categories = result.siting_friction_classification["siting_friction_categories"]
+        self.assertIn("community_opposition", categories)
+        self.assertIn("zoning_land_use", categories)
+        self.assertIn("siting_community_opposition", result.triage_reasons)
+
+    def test_siting_detects_lawsuit_and_legal_challenge_language(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "A lawsuit and legal challenge were filed in court over the site approval.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertIn("litigation", result.siting_friction_classification["siting_friction_categories"])
+        self.assertIn("siting_litigation", result.triage_reasons)
+        self.assertIn("litigation_requires_source_review", result.triage_warnings)
+
+    def test_siting_detects_moratorium_and_pause_language(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The board adopted a moratorium and permit freeze for new data center approvals.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertIn("moratorium", result.siting_friction_classification["siting_friction_categories"])
+
+    def test_siting_detects_zoning_land_use_language(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The application requests rezoning and a special use permit for land use approval.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertIn("zoning_land_use", result.siting_friction_classification["siting_friction_categories"])
+        self.assertIn("siting_zoning_land_use", result.triage_reasons)
+
+    def test_siting_detects_permit_delay_and_regulatory_language(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The filing describes a permitting delay after regulatory review delayed approval.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertIn("permit_delay", result.siting_friction_classification["siting_friction_categories"])
+        self.assertIn("siting_permit_delay", result.triage_reasons)
+
+    def test_siting_air_emissions_requires_explicit_signal(self) -> None:
+        cases = [
+            ("The project requests 600 MW of electricity demand from the utility.", False),
+            ("The project requires an air permit for diesel generators and NOx emissions.", True),
+        ]
+        for excerpt, expected in cases:
+            with self.subTest(expected=expected):
+                db = self.SessionLocal()
+                try:
+                    candidate = self._build_constraint_candidate(db, excerpt)
+                    db.commit()
+                    result = ProjectCandidateTriageService(db).triage(candidate)
+                finally:
+                    db.close()
+
+                categories = result.siting_friction_classification["siting_friction_categories"]
+                if expected:
+                    self.assertIn("air_permitting", categories)
+                    self.assertIn("emissions_concern", categories)
+                    self.assertIn("siting_air_emissions", result.triage_reasons)
+                    self.assertIn("air_emissions_requires_permit_review", result.triage_warnings)
+                else:
+                    self.assertNotIn("air_permitting", categories)
+                    self.assertNotIn("emissions_concern", categories)
+
+    def test_siting_water_cooling_requires_water_signal(self) -> None:
+        cases = [
+            ("The project includes a cooling system for the data hall.", False),
+            ("Cooling water and water withdrawal from the river remain under review.", True),
+        ]
+        for excerpt, expected in cases:
+            with self.subTest(expected=expected):
+                db = self.SessionLocal()
+                try:
+                    candidate = self._build_constraint_candidate(db, excerpt)
+                    db.commit()
+                    result = ProjectCandidateTriageService(db).triage(candidate)
+                finally:
+                    db.close()
+
+                categories = result.siting_friction_classification["siting_friction_categories"]
+                if expected:
+                    self.assertIn("water_cooling", categories)
+                    self.assertIn("siting_water_cooling", result.triage_reasons)
+                    self.assertIn("water_risk_requires_source_review", result.triage_warnings)
+                else:
+                    self.assertNotIn("water_cooling", categories)
+
+    def test_siting_detects_cost_financing_as_review_signal(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "The filing cites capital cost pressure, a funding gap, and bond financing needs.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertIn("cost_financing", result.siting_friction_classification["siting_friction_categories"])
+        self.assertIn("siting_cost_financing", result.triage_reasons)
+        self.assertIn("cost_signal_not_delay_proof", result.triage_warnings)
+
+    def test_siting_detects_political_opposition(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "Council opposed the data center after political opposition from local officials.",
+            )
+            db.commit()
+            result = ProjectCandidateTriageService(db).triage(candidate)
+        finally:
+            db.close()
+
+        self.assertIn("political_opposition", result.siting_friction_classification["siting_friction_categories"])
+        self.assertIn("siting_political_opposition", result.triage_reasons)
+
+    def test_siting_signals_do_not_promote_auto_admit_or_overwrite_review(self) -> None:
+        db = self.SessionLocal()
+        try:
+            candidate = self._build_constraint_candidate(
+                db,
+                "Residents oppose the rezoning and filed a lawsuit after a public hearing.",
+            )
+            candidate.review_decision = "keep_under_review"
+            candidate.review_notes = "Preserve siting review note"
+            candidate.reviewed_by = "analyst-b"
+            db.commit()
+
+            ProjectCandidateTriageService(db).triage(candidate, persist=True)
+            db.commit()
+
+            refreshed = db.get(ProjectCandidate, candidate.id)
+            project_count = db.scalar(select(func.count()).select_from(Project))
+        finally:
+            db.close()
+
+        self.assertEqual(project_count, 0)
+        self.assertIsNone(refreshed.promoted_project_id)
+        self.assertNotEqual(refreshed.status, "promoted")
+        self.assertFalse(refreshed.auto_admit_eligible)
+        self.assertEqual(refreshed.review_decision, "keep_under_review")
+        self.assertEqual(refreshed.review_notes, "Preserve siting review note")
+        self.assertEqual(refreshed.reviewed_by, "analyst-b")
+
     def test_triage_cli_dry_run_does_not_write(self) -> None:
         db = self.SessionLocal()
         try:
@@ -503,6 +723,9 @@ class ProjectCandidateTriageTest(unittest.TestCase):
         self.assertEqual(item.energy_strategy, "unknown")
         self.assertIsNotNone(item.energy_strategy_confidence)
         self.assertIn("no_explicit_energy_strategy_signal", item.energy_strategy_reasons)
+        self.assertEqual(item.siting_friction_categories, ["unknown"])
+        self.assertIsNotNone(item.siting_friction_confidence)
+        self.assertIn("no_explicit_siting_friction_signal", item.siting_friction_reasons)
 
 
 if __name__ == "__main__":
