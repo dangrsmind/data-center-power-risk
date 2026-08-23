@@ -123,6 +123,51 @@ class ProjectCandidateListResponse(BaseModel):
     items: list[ProjectCandidateResponse]
 
 
+class ProjectCandidateConstraintSummaryCsvProvenance(BaseModel):
+    provenance: str | None = None
+    dataset_name: str | None = None
+    duplicate_status: str | None = None
+    imported_row_count: int = 0
+
+
+class ProjectCandidateConstraintSummaryItem(BaseModel):
+    candidate_id: uuid.UUID
+    candidate_name: str
+    state: str | None = None
+    triage_tier: str | None = None
+    triage_score: float | None = None
+    recommended_action: str | None = None
+    review_decision: str | None = None
+    verification_status: str | None = None
+    status: str
+    energy_strategy: ProjectCandidateEnergyStrategy | None = None
+    siting_friction_categories: list[ProjectCandidateSitingFrictionCategory] = Field(default_factory=list)
+    csv_provenance: ProjectCandidateConstraintSummaryCsvProvenance | None = None
+    primary_source_url: str | None = None
+
+
+class ProjectCandidateConstraintSummaryResponse(BaseModel):
+    total_candidates: int
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_verification_status: dict[str, int] = Field(default_factory=dict)
+    by_triage_tier: dict[str, int] = Field(default_factory=dict)
+    by_review_decision: dict[str, int] = Field(default_factory=dict)
+    csv_backed_count: int = 0
+    web_discovered_count: int = 0
+    with_energy_strategy_count: int = 0
+    by_energy_strategy: dict[str, int] = Field(default_factory=dict)
+    by_energy_risk_tag: dict[str, int] = Field(default_factory=dict)
+    with_siting_friction_count: int = 0
+    by_siting_friction_category: dict[str, int] = Field(default_factory=dict)
+    by_siting_friction_warning: dict[str, int] = Field(default_factory=dict)
+    high_priority_review_count: int = 0
+    needs_source_count: int = 0
+    ready_for_verification_count: int = 0
+    likely_duplicate_count: int = 0
+    dataset_only_rejected_count: int = 0
+    top_review_priority_candidates: list[ProjectCandidateConstraintSummaryItem] = Field(default_factory=list)
+
+
 class ProjectCandidateReviewDecisionRequest(BaseModel):
     review_decision: ProjectCandidateReviewDecision | None = None
     review_notes: str | None = Field(default=None, max_length=2000)
