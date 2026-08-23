@@ -50,6 +50,7 @@ import type {
   IngestClaimsCreateResponse,
   IngestClaimResponse,
   IngestClaimAcceptResponse,
+  ConstraintSummaryResponse,
 } from "./types";
 import {
   MOCK_PROJECTS,
@@ -581,6 +582,53 @@ export async function promoteProjectCandidate(
     };
   }
   return json as ProjectCandidatePromotionResponse;
+}
+
+export async function getConstraintSummary(params?: {
+  status?: string;
+  verification_status?: string;
+  triage_tier?: string;
+  review_decision?: string;
+  energy_strategy?: string;
+  siting_friction_category?: string;
+  has_csv_provenance?: boolean;
+  limit_top_candidates?: number;
+}): Promise<ConstraintSummaryResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      total_candidates: 0,
+      by_status: {},
+      by_verification_status: {},
+      by_triage_tier: {},
+      by_review_decision: {},
+      csv_backed_count: 0,
+      web_discovered_count: 0,
+      with_energy_strategy_count: 0,
+      by_energy_strategy: {},
+      by_energy_risk_tag: {},
+      with_siting_friction_count: 0,
+      by_siting_friction_category: {},
+      by_siting_friction_warning: {},
+      high_priority_review_count: 0,
+      needs_source_count: 0,
+      ready_for_verification_count: 0,
+      likely_duplicate_count: 0,
+      dataset_only_rejected_count: 0,
+      top_review_priority_candidates: [],
+    };
+  }
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.verification_status) qs.set("verification_status", params.verification_status);
+  if (params?.triage_tier) qs.set("triage_tier", params.triage_tier);
+  if (params?.review_decision) qs.set("review_decision", params.review_decision);
+  if (params?.energy_strategy) qs.set("energy_strategy", params.energy_strategy);
+  if (params?.siting_friction_category) qs.set("siting_friction_category", params.siting_friction_category);
+  if (params?.has_csv_provenance != null) qs.set("has_csv_provenance", String(params.has_csv_provenance));
+  if (params?.limit_top_candidates != null) qs.set("limit_top_candidates", String(params.limit_top_candidates));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return fetchJson<ConstraintSummaryResponse>(`/project-candidates/constraint-summary${query}`);
 }
 
 export async function updateProjectCandidateReviewDecision(

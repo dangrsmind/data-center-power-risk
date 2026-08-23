@@ -674,6 +674,55 @@ export interface ProjectCandidatePromotionResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Constraint Summary (read-only dashboard API)
+// ---------------------------------------------------------------------------
+
+export interface ConstraintSummaryCsvProvenance {
+  provenance: string | null;
+  dataset_name: string | null;
+  duplicate_status: string | null;
+  imported_row_count: number;
+}
+
+export interface ConstraintSummaryItem {
+  candidate_id: string;
+  candidate_name: string;
+  state: string | null;
+  triage_tier: string | null;
+  triage_score: number | null;
+  recommended_action: string | null;
+  review_decision: string | null;
+  verification_status: string | null;
+  status: string;
+  energy_strategy: ProjectCandidateEnergyStrategy | null;
+  siting_friction_categories: ProjectCandidateSitingFrictionCategory[];
+  csv_provenance: ConstraintSummaryCsvProvenance | null;
+  primary_source_url: string | null;
+}
+
+export interface ConstraintSummaryResponse {
+  total_candidates: number;
+  by_status: Record<string, number>;
+  by_verification_status: Record<string, number>;
+  by_triage_tier: Record<string, number>;
+  by_review_decision: Record<string, number>;
+  csv_backed_count: number;
+  web_discovered_count: number;
+  with_energy_strategy_count: number;
+  by_energy_strategy: Record<string, number>;
+  by_energy_risk_tag: Record<string, number>;
+  with_siting_friction_count: number;
+  by_siting_friction_category: Record<string, number>;
+  by_siting_friction_warning: Record<string, number>;
+  high_priority_review_count: number;
+  needs_source_count: number;
+  ready_for_verification_count: number;
+  likely_duplicate_count: number;
+  dataset_only_rejected_count: number;
+  top_review_priority_candidates: ConstraintSummaryItem[];
+}
+
+// ---------------------------------------------------------------------------
 // Discovered Source Claims
 // ---------------------------------------------------------------------------
 
