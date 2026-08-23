@@ -180,6 +180,8 @@ curl http://127.0.0.1:8000/project-candidates/constraint-summary
 
 The endpoint returns candidate review counts by status, verification, triage tier, review decision, CSV/web provenance, energy strategy, energy risk tags, siting-friction categories, and siting-friction warnings, plus a bounded top review-priority candidate list. These counts are review signals only; they do not verify projects, imply promotion, or change guarded admission rules.
 
+If the candidate table is empty, or candidate metadata is incomplete or malformed, the endpoint should still return HTTP 200 with zero counts, empty count objects, and an empty top-candidate list. The constraint dashboard treats that response as an empty review queue. A stale local `backend/local.db` may still report an Alembic revision such as `20260616_0016` that is not present in the repository; verify migrations against a fresh temp SQLite DB instead of rewriting migrations to match stale local runtime state.
+
 Important causal pathways to watch during review:
 
 - Grid constraints can push a campus toward onsite generation or hybrid grid-plus-onsite systems.

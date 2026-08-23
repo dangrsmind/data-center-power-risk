@@ -25,6 +25,7 @@ from app.schemas.project_candidate import (
 )
 from app.services.project_candidate_generator import ProjectCandidateGenerator
 from app.services.project_candidate_energy_strategy import (
+    ENERGY_RISK_TAGS,
     ENERGY_STRATEGIES,
     classify_project_candidate_energy_strategy,
     energy_strategy_from_metadata,
@@ -228,10 +229,10 @@ def constraint_summary_record(candidate: ProjectCandidate) -> dict[str, Any]:
         "csv_provenance": csv_provenance,
         "csv_backed": csv_backed_candidate(candidate, csv_provenance),
         "web_discovered": web_discovered_candidate(candidate),
-        "energy_strategy": energy.energy_strategy,
-        "energy_risk_tags": energy.energy_risk_tags,
-        "siting_categories": siting.siting_friction_categories,
-        "siting_warnings": siting.siting_friction_warnings,
+        "energy_strategy": clean_choice(energy.energy_strategy, ENERGY_STRATEGIES, default="unknown"),
+        "energy_risk_tags": clean_choice_list(energy.energy_risk_tags, ENERGY_RISK_TAGS, default=[]),
+        "siting_categories": clean_choice_list(siting.siting_friction_categories, SITING_FRICTION_CATEGORIES, default=["unknown"]),
+        "siting_warnings": clean_string_list(siting.siting_friction_warnings),
     }
 
 
@@ -362,15 +363,15 @@ def constraint_summary_item(record: dict[str, Any]) -> ProjectCandidateConstrain
         candidate_name=candidate.candidate_name,
         state=candidate.state,
         triage_tier=candidate.triage_tier,
-        triage_score=candidate.triage_score,
+        triage_score=candidate.triage_score if isinstance(candidate.triage_score, int | float) else None,
         recommended_action=candidate.recommended_action,
         review_decision=candidate.review_decision,
         verification_status=candidate.verification_status,
-        status=candidate.status,
+        status=candidate.status or "unknown",
         energy_strategy=record["energy_strategy"],
         siting_friction_categories=record["siting_categories"],
         csv_provenance=constraint_summary_csv_provenance(record["csv_provenance"]),
-        primary_source_url=candidate.primary_source_url,
+        primary_source_url=str(candidate.primary_source_url) if candidate.primary_source_url else None,
     )
 
 
@@ -380,10 +381,10 @@ def constraint_summary_csv_provenance(
     if provenance is None:
         return None
     return ProjectCandidateConstraintSummaryCsvProvenance(
-        provenance=provenance.provenance,
-        dataset_name=provenance.dataset_name,
-        duplicate_status=provenance.duplicate_status,
-        imported_row_count=provenance.imported_row_count,
+        provenance=clean_optional_summary_text(provenance.provenance),
+        dataset_name=clean_optional_summary_text(provenance.dataset_name),
+        duplicate_status=clean_optional_summary_text(provenance.duplicate_status),
+        imported_row_count=provenance.imported_row_count if isinstance(provenance.imported_row_count, int) else 0,
     )
 
 
@@ -432,7 +433,32 @@ def review_priority_sort_key(record: dict[str, Any]) -> tuple[int, float, str]:
     tier_rank = {"high": 0, "medium": 1, "low": 2}.get(candidate.triage_tier or "", 3)
     action_rank = 0 if high_priority_review_candidate(candidate) else 1
     score = candidate.triage_score if candidate.triage_score is not None else -1.0
-    return (action_rank, tier_rank, -score, candidate.candidate_name.lower())
+    safe_score = score if isinstance(score, int | float) else -1.0
+    return (action_rank, tier_rank, -safe_score, (candidate.candidate_name or "").lower())
+
+
+def clean_choice(value: object, allowed: tuple[str, ...], *, default: str) -> str:
+    return value if isinstance(value, str) and value in allowed else default
+
+
+def clean_choice_list(value: object, allowed: tuple[str, ...], *, default: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        return default
+    cleaned = [item for item in value if isinstance(item, str) and item in allowed]
+    return list(dict.fromkeys(cleaned)) or default
+
+
+def clean_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in (str(item).strip() for item in value) if item]
+
+
+def clean_optional_summary_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def csv_provenance_from_metadata(metadata: dict | list | None) -> ProjectCandidateCsvProvenance | None:
@@ -448,16 +474,16 @@ def csv_provenance_from_metadata(metadata: dict | list | None) -> ProjectCandida
     source_urls = metadata.get("source_urls") if isinstance(metadata.get("source_urls"), list) else []
     return ProjectCandidateCsvProvenance(
         provenance="dataset_import",
-        dataset_name=metadata.get("dataset_name"),
-        dataset_source=metadata.get("dataset_source"),
-        source_file=metadata.get("source_file"),
-        row_number=metadata.get("row_number"),
+        dataset_name=metadata.get("dataset_name") if isinstance(metadata.get("dataset_name"), str) else None,
+        dataset_source=metadata.get("dataset_source") if isinstance(metadata.get("dataset_source"), str) else None,
+        source_file=metadata.get("source_file") if isinstance(metadata.get("source_file"), str) else None,
+        row_number=metadata.get("row_number") if isinstance(metadata.get("row_number"), int) else None,
         imported_row_ids=imported_row_ids,
         imported_row_count=len(imported_rows) or (1 if metadata.get("row_number") else 0),
         source_urls=[str(url) for url in source_urls if url],
-        citation=metadata.get("citation"),
-        license_note=metadata.get("license_note"),
-        duplicate_status=metadata.get("duplicate_status"),
-        duplicate_cluster_key=metadata.get("duplicate_cluster_key"),
+        citation=metadata.get("citation") if isinstance(metadata.get("citation"), str) else None,
+        license_note=metadata.get("license_note") if isinstance(metadata.get("license_note"), str) else None,
+        duplicate_status=metadata.get("duplicate_status") if isinstance(metadata.get("duplicate_status"), str) else None,
+        duplicate_cluster_key=metadata.get("duplicate_cluster_key") if isinstance(metadata.get("duplicate_cluster_key"), str) else None,
         warnings=[str(warning) for warning in warnings],
     )

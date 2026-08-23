@@ -255,6 +255,126 @@ class ProjectCandidateConstraintSummaryTest(unittest.TestCase):
         self.assertEqual(refreshed.review_decision, before["review_decision"])
         self.assertEqual(refreshed.raw_metadata_json, before["raw_metadata_json"])
 
+    def test_malformed_metadata_and_null_optional_fields_do_not_break_summary(self) -> None:
+        db = self.SessionLocal()
+        try:
+            self.candidate(
+                db,
+                candidate_key="malformed",
+                candidate_name="Malformed Metadata",
+                status="candidate",
+                triage_tier=None,
+                triage_score=None,
+                recommended_action=None,
+                review_decision=None,
+                verification_status=None,
+                primary_source_url=None,
+                discovered_source_ids_json=None,
+                discovered_source_claim_ids_json=None,
+                raw_metadata_json={
+                    "provenance": "dataset_import",
+                    "dataset_name": {"not": "a string"},
+                    "duplicate_status": ["possible_duplicate"],
+                    "row_number": "7",
+                    "imported_rows": "not-a-list",
+                    "raw_row": {"large": "metadata should not appear"},
+                    "energy_strategy_classification": {
+                        "energy_strategy": "diesel_generation",
+                        "energy_strategy_confidence": "not-a-number",
+                        "energy_strategy_reasons": "not-a-list",
+                        "energy_risk_tags": "diesel",
+                        "energy_strategy_warnings": {"bad": "shape"},
+                    },
+                    "siting_friction_classification": {
+                        "siting_friction_categories": "community_opposition",
+                        "siting_friction_confidence": "not-a-number",
+                        "siting_friction_reasons": "not-a-list",
+                        "siting_friction_warnings": "air_emissions_requires_permit_review",
+                    },
+                },
+            )
+            self.candidate(
+                db,
+                candidate_key="list-metadata",
+                candidate_name="List Metadata",
+                raw_metadata_json=["unexpected", {"shape": True}],
+            )
+            db.commit()
+
+            response = get_project_candidate_constraint_summary(limit_top_candidates=100, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(response.total_candidates, 2)
+        self.assertEqual(response.csv_backed_count, 1)
+        self.assertEqual(response.by_triage_tier["untriaged"], 2)
+        self.assertEqual(response.by_review_decision["unreviewed"], 2)
+        self.assertEqual(response.by_verification_status["unverified"], 2)
+        self.assertEqual(response.by_energy_strategy["diesel_generation"], 1)
+        self.assertNotIn("d", response.by_energy_risk_tag)
+        self.assertEqual(response.by_siting_friction_category["unknown"], 2)
+        self.assertEqual(len(response.top_review_priority_candidates), 2)
+        malformed_item = next(item for item in response.top_review_priority_candidates if item.candidate_name == "Malformed Metadata")
+        self.assertIsNone(malformed_item.triage_score)
+        self.assertIsNone(malformed_item.primary_source_url)
+        payload = response.model_dump(mode="json")
+        self.assertNotIn("raw_metadata_json", str(payload))
+        self.assertNotIn("raw_row", str(payload))
+        self.assertNotIn("metadata should not appear", str(payload))
+
+    def test_filter_edge_cases_return_valid_empty_or_clamped_summary(self) -> None:
+        db = self.SessionLocal()
+        try:
+            self.candidate(
+                db,
+                candidate_key="csv-candidate",
+                candidate_name="CSV Candidate",
+                primary_source_url=None,
+                raw_metadata_json={
+                    "provenance": "dataset_import",
+                    "dataset_name": "test_dataset",
+                    "row_number": 12,
+                    "energy_strategy_classification": {
+                        "energy_strategy": "unknown",
+                        "energy_strategy_confidence": 0.2,
+                        "energy_strategy_reasons": [],
+                        "energy_risk_tags": [],
+                        "energy_strategy_warnings": [],
+                    },
+                    "siting_friction_classification": {
+                        "siting_friction_categories": ["unknown"],
+                        "siting_friction_confidence": 0.2,
+                        "siting_friction_reasons": [],
+                        "siting_friction_warnings": [],
+                    },
+                },
+            )
+            self.candidate(
+                db,
+                candidate_key="web-candidate",
+                candidate_name="Web Candidate",
+                raw_metadata_json={},
+            )
+            db.commit()
+
+            csv_only = get_project_candidate_constraint_summary(has_csv_provenance=True, db=db)
+            web_only = get_project_candidate_constraint_summary(has_csv_provenance=False, db=db)
+            no_matches = get_project_candidate_constraint_summary(status="does_not_exist", db=db)
+            clamped = get_project_candidate_constraint_summary(limit_top_candidates=1000, db=db)
+            zero_limit = get_project_candidate_constraint_summary(limit_top_candidates=-5, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(csv_only.total_candidates, 1)
+        self.assertEqual(csv_only.csv_backed_count, 1)
+        self.assertEqual(web_only.total_candidates, 1)
+        self.assertEqual(web_only.csv_backed_count, 0)
+        self.assertEqual(no_matches.total_candidates, 0)
+        self.assertEqual(no_matches.by_status, {})
+        self.assertEqual(no_matches.top_review_priority_candidates, [])
+        self.assertEqual(len(clamped.top_review_priority_candidates), 2)
+        self.assertEqual(zero_limit.top_review_priority_candidates, [])
+
 
 if __name__ == "__main__":
     unittest.main()

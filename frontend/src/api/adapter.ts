@@ -51,6 +51,7 @@ import type {
   IngestClaimResponse,
   IngestClaimAcceptResponse,
   ConstraintSummaryResponse,
+  ConstraintSummaryItem,
 } from "./types";
 import {
   MOCK_PROJECTS,
@@ -60,6 +61,28 @@ import {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
+
+const EMPTY_CONSTRAINT_SUMMARY: ConstraintSummaryResponse = {
+  total_candidates: 0,
+  by_status: {},
+  by_verification_status: {},
+  by_triage_tier: {},
+  by_review_decision: {},
+  csv_backed_count: 0,
+  web_discovered_count: 0,
+  with_energy_strategy_count: 0,
+  by_energy_strategy: {},
+  by_energy_risk_tag: {},
+  with_siting_friction_count: 0,
+  by_siting_friction_category: {},
+  by_siting_friction_warning: {},
+  high_priority_review_count: 0,
+  needs_source_count: 0,
+  ready_for_verification_count: 0,
+  likely_duplicate_count: 0,
+  dataset_only_rejected_count: 0,
+  top_review_priority_candidates: [],
+};
 
 // ---------------------------------------------------------------------------
 // Raw backend shapes (not exported — internal to the adapter only)
@@ -196,6 +219,102 @@ function deriveRiskTier(deadlineProbability: number): ProjectListItem["risk_tier
   if (deadlineProbability >= 0.66) return "high";
   if (deadlineProbability >= 0.33) return "elevated";
   return "low";
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function nullableFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function cleanCountMap(value: unknown): Record<string, number> {
+  if (!isObjectRecord(value)) return {};
+  const entries = Object.entries(value)
+    .filter((entry): entry is [string, number] => {
+      const [key, count] = entry;
+      return key.trim().length > 0 && typeof count === "number" && Number.isFinite(count);
+    })
+    .map(([key, count]) => [key, Math.max(0, count)] as const);
+  return Object.fromEntries(entries);
+}
+
+function cleanStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function normalizeConstraintSummaryItem(value: unknown): ConstraintSummaryItem | null {
+  if (!isObjectRecord(value)) return null;
+  const candidateId = nullableString(value.candidate_id);
+  const candidateName = nullableString(value.candidate_name);
+  if (!candidateId || !candidateName) return null;
+  const csvProvenance = isObjectRecord(value.csv_provenance)
+    ? {
+        provenance: nullableString(value.csv_provenance.provenance),
+        dataset_name: nullableString(value.csv_provenance.dataset_name),
+        duplicate_status: nullableString(value.csv_provenance.duplicate_status),
+        imported_row_count: finiteNumber(value.csv_provenance.imported_row_count),
+      }
+    : null;
+  return {
+    candidate_id: candidateId,
+    candidate_name: candidateName,
+    state: nullableString(value.state),
+    triage_tier: nullableString(value.triage_tier),
+    triage_score: nullableFiniteNumber(value.triage_score),
+    recommended_action: nullableString(value.recommended_action),
+    review_decision: nullableString(value.review_decision),
+    verification_status: nullableString(value.verification_status),
+    status: nullableString(value.status) ?? "unknown",
+    energy_strategy: nullableString(value.energy_strategy) as ConstraintSummaryItem["energy_strategy"],
+    siting_friction_categories: cleanStringList(value.siting_friction_categories) as ConstraintSummaryItem["siting_friction_categories"],
+    csv_provenance: csvProvenance,
+    primary_source_url: nullableString(value.primary_source_url),
+  };
+}
+
+function normalizeConstraintSummary(value: unknown): ConstraintSummaryResponse {
+  if (!isObjectRecord(value)) return { ...EMPTY_CONSTRAINT_SUMMARY, top_review_priority_candidates: [] };
+  const topCandidates = Array.isArray(value.top_review_priority_candidates)
+    ? value.top_review_priority_candidates
+        .map(normalizeConstraintSummaryItem)
+        .filter((item): item is ConstraintSummaryItem => item !== null)
+    : [];
+  return {
+    total_candidates: finiteNumber(value.total_candidates),
+    by_status: cleanCountMap(value.by_status),
+    by_verification_status: cleanCountMap(value.by_verification_status),
+    by_triage_tier: cleanCountMap(value.by_triage_tier),
+    by_review_decision: cleanCountMap(value.by_review_decision),
+    csv_backed_count: finiteNumber(value.csv_backed_count),
+    web_discovered_count: finiteNumber(value.web_discovered_count),
+    with_energy_strategy_count: finiteNumber(value.with_energy_strategy_count),
+    by_energy_strategy: cleanCountMap(value.by_energy_strategy),
+    by_energy_risk_tag: cleanCountMap(value.by_energy_risk_tag),
+    with_siting_friction_count: finiteNumber(value.with_siting_friction_count),
+    by_siting_friction_category: cleanCountMap(value.by_siting_friction_category),
+    by_siting_friction_warning: cleanCountMap(value.by_siting_friction_warning),
+    high_priority_review_count: finiteNumber(value.high_priority_review_count),
+    needs_source_count: finiteNumber(value.needs_source_count),
+    ready_for_verification_count: finiteNumber(value.ready_for_verification_count),
+    likely_duplicate_count: finiteNumber(value.likely_duplicate_count),
+    dataset_only_rejected_count: finiteNumber(value.dataset_only_rejected_count),
+    top_review_priority_candidates: topCandidates,
+  };
+}
+
+function setNonEmptyParam(qs: URLSearchParams, key: string, value: unknown): void {
+  if (typeof value === "string" && value.trim()) qs.set(key, value.trim());
 }
 
 function transformProjectListItem(raw: RawProjectListItem): ProjectListItem {
@@ -596,39 +715,25 @@ export async function getConstraintSummary(params?: {
 }): Promise<ConstraintSummaryResponse> {
   if (USE_MOCK) {
     await delay();
-    return {
-      total_candidates: 0,
-      by_status: {},
-      by_verification_status: {},
-      by_triage_tier: {},
-      by_review_decision: {},
-      csv_backed_count: 0,
-      web_discovered_count: 0,
-      with_energy_strategy_count: 0,
-      by_energy_strategy: {},
-      by_energy_risk_tag: {},
-      with_siting_friction_count: 0,
-      by_siting_friction_category: {},
-      by_siting_friction_warning: {},
-      high_priority_review_count: 0,
-      needs_source_count: 0,
-      ready_for_verification_count: 0,
-      likely_duplicate_count: 0,
-      dataset_only_rejected_count: 0,
-      top_review_priority_candidates: [],
-    };
+    return { ...EMPTY_CONSTRAINT_SUMMARY, top_review_priority_candidates: [] };
   }
   const qs = new URLSearchParams();
-  if (params?.status) qs.set("status", params.status);
-  if (params?.verification_status) qs.set("verification_status", params.verification_status);
-  if (params?.triage_tier) qs.set("triage_tier", params.triage_tier);
-  if (params?.review_decision) qs.set("review_decision", params.review_decision);
-  if (params?.energy_strategy) qs.set("energy_strategy", params.energy_strategy);
-  if (params?.siting_friction_category) qs.set("siting_friction_category", params.siting_friction_category);
-  if (params?.has_csv_provenance != null) qs.set("has_csv_provenance", String(params.has_csv_provenance));
-  if (params?.limit_top_candidates != null) qs.set("limit_top_candidates", String(params.limit_top_candidates));
+  setNonEmptyParam(qs, "status", params?.status);
+  setNonEmptyParam(qs, "verification_status", params?.verification_status);
+  setNonEmptyParam(qs, "triage_tier", params?.triage_tier);
+  setNonEmptyParam(qs, "review_decision", params?.review_decision);
+  setNonEmptyParam(qs, "energy_strategy", params?.energy_strategy);
+  setNonEmptyParam(qs, "siting_friction_category", params?.siting_friction_category);
+  if (typeof params?.has_csv_provenance === "boolean") {
+    qs.set("has_csv_provenance", params.has_csv_provenance ? "true" : "false");
+  }
+  if (typeof params?.limit_top_candidates === "number" && Number.isFinite(params.limit_top_candidates)) {
+    const limit = Math.max(0, Math.min(50, Math.trunc(params.limit_top_candidates)));
+    qs.set("limit_top_candidates", String(limit));
+  }
   const query = qs.toString() ? `?${qs.toString()}` : "";
-  return fetchJson<ConstraintSummaryResponse>(`/project-candidates/constraint-summary${query}`);
+  const raw = await fetchJson<unknown>(`/project-candidates/constraint-summary${query}`);
+  return normalizeConstraintSummary(raw);
 }
 
 export async function updateProjectCandidateReviewDecision(
