@@ -21,6 +21,16 @@ SourceType = Literal[
     "developer_websites",
     "data_center_news",
     "grid_context",
+    "utility_regulatory",
+    "air_permit",
+    "zoning_land_use",
+    "public_hearing",
+    "litigation",
+    "water_permit",
+    "community_opposition",
+    "onsite_generation",
+    "energy_strategy",
+    "cost_financing",
 ]
 Priority = Literal["high", "medium", "low"]
 

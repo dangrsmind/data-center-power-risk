@@ -85,13 +85,69 @@ class SourceRegistryTest(unittest.TestCase):
         }
         sources_by_id = {source.id: source for source in registry.sources}
 
-        self.assertEqual(len(registry.sources), 25)
+        self.assertEqual(len(registry.sources), 35)
         self.assertEqual(len(targeted_ids), 14)
         self.assertTrue(targeted_ids.issubset(sources_by_id))
         for source_id in targeted_ids:
             source = sources_by_id[source_id]
             self.assertEqual(source.discovery_method, "web_search_pattern")
             self.assertLessEqual(len(source.search_terms), 2)
+
+    def test_default_registry_covers_build_constraint_query_categories(self) -> None:
+        registry = load_source_registry()
+        terms = {
+            term.lower()
+            for source in registry.enabled_sources
+            if source.discovery_method == "web_search_pattern"
+            for term in source.search_terms
+        }
+        required_terms = {
+            '"data center interconnection"',
+            '"data center transmission upgrade"',
+            '"data center substation"',
+            '"data center onsite generation"',
+            '"data center behind the meter power"',
+            '"data center gas turbine"',
+            '"data center diesel generators"',
+            '"data center fuel cells"',
+            '"data center nuclear power"',
+            '"data center smr"',
+            '"data center air permit"',
+            '"data center emissions"',
+            '"data center nox"',
+            '"data center water use"',
+            '"data center cooling water"',
+            '"data center public hearing"',
+            '"data center zoning"',
+            '"data center land use"',
+            '"data center moratorium"',
+            '"data center lawsuit"',
+            '"data center legal challenge"',
+            '"data center community opposition"',
+            '"data center residents oppose"',
+            '"data center regulatory approval"',
+            '"data center utility commission"',
+            '"data center tax incentives"',
+            '"data center financing"',
+            '"data center delayed"',
+        }
+        source_types = {source.source_type for source in registry.sources}
+
+        self.assertTrue(required_terms.issubset(terms))
+        self.assertTrue(
+            {
+                "utility_regulatory",
+                "air_permit",
+                "zoning_land_use",
+                "public_hearing",
+                "litigation",
+                "water_permit",
+                "community_opposition",
+                "onsite_generation",
+                "energy_strategy",
+                "cost_financing",
+            }.issubset(source_types)
+        )
 
 
 if __name__ == "__main__":

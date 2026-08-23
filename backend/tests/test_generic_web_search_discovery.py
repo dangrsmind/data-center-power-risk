@@ -157,11 +157,14 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         generic_results = [
             result for result in payload["adapter_results"] if result["adapter_id"] == GENERIC_WEB_SEARCH_ADAPTER_ID
         ]
-        self.assertEqual(len(generic_results), 21)
-        self.assertEqual(payload["sources_checked"], 25)
+        self.assertEqual(len(generic_results), 31)
+        self.assertEqual(payload["sources_checked"], 35)
         self.assertEqual(payload["sources_discovered"], 0)
-        self.assertEqual(payload["planned_search_query_count"], 60)
-        self.assertEqual(payload["planned_generic_web_search_query_count"], 56)
+        self.assertEqual(payload["project_candidates_created"], 0)
+        self.assertEqual(payload["planned_search_query_count"], 117)
+        self.assertEqual(payload["planned_generic_web_search_query_count"], 113)
+        self.assertTrue(payload["dry_run"])
+        self.assertEqual(payload["web_search_provider"], "disabled")
         self.assertTrue(any(result["planned_queries"] for result in generic_results))
         self.assertTrue(
             any(result["source_id"] == "loudoun_county_data_center_planning_search" for result in generic_results)

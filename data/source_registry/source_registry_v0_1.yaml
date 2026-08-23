@@ -364,6 +364,202 @@ sources:
       Targeted official-domain search for Oregon PUC and Washington UTC utility
       materials that may identify data center load, service, or planning issues.
 
+  - id: generic_grid_transmission_constraint_search
+    name: Generic grid and transmission constraint search
+    source_type: utility_regulatory
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - '"data center interconnection"'
+      - '"data center transmission upgrade"'
+      - '"data center substation"'
+      - '"data center load request"'
+      - '"utility data center load"'
+    notes: >
+      Pattern entry for public materials about grid, transmission, substation,
+      interconnection, or large-load service constraints. Results are discovery
+      inputs only until project-specific public facts are reviewed.
+
+  - id: generic_onsite_generation_data_center_search
+    name: Generic onsite generation data center search
+    source_type: onsite_generation
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - '"data center onsite generation"'
+      - '"data center behind the meter power"'
+      - '"data center dedicated power plant"'
+      - '"data center gas turbine"'
+      - '"data center diesel generators"'
+      - '"data center backup generators"'
+      - '"data center fuel cells"'
+      - '"data center nuclear power"'
+      - '"data center SMR"'
+    notes: >
+      Pattern entry for public materials about onsite, behind-the-meter, backup,
+      dedicated, gas, diesel, fuel-cell, nuclear, or SMR power strategies. These
+      signals do not verify viability or allow promotion by themselves.
+
+  - id: generic_energy_strategy_data_center_search
+    name: Generic energy strategy data center search
+    source_type: energy_strategy
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center power strategy"'
+      - '"data center energy strategy"'
+      - '"data center power supply"'
+      - '"data center power agreement"'
+    notes: >
+      Pattern entry for broad public materials about data center power supply
+      and energy strategy. These sources are review context only and do not
+      establish verified power availability.
+
+  - id: generic_air_emissions_data_center_search
+    name: Generic air permit and emissions data center search
+    source_type: air_permit
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - '"data center air permit"'
+      - '"data center emissions"'
+      - '"data center diesel generator permit"'
+      - '"data center gas turbine air permit"'
+      - '"data center NOx"'
+      - '"data center pollution"'
+    notes: >
+      Pattern entry for public air-permit, emissions, NOx, pollution, diesel
+      generator, and gas-turbine permitting materials. Results require source
+      review before they become candidate evidence.
+
+  - id: generic_water_cooling_data_center_search
+    name: Generic water and cooling data center search
+    source_type: water_permit
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center water use"'
+      - '"data center cooling water"'
+      - '"data center water permit"'
+      - '"data center wastewater"'
+      - '"data center drought"'
+      - '"data center cooling opposition"'
+    notes: >
+      Pattern entry for public water-use, cooling-water, water-permit,
+      wastewater, drought, and cooling-opposition materials. Results are review
+      signals only and do not establish project status by themselves.
+
+  - id: generic_public_hearing_data_center_search
+    name: Generic public hearing data center search
+    source_type: public_hearing
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - '"data center public hearing"'
+      - '"data center planning commission hearing"'
+      - '"data center city council hearing"'
+      - '"data center public meeting"'
+    notes: >
+      Pattern entry for public hearings, meetings, and agenda materials. Hearing
+      records are candidate inputs only when they identify a specific applicant,
+      site, action, or project.
+
+  - id: generic_zoning_land_use_data_center_search
+    name: Generic zoning and land-use data center search
+    source_type: zoning_land_use
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: high
+    search_terms:
+      - '"data center zoning"'
+      - '"data center land use"'
+      - '"data center rezoning"'
+      - '"data center special use permit"'
+      - '"data center conditional use permit"'
+      - '"data center moratorium"'
+    notes: >
+      Pattern entry for zoning, land-use, rezoning, permit, and moratorium
+      materials. These sources can identify siting friction but do not bypass
+      verification or guarded promotion.
+
+  - id: generic_litigation_data_center_search
+    name: Generic litigation data center search
+    source_type: litigation
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center lawsuit"'
+      - '"data center legal challenge"'
+      - '"data center litigation"'
+      - '"data center appeal filed"'
+    notes: >
+      Pattern entry for litigation, legal challenge, appeal, and lawsuit
+      materials. Results are siting-friction signals that require source review.
+
+  - id: generic_community_opposition_data_center_search
+    name: Generic community opposition data center search
+    source_type: community_opposition
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center community opposition"'
+      - '"data center residents oppose"'
+      - '"data center noise complaints"'
+      - '"data center traffic concerns"'
+      - '"data center political opposition"'
+    notes: >
+      Pattern entry for community, resident, noise, traffic, and political
+      opposition signals. These terms discover review material, not final
+      project facts.
+
+  - id: generic_cost_financing_schedule_data_center_search
+    name: Generic cost financing and schedule data center search
+    source_type: cost_financing
+    geography: United States
+    base_url: https://www.google.com/search
+    discovery_method: web_search_pattern
+    enabled: true
+    priority: medium
+    search_terms:
+      - '"data center regulatory approval"'
+      - '"data center utility commission"'
+      - '"data center tax incentives"'
+      - '"data center cost overrun"'
+      - '"data center financing"'
+      - '"data center delayed"'
+      - '"data center paused"'
+      - '"data center cancelled"'
+    notes: >
+      Pattern entry for regulatory approval, utility commission, tax incentive,
+      cost, financing, delay, pause, and cancellation signals. These sources
+      inform review queues and do not create Projects or promotions.
+
   - id: eia_861_grid_context
     name: EIA/EIA-861 utility and sales context
     source_type: grid_context
