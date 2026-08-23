@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import type { ConstraintSummaryResponse, ConstraintSummaryItem } from "../api/types";
 import { getConstraintSummary } from "../api/adapter";
 
-function fmtLabel(s: string): string {
+function fmtLabel(s: string | null | undefined): string {
+  if (!s) return "Unknown";
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -124,8 +125,12 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
   );
 }
 
-function CountTable({ data, limit = 20 }: { data: Record<string, number>; limit?: number }) {
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, limit);
+function CountTable({ data, limit = 20 }: { data: Record<string, number> | null | undefined; limit?: number }) {
+  const safeData = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  const entries = Object.entries(safeData)
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
   if (entries.length === 0) {
     return <div style={{ fontSize: 12, color: "#6b7280" }}>No data</div>;
   }
@@ -243,7 +248,10 @@ const TOP_CANDIDATE_HEADERS = [
 ];
 
 function TopCandidateRow({ item }: { item: ConstraintSummaryItem }) {
-  const frictionCategories = item.siting_friction_categories.filter(s => s !== "unknown");
+  const frictionCategories = Array.isArray(item.siting_friction_categories)
+    ? item.siting_friction_categories.filter(s => s && s !== "unknown")
+    : [];
+  const candidateName = item.candidate_name || "Unnamed candidate";
   return (
     <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
       {/* Name + location + source link */}
@@ -254,7 +262,7 @@ function TopCandidateRow({ item }: { item: ConstraintSummaryItem }) {
             style={{ color: "#93c5fd", fontSize: 13, fontWeight: 500, textDecoration: "none" }}
             title="View on Project Candidates page"
           >
-            {item.candidate_name}
+            {candidateName}
           </a>
           {item.csv_provenance && <CsvChip />}
         </div>
@@ -364,6 +372,10 @@ export function ConstraintDashboardPage() {
   useEffect(() => { void load(); }, [load]);
 
   const hasFilters = !!(filterStatus || filterTriage || filterDecision || filterEnergy || filterFriction);
+  const totalCandidates = Math.max(0, data?.total_candidates ?? 0);
+  const topCandidates = Array.isArray(data?.top_review_priority_candidates)
+    ? data.top_review_priority_candidates
+    : [];
 
   function clearFilters() {
     setFilterStatus("");
@@ -438,7 +450,7 @@ export function ConstraintDashboardPage() {
       )}
 
       {/* Empty state */}
-      {!loading && !error && data && data.total_candidates === 0 && (
+      {!loading && !error && data && totalCandidates === 0 && (
         <div style={{
           background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
           padding: "40px 24px", textAlign: "center" as const, color: "var(--text-dim)", fontSize: 13,
@@ -456,24 +468,24 @@ export function ConstraintDashboardPage() {
       )}
 
       {/* Dashboard content */}
-      {!loading && !error && data && data.total_candidates > 0 && (
+      {!loading && !error && data && totalCandidates > 0 && (
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
 
           {/* Stat cards */}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" as const }}>
-            <StatCard label="Total Candidates"        value={data.total_candidates} />
-            <StatCard label="High Priority Review"    value={data.high_priority_review_count}    accent="#f87171" />
-            <StatCard label="Ready for Verification"  value={data.ready_for_verification_count}  accent="#34d399" />
-            <StatCard label="Needs Source"            value={data.needs_source_count}            accent="#f59e0b" />
-            <StatCard label="Likely Duplicate"        value={data.likely_duplicate_count}        accent="#f87171" />
-            <StatCard label="Dataset-only Rejected"   value={data.dataset_only_rejected_count}   accent="#6b7280" />
+            <StatCard label="Total Candidates"        value={totalCandidates} />
+            <StatCard label="High Priority Review"    value={data.high_priority_review_count ?? 0}    accent="#f87171" />
+            <StatCard label="Ready for Verification"  value={data.ready_for_verification_count ?? 0}  accent="#34d399" />
+            <StatCard label="Needs Source"            value={data.needs_source_count ?? 0}            accent="#f59e0b" />
+            <StatCard label="Likely Duplicate"        value={data.likely_duplicate_count ?? 0}        accent="#f87171" />
+            <StatCard label="Dataset-only Rejected"   value={data.dataset_only_rejected_count ?? 0}   accent="#6b7280" />
           </div>
 
           {/* CSV vs Web provenance pills */}
-          {(data.csv_backed_count > 0 || data.web_discovered_count > 0) && (
+          {((data.csv_backed_count ?? 0) > 0 || (data.web_discovered_count ?? 0) > 0) && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "var(--text-dim)", marginRight: 2 }}>Provenance:</span>
-              {data.csv_backed_count > 0 && (
+              {(data.csv_backed_count ?? 0) > 0 && (
                 <span style={{
                   fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 6,
                   color: "#818cf8", background: "rgba(129,140,248,0.1)", border: "1px solid rgba(129,140,248,0.3)",
@@ -481,7 +493,7 @@ export function ConstraintDashboardPage() {
                   ⊞ {data.csv_backed_count} CSV-backed
                 </span>
               )}
-              {data.web_discovered_count > 0 && (
+              {(data.web_discovered_count ?? 0) > 0 && (
                 <span style={{
                   fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 6,
                   color: "#60a5fa", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.3)",
@@ -533,8 +545,8 @@ export function ConstraintDashboardPage() {
           </div>
 
           {/* Top review-priority candidates */}
-          {data.top_review_priority_candidates.length > 0 && (
-            <Card title={`Top Review-Priority Candidates — ${data.top_review_priority_candidates.length} shown`}>
+          {topCandidates.length > 0 && (
+            <Card title={`Top Review-Priority Candidates — ${topCandidates.length} shown`}>
               <div style={{ overflowX: "auto" as const }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 12 }}>
                   <thead>
@@ -551,7 +563,7 @@ export function ConstraintDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.top_review_priority_candidates.map(item => (
+                    {topCandidates.map(item => (
                       <TopCandidateRow key={item.candidate_id} item={item} />
                     ))}
                   </tbody>
