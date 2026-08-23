@@ -102,7 +102,7 @@ Generic web-search discovery is disabled by default and never creates projects d
 python scripts/run_public_discovery.py --dry-run
 ```
 
-The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source expansion adds 28 generic-provider queries per full run.
+The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
 
 For a fixture-backed local check:
 
@@ -116,9 +116,9 @@ For live Brave Search API discovery, keep the key in your shell environment and 
 WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py
 ```
 
-Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted.
+Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted. Do not run live Brave unless explicitly approved for the session; dry-run and mock runs are the default safe checks.
 
-Discovery and triage may surface build-constraint context such as grid interconnection, transmission capacity, onsite generation, diesel generation, gas turbine generation, nuclear or SMR proposals, fuel supply, air permitting, emissions compliance, water/cooling, community opposition, zoning/land use, litigation, utility regulatory approval, cost/financing, supply chain, schedule credibility, or political/institutional resistance. These signals are review cues, not final project facts.
+Discovery and triage may surface build-constraint context such as grid interconnection, transmission capacity, substations, load requests, onsite or behind-the-meter generation, diesel or backup generators, gas turbine generation, fuel cells, nuclear or SMR proposals, fuel supply, air permitting, emissions/NOx compliance, water/cooling, wastewater, drought, community opposition, public hearings, zoning/land use, moratoria, litigation, utility regulatory approval, tax incentives, cost/financing, schedule delay/pause/cancellation, or political/institutional resistance. These signals are review cues, not final project facts.
 
 ProjectCandidates may also show an energy strategy badge such as `unknown`, `grid_plus_backup`, `grid_plus_onsite`, `diesel_generation`, `dedicated_gas_generation`, `fuel_cell`, `nuclear_or_smr`, or `hybrid_power`. This is a review signal only. Unknown is acceptable; substations, transmission, utility service, or interconnection text alone should not be read as onsite generation. Backup generators are not primary power. Nuclear or SMR proposals should be treated as uncertain because regulatory, cost, schedule, and public-acceptance risks remain unresolved unless a source says otherwise.
 
