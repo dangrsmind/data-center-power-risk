@@ -285,6 +285,25 @@ Open `/map` in the frontend. Markers should be visible immediately (no toggle re
 - Evidence tab on the detail page loads without a backend 500
 - "Edit coordinates" opens the coordinate editor
 
+## 12. Constraint Dashboard
+
+Open `/constraint-dashboard` in the frontend. The dashboard reads from the read-only constraint summary API (`GET /project-candidates/constraint-summary`) and shows:
+
+- Summary stat cards: total candidates, high-priority review count, ready for verification, needs source, likely duplicate, dataset-only rejected
+- CSV-backed vs web-discovered provenance pills
+- Breakdown tables: by status, verification status, triage tier, review decision
+- Energy strategy counts and top energy risk tags
+- Siting friction category counts and top siting friction warnings
+- Top review-priority candidates list with triage tier, recommended action, review decision, verification status, energy strategy, and siting friction
+
+The dashboard supports filter controls for status, triage tier, review decision, energy strategy, and siting friction category — these are passed directly as query parameters to the summary endpoint.
+
+**Important:** The dashboard is read-only. It uses only the constraint summary API and does not verify, promote, or admit candidates. Summary counts are review signals; they do not change guarded admission rules or imply that any candidate has been verified.
+
+```bash
+curl http://127.0.0.1:8000/project-candidates/constraint-summary
+```
+
 ## Rerun Safely
 
 To reload the demo data after editing the curated CSV:
