@@ -99,8 +99,13 @@ Expected output (all zeros for errors and warnings):
 Generic web-search discovery is disabled by default and never creates projects directly. Dry-run lists planned queries only:
 
 ```bash
+python scripts/validate_source_registry.py
+python scripts/run_public_discovery.py --dry-run --report
+python scripts/run_public_discovery.py --dry-run --report --report-format json
 python scripts/run_public_discovery.py --dry-run
 ```
+
+The dry-run report is the first review step before any live or paid search. It shows total planned query count, counts by adapter/provider/source type/risk category/geography/scope, each query, source registry metadata, and warnings for high-count, duplicate, generic, or likely overbroad query templates. It is read-only: it does not call Brave, fetch URLs, use a database, write runtime files, create Projects, create ProjectCandidates, or promote anything.
 
 The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
 
@@ -116,7 +121,7 @@ For live Brave Search API discovery, keep the key in your shell environment and 
 WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py
 ```
 
-Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted. Do not run live Brave unless explicitly approved for the session; dry-run and mock runs are the default safe checks.
+Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted. Do not run live Brave unless explicitly approved for the session; dry-run and mock runs are the default safe checks. Recommended workflow before paid search: validate the registry, inspect the discovery plan report, review high-count and overbroad warnings, run public discovery dry-run, and only then consider live search with explicit cost approval.
 
 Discovery and triage may surface build-constraint context such as grid interconnection, transmission capacity, substations, load requests, onsite or behind-the-meter generation, diesel or backup generators, gas turbine generation, fuel cells, nuclear or SMR proposals, fuel supply, air permitting, emissions/NOx compliance, water/cooling, wastewater, drought, community opposition, public hearings, zoning/land use, moratoria, litigation, utility regulatory approval, tax incentives, cost/financing, schedule delay/pause/cancellation, or political/institutional resistance. These signals are review cues, not final project facts.
 
