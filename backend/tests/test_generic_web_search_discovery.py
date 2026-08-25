@@ -28,7 +28,11 @@ from app.services.discovery_adapters.generic_web_search import (  # noqa: E402
 from app.services.public_fetch import FetchResult  # noqa: E402
 from app.services.source_registry import load_source_registry  # noqa: E402
 from run_public_discovery import run_sources  # noqa: E402
-from run_public_discovery import build_discovery_plan_report, format_discovery_plan_report  # noqa: E402
+from run_public_discovery import (  # noqa: E402
+    DiscoveryPlanFilterError,
+    build_discovery_plan_report,
+    format_discovery_plan_report,
+)
 
 
 class StubFetchClient:
@@ -220,7 +224,117 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         payload = json.loads(json.dumps(build_discovery_plan_report()))
 
         self.assertEqual(payload["summary"]["total_planned_queries"], 117)
+        self.assertEqual(payload["summary"]["original_total_planned_queries"], 117)
+        self.assertEqual(payload["summary"]["filtered_total_planned_queries"], 117)
+        self.assertEqual(payload["summary"]["retained_total_planned_queries"], 117)
+        self.assertEqual(payload["summary"]["active_filters"], {})
+        self.assertFalse(payload["summary"]["capped"])
         self.assertEqual(payload["details"][0]["provider"], payload["summary"]["web_search_provider"])
+
+    def test_discovery_plan_report_filters_by_priority(self) -> None:
+        report = build_discovery_plan_report(filters={"priority": ["high"]})
+
+        summary = report["summary"]
+        self.assertLess(summary["retained_total_planned_queries"], summary["original_total_planned_queries"])
+        self.assertEqual(summary["active_filters"], {"priority": ["high"]})
+        self.assertTrue(report["details"])
+        self.assertTrue(all(row["priority"] == "high" for row in report["details"]))
+
+    def test_discovery_plan_report_filters_by_scope(self) -> None:
+        report = build_discovery_plan_report(filters={"scope": ["location-scoped"]})
+
+        self.assertTrue(report["details"])
+        self.assertEqual(set(report["summary"]["count_by_scope"]), {"location-scoped"})
+        self.assertTrue(all(row["scope"] == "location-scoped" for row in report["details"]))
+
+    def test_discovery_plan_report_excludes_generic_scope(self) -> None:
+        report = build_discovery_plan_report(filters={"exclude_generic": True})
+
+        self.assertTrue(report["details"])
+        self.assertNotIn("generic", report["summary"]["count_by_scope"])
+        self.assertTrue(all(row["scope"] != "generic" for row in report["details"]))
+
+    def test_discovery_plan_report_filters_by_category(self) -> None:
+        report = build_discovery_plan_report(filters={"category": ["grid_transmission"]})
+
+        self.assertTrue(report["details"])
+        self.assertGreater(report["summary"]["count_by_risk_category"]["grid_transmission"], 0)
+        self.assertTrue(all("grid_transmission" in row["risk_category_tags"] for row in report["details"]))
+
+    def test_discovery_plan_report_filters_by_source_type(self) -> None:
+        report = build_discovery_plan_report(filters={"source_type": ["utility_large_load_filings"]})
+
+        self.assertTrue(report["details"])
+        self.assertEqual(set(report["summary"]["count_by_source_type"]), {"utility_large_load_filings"})
+        self.assertTrue(all(row["source_type"] == "utility_large_load_filings" for row in report["details"]))
+
+    def test_discovery_plan_report_caps_after_filters_with_stable_order(self) -> None:
+        full_report = build_discovery_plan_report()
+        capped_report = build_discovery_plan_report(filters={"max_planned_queries": 5})
+
+        summary = capped_report["summary"]
+        self.assertTrue(summary["capped"])
+        self.assertEqual(summary["cap_limit"], 5)
+        self.assertEqual(summary["filtered_total_planned_queries"], full_report["summary"]["total_planned_queries"])
+        self.assertEqual(summary["retained_total_planned_queries"], 5)
+        self.assertEqual(
+            [row["query"] for row in capped_report["details"]],
+            [row["query"] for row in full_report["details"][:5]],
+        )
+        self.assertTrue(any("planned_query_cap_applied" in warning for warning in capped_report["warnings"]))
+
+    def test_discovery_plan_report_json_includes_filter_counts(self) -> None:
+        report = build_discovery_plan_report(
+            filters={"priority": ["high"], "exclude_generic": True, "max_planned_queries": 10}
+        )
+        payload = json.loads(json.dumps(report))
+
+        summary = payload["summary"]
+        self.assertEqual(summary["original_total_planned_queries"], 117)
+        self.assertLessEqual(summary["retained_total_planned_queries"], 10)
+        self.assertEqual(
+            summary["active_filters"],
+            {"priority": ["high"], "exclude_generic": True, "max_planned_queries": 10},
+        )
+        self.assertTrue(all(row["priority"] == "high" and row["scope"] != "generic" for row in payload["details"]))
+
+    def test_discovery_plan_report_valid_zero_match_filter_warns(self) -> None:
+        report = build_discovery_plan_report(filters={"category": ["nuclear_smr"], "scope": ["location-scoped"]})
+
+        self.assertEqual(report["summary"]["filtered_total_planned_queries"], 0)
+        self.assertEqual(report["summary"]["retained_total_planned_queries"], 0)
+        self.assertEqual(report["details"], [])
+        self.assertTrue(any("filters_returned_zero_planned_queries" in warning for warning in report["warnings"]))
+
+    def test_discovery_plan_report_rejects_unknown_filters(self) -> None:
+        for filters in (
+            {"category": ["not_a_category"]},
+            {"source_type": ["not_a_source_type"]},
+            {"source_id": ["not_a_source_id"]},
+        ):
+            with self.subTest(filters=filters):
+                with self.assertRaises(DiscoveryPlanFilterError):
+                    build_discovery_plan_report(filters=filters)
+
+    def test_discovery_plan_report_cli_rejects_invalid_filter_values(self) -> None:
+        invalid_commands = (
+            ["--scope", "not-a-scope"],
+            ["--priority", "urgent"],
+            ["--max-planned-queries", "0"],
+            ["--category", "not_a_category"],
+        )
+        for command in invalid_commands:
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [sys.executable, "scripts/run_public_discovery.py", "--dry-run", "--report", *command],
+                    cwd=BACKEND_DIR,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
 
     def test_targeted_official_entries_plan_queries_without_provider_calls(self) -> None:
         provider = MockWebSearchProvider({"unused": []})
