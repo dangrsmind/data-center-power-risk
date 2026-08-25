@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import json
 import subprocess
@@ -32,6 +34,7 @@ from run_public_discovery import (  # noqa: E402
     DiscoveryPlanFilterError,
     build_discovery_plan_report,
     format_discovery_plan_report,
+    parse_args,
 )
 
 
@@ -220,6 +223,159 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         self.assertIn("Discovery Dry-Run Plan Report", text_result.stdout)
         self.assertIn("No live search", text_result.stdout)
 
+    def test_discovery_plan_report_output_writes_text_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "nested" / "full-plan.txt"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_public_discovery.py",
+                    "--dry-run",
+                    "--report",
+                    "--report-output",
+                    str(output_path),
+                ],
+                cwd=BACKEND_DIR,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output_path.exists())
+            text = output_path.read_text(encoding="utf-8")
+            self.assertIn("Discovery Dry-Run Plan Report", text)
+            self.assertIn("Active Filters", text)
+            self.assertIn("Warnings", text)
+            self.assertNotIn("Discovery Dry-Run Plan Report", result.stdout)
+            self.assertIn("Discovery dry-run plan report written.", result.stdout)
+            self.assertIn(f"Output path: {output_path}", result.stdout)
+            self.assertIn("Retained planned queries: 117", result.stdout)
+            self.assertIn("Active filters: none", result.stdout)
+            self.assertIn("No live search", result.stdout)
+
+    def test_discovery_plan_report_output_writes_json_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "high-exclude-generic-30.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_public_discovery.py",
+                    "--dry-run",
+                    "--report",
+                    "--report-format",
+                    "json",
+                    "--priority",
+                    "high",
+                    "--exclude-generic",
+                    "--max-planned-queries",
+                    "30",
+                    "--report-output",
+                    str(output_path),
+                ],
+                cwd=BACKEND_DIR,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            stdout_result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_public_discovery.py",
+                    "--dry-run",
+                    "--report",
+                    "--report-format",
+                    "json",
+                    "--priority",
+                    "high",
+                    "--exclude-generic",
+                    "--max-planned-queries",
+                    "30",
+                ],
+                cwd=BACKEND_DIR,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            self.assertEqual(stdout_result.returncode, 0, stdout_result.stderr)
+            self.assertEqual(payload, json.loads(stdout_result.stdout))
+            summary = payload["summary"]
+            self.assertEqual(summary["active_filters"]["priority"], ["high"])
+            self.assertTrue(summary["active_filters"]["exclude_generic"])
+            self.assertEqual(summary["active_filters"]["max_planned_queries"], 30)
+            self.assertEqual(summary["retained_total_planned_queries"], len(payload["details"]))
+            self.assertTrue(payload["warnings"])
+            self.assertIn("Retained planned queries:", result.stdout)
+            self.assertNotIn('"details"', result.stdout)
+
+    def test_discovery_plan_report_does_not_write_without_output_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            unexpected_path = Path(tmpdir) / "full-plan.txt"
+            result = subprocess.run(
+                [sys.executable, "scripts/run_public_discovery.py", "--dry-run", "--report"],
+                cwd=BACKEND_DIR,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(unexpected_path.exists())
+            self.assertIn("Discovery Dry-Run Plan Report", result.stdout)
+
+    def test_discovery_plan_report_output_does_not_require_provider_or_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "plan.txt"
+            db_path = Path(tmpdir) / "report-mode.db"
+            env = {
+                **os.environ,
+                "WEB_SEARCH_PROVIDER": "brave",
+                "DATABASE_URL": f"sqlite:///{db_path}",
+            }
+            env.pop("WEB_SEARCH_API_KEY", None)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_public_discovery.py",
+                    "--dry-run",
+                    "--report",
+                    "--report-output",
+                    str(output_path),
+                ],
+                cwd=BACKEND_DIR,
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output_path.exists())
+            self.assertFalse(db_path.exists())
+            self.assertNotIn("web_search_api_key_missing", result.stdout)
+            self.assertNotIn("web_search_api_key_missing", output_path.read_text(encoding="utf-8"))
+
+    def test_discovery_plan_snapshot_directory_is_ignored_by_git(self) -> None:
+        result = subprocess.run(
+            ["git", "check-ignore", "data/discovery_plan_snapshots/example.json"],
+            cwd=BACKEND_DIR.parent,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_discovery_plan_report_json_shape_is_serializable(self) -> None:
         payload = json.loads(json.dumps(build_discovery_plan_report()))
 
@@ -321,20 +477,23 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
             ["--scope", "not-a-scope"],
             ["--priority", "urgent"],
             ["--max-planned-queries", "0"],
-            ["--category", "not_a_category"],
         )
         for command in invalid_commands:
             with self.subTest(command=command):
-                result = subprocess.run(
-                    [sys.executable, "scripts/run_public_discovery.py", "--dry-run", "--report", *command],
-                    cwd=BACKEND_DIR,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        parse_args(["--dry-run", "--report", *command])
 
-                self.assertNotEqual(result.returncode, 0)
+        result = subprocess.run(
+            [sys.executable, "scripts/run_public_discovery.py", "--dry-run", "--report", "--category", "not_a_category"],
+            cwd=BACKEND_DIR,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
 
     def test_targeted_official_entries_plan_queries_without_provider_calls(self) -> None:
         provider = MockWebSearchProvider({"unused": []})
