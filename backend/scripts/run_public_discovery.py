@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +69,53 @@ def parse_args() -> argparse.Namespace:
         help="Warn in report mode when planned query count exceeds this threshold.",
     )
     parser.add_argument(
+        "--category",
+        action="append",
+        help="Report mode: keep planned queries tagged with this risk/source category. May be repeated.",
+    )
+    parser.add_argument(
+        "--source-type",
+        action="append",
+        help="Report mode: keep planned queries from this source type. May be repeated.",
+    )
+    parser.add_argument(
+        "--priority",
+        action="append",
+        choices=("high", "medium", "low"),
+        help="Report mode: keep planned queries from sources with this priority. May be repeated.",
+    )
+    parser.add_argument(
+        "--scope",
+        action="append",
+        choices=("generic", "location-scoped", "registry-scoped"),
+        help="Report mode: keep planned queries with this query scope. May be repeated.",
+    )
+    parser.add_argument(
+        "--geography",
+        action="append",
+        help="Report mode: keep planned queries for this geography. May be repeated.",
+    )
+    parser.add_argument(
+        "--adapter",
+        action="append",
+        help="Report mode: keep planned queries from this adapter. May be repeated.",
+    )
+    parser.add_argument(
+        "--source-id",
+        action="append",
+        help="Report mode: keep planned queries from this source id. May be repeated.",
+    )
+    parser.add_argument(
+        "--exclude-generic",
+        action="store_true",
+        help="Report mode: remove generic planned queries and keep location- or registry-scoped queries.",
+    )
+    parser.add_argument(
+        "--max-planned-queries",
+        type=positive_int,
+        help="Report mode: retain at most this many planned queries after filters are applied.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_DISCOVERY_RUNS_DIR,
@@ -90,6 +138,17 @@ def parse_args() -> argparse.Namespace:
         help="Runtime fetch cache directory. Ignored by Git.",
     )
     return parser.parse_args()
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+class DiscoveryPlanFilterError(ValueError):
+    pass
 
 
 def source_preview(source: Any) -> dict[str, Any]:
@@ -126,25 +185,42 @@ def planned_query_count(adapter_results: list[dict[str, Any]], *, adapter_id: st
     return count
 
 
-def build_discovery_plan_report(*, query_count_warning_threshold: int = 100) -> dict[str, Any]:
+def report_filters_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    filters: dict[str, Any] = {
+        "category": args.category or [],
+        "source_type": args.source_type or [],
+        "priority": args.priority or [],
+        "scope": args.scope or [],
+        "geography": args.geography or [],
+        "adapter": args.adapter or [],
+        "source_id": args.source_id or [],
+        "exclude_generic": args.exclude_generic,
+        "max_planned_queries": args.max_planned_queries,
+    }
+    return {key: value for key, value in filters.items() if value not in (None, False, [])}
+
+
+def build_discovery_plan_report(
+    *,
+    query_count_warning_threshold: int = 100,
+    filters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     registry = load_source_registry(DEFAULT_REGISTRY_PATH)
-    query_rows: list[dict[str, Any]] = []
-    warnings: list[str] = ["report_only: no live search was run and no runtime data was written"]
-    duplicate_counts: Counter[str] = Counter()
+    all_query_rows: list[dict[str, Any]] = []
+    source_warnings: list[str] = []
 
     for source in registry.enabled_sources:
         adapter = adapter_for_source(source)
         adapter_id = getattr(adapter, "adapter_id", source.discovery_method) if adapter is not None else "unimplemented"
         planned_queries = adapter.planned_queries() if adapter is not None else []
         if not planned_queries:
-            warnings.append(f"no_planned_queries for source {source.id}")
+            source_warnings.append(f"no_planned_queries for source {source.id}")
         for planned in planned_queries:
             query_text = str(planned.get("term") or "").strip()
             if not query_text:
                 continue
-            duplicate_counts[query_text] += 1
             query_warnings = query_warnings_for(source, query_text)
-            query_rows.append(
+            all_query_rows.append(
                 {
                     "query": query_text,
                     "provider": configured_provider_name(),
@@ -160,42 +236,130 @@ def build_discovery_plan_report(*, query_count_warning_threshold: int = 100) -> 
                     "warnings": query_warnings,
                 }
             )
-            warnings.extend(f"{query_text}: {warning}" for warning in query_warnings)
 
+    active_filters = normalize_report_filters(filters)
+    validate_report_filters(active_filters, all_query_rows)
+    filtered_query_rows = [row for row in all_query_rows if report_row_matches_filters(row, active_filters)]
+    filtered_total = len(filtered_query_rows)
+    cap_limit = active_filters.get("max_planned_queries")
+    retained_query_rows = filtered_query_rows[:cap_limit] if cap_limit is not None else filtered_query_rows
+    capped = cap_limit is not None and filtered_total > cap_limit
+    duplicate_counts: Counter[str] = Counter(row["query"] for row in retained_query_rows)
     duplicate_queries = sorted(query for query, count in duplicate_counts.items() if count > 1)
+    retained_total = len(retained_query_rows)
+    warnings: list[str] = ["report_only: no live search was run and no runtime data was written"]
+    if not active_filters:
+        warnings.extend(source_warnings)
+    for row in retained_query_rows:
+        warnings.extend(f"{row['query']}: {warning}" for warning in row["warnings"])
     for query in duplicate_queries:
         warnings.append(f"duplicate_query: {query} appears {duplicate_counts[query]} times")
-    total_queries = len(query_rows)
-    if total_queries > query_count_warning_threshold:
+    if filtered_total == 0:
+        warnings.append("filters_returned_zero_planned_queries: no planned queries matched the active filters")
+    if capped:
         warnings.append(
-            f"query_count_above_threshold: {total_queries} planned queries exceeds threshold {query_count_warning_threshold}"
+            f"planned_query_cap_applied: retained {retained_total} of {filtered_total} filtered planned queries"
+        )
+    if retained_total > query_count_warning_threshold:
+        warnings.append(
+            f"query_count_above_threshold: {retained_total} planned queries exceeds threshold {query_count_warning_threshold}"
         )
     provider = configured_provider_name()
     if provider == "disabled":
         warnings.append("web_search_provider_disabled: report is safe; live search remains off")
     else:
         warnings.append(f"web_search_provider_configured: {provider}; report mode still did not call it")
+    warnings = sorted(dict.fromkeys(warnings))
 
     return {
         "summary": {
-            "total_planned_queries": total_queries,
+            "total_planned_queries": retained_total,
+            "original_total_planned_queries": len(all_query_rows),
+            "filtered_total_planned_queries": filtered_total,
+            "retained_total_planned_queries": retained_total,
+            "active_filters": active_filters,
+            "capped": capped,
+            "cap_limit": cap_limit,
             "web_search_provider": provider,
             "web_search_max_results": result_limit_from_env(),
             "registry_path": str(DEFAULT_REGISTRY_PATH),
-            "count_by_provider": dict(sorted(Counter(row["provider"] for row in query_rows).items())),
-            "count_by_adapter": dict(sorted(Counter(row["adapter"] for row in query_rows).items())),
-            "count_by_source_type": dict(sorted(Counter(row["source_type"] for row in query_rows).items())),
+            "count_by_provider": dict(sorted(Counter(row["provider"] for row in retained_query_rows).items())),
+            "count_by_adapter": dict(sorted(Counter(row["adapter"] for row in retained_query_rows).items())),
+            "count_by_source_type": dict(sorted(Counter(row["source_type"] for row in retained_query_rows).items())),
             "count_by_risk_category": dict(
-                sorted(Counter(tag for row in query_rows for tag in row["risk_category_tags"]).items())
+                sorted(Counter(tag for row in retained_query_rows for tag in row["risk_category_tags"]).items())
             ),
-            "count_by_geography": dict(sorted(Counter(row["geography"] for row in query_rows).items())),
-            "count_by_scope": dict(sorted(Counter(row["scope"] for row in query_rows).items())),
+            "count_by_geography": dict(sorted(Counter(row["geography"] for row in retained_query_rows).items())),
+            "count_by_scope": dict(sorted(Counter(row["scope"] for row in retained_query_rows).items())),
             "duplicate_query_count": len(duplicate_queries),
             "warning_count": len(warnings),
         },
-        "details": query_rows,
-        "warnings": sorted(dict.fromkeys(warnings)),
+        "details": retained_query_rows,
+        "warnings": warnings,
     }
+
+
+def normalize_report_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
+    if filters is None:
+        return {}
+    normalized: dict[str, Any] = {}
+    for key in ("category", "source_type", "priority", "scope", "geography", "adapter", "source_id"):
+        values = filters.get(key)
+        if values is None:
+            continue
+        if isinstance(values, str):
+            values = [values]
+        clean_values = [str(value).strip() for value in values if str(value).strip()]
+        if clean_values:
+            normalized[key] = clean_values
+    if filters.get("exclude_generic"):
+        normalized["exclude_generic"] = True
+    cap_limit = filters.get("max_planned_queries")
+    if cap_limit is not None:
+        try:
+            cap_limit = int(cap_limit)
+        except (TypeError, ValueError) as exc:
+            raise DiscoveryPlanFilterError("max_planned_queries must be a positive integer") from exc
+        if cap_limit <= 0:
+            raise DiscoveryPlanFilterError("max_planned_queries must be a positive integer")
+        normalized["max_planned_queries"] = cap_limit
+    return normalized
+
+
+def validate_report_filters(filters: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+    known_values = {
+        "category": {tag for row in rows for tag in row["risk_category_tags"]},
+        "source_type": {row["source_type"] for row in rows},
+        "priority": {row["priority"] for row in rows},
+        "scope": {row["scope"] for row in rows},
+        "geography": {row["geography"] for row in rows},
+        "adapter": {row["adapter"] for row in rows},
+        "source_id": {row["source_id"] for row in rows},
+    }
+    for key, known in known_values.items():
+        unknown = sorted(set(filters.get(key, [])) - known)
+        if unknown:
+            known_text = ", ".join(sorted(known)) or "none"
+            raise DiscoveryPlanFilterError(f"unknown {key.replace('_', '-')} filter {unknown}; known values: {known_text}")
+
+
+def report_row_matches_filters(row: dict[str, Any], filters: dict[str, Any]) -> bool:
+    if filters.get("exclude_generic") and row["scope"] == "generic":
+        return False
+    field_filters = {
+        "source_type": row["source_type"],
+        "priority": row["priority"],
+        "scope": row["scope"],
+        "geography": row["geography"],
+        "adapter": row["adapter"],
+        "source_id": row["source_id"],
+    }
+    for key, value in field_filters.items():
+        if key in filters and value not in filters[key]:
+            return False
+    if "category" in filters and not set(filters["category"]).intersection(row["risk_category_tags"]):
+        return False
+    return True
 
 
 def query_scope(source: Any, query_text: str) -> str:
@@ -205,7 +369,7 @@ def query_scope(source: Any, query_text: str) -> str:
         return "location-scoped"
     if geography not in {"united states", "united states counties", "united states cities"}:
         return "location-scoped"
-    if any(token in text for token in ("project", "campus", "site", "county", "city")):
+    if any(re.search(rf"\b{re.escape(token)}\b", text) for token in ("project", "campus", "site", "county", "city")):
         return "registry-scoped"
     return "generic"
 
@@ -252,17 +416,30 @@ def query_warnings_for(source: Any, query_text: str) -> list[str]:
 
 def format_discovery_plan_report(report: dict[str, Any]) -> str:
     summary = report["summary"]
+    cap_text = (
+        f"yes, retained {summary['retained_total_planned_queries']} of {summary['filtered_total_planned_queries']}"
+        if summary["capped"]
+        else "no"
+    )
     lines = [
         "Discovery Dry-Run Plan Report",
         "=============================",
         "",
         "Summary",
         f"- Total planned queries: {summary['total_planned_queries']}",
+        f"- Original planned queries: {summary['original_total_planned_queries']}",
+        f"- Filtered planned queries: {summary['filtered_total_planned_queries']}",
+        f"- Retained planned queries: {summary['retained_total_planned_queries']}",
+        f"- Capped: {cap_text}",
+        f"- Cap limit: {summary['cap_limit'] if summary['cap_limit'] is not None else 'none'}",
         f"- Web search provider: {summary['web_search_provider']} (not called)",
         f"- Web search max results: {summary['web_search_max_results']}",
         f"- Registry: {summary['registry_path']}",
         f"- Duplicate queries: {summary['duplicate_query_count']}",
         f"- Warnings: {summary['warning_count']}",
+        "",
+        "Active Filters",
+        *format_filter_lines(summary["active_filters"]),
         "",
         "Counts By Adapter",
         *format_counter_lines(summary["count_by_adapter"]),
@@ -304,6 +481,19 @@ def format_counter_lines(values: dict[str, int]) -> list[str]:
     if not values:
         return ["- none"]
     return [f"- {key}: {value}" for key, value in values.items()]
+
+
+def format_filter_lines(values: dict[str, Any]) -> list[str]:
+    if not values:
+        return ["- none"]
+    lines = []
+    for key, value in values.items():
+        if isinstance(value, list):
+            value_text = ", ".join(value)
+        else:
+            value_text = str(value)
+        lines.append(f"- {key}: {value_text}")
+    return lines
 
 
 def run_sources(
@@ -393,7 +583,10 @@ def main() -> None:
     args = parse_args()
     try:
         if args.report:
-            report = build_discovery_plan_report(query_count_warning_threshold=args.query_count_warning_threshold)
+            report = build_discovery_plan_report(
+                query_count_warning_threshold=args.query_count_warning_threshold,
+                filters=report_filters_from_args(args),
+            )
             if args.report_format == "json":
                 print(json.dumps(report, indent=2, sort_keys=True))
             else:
@@ -423,6 +616,9 @@ def main() -> None:
             )
         )
         raise SystemExit(1) from exc
+    except DiscoveryPlanFilterError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
 
     print(json.dumps(payload, indent=2, sort_keys=True))
     raise SystemExit(0)
