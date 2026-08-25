@@ -44,7 +44,7 @@ IMPLEMENTED_DISCOVERY_METHODS = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run public-source data center discovery.")
     parser.add_argument(
         "--dry-run",
@@ -61,6 +61,11 @@ def parse_args() -> argparse.Namespace:
         choices=("text", "json"),
         default="text",
         help="Output format for --report. Defaults to readable text.",
+    )
+    parser.add_argument(
+        "--report-output",
+        type=Path,
+        help="Report mode: write the full report to this local snapshot file and print a concise summary.",
     )
     parser.add_argument(
         "--query-count-warning-threshold",
@@ -137,7 +142,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_SOURCE_FETCHES_DIR,
         help="Runtime fetch cache directory. Ignored by Git.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def positive_int(value: str) -> int:
@@ -148,6 +153,10 @@ def positive_int(value: str) -> int:
 
 
 class DiscoveryPlanFilterError(ValueError):
+    pass
+
+
+class DiscoveryPlanOutputError(ValueError):
     pass
 
 
@@ -496,6 +505,47 @@ def format_filter_lines(values: dict[str, Any]) -> list[str]:
     return lines
 
 
+def serialize_discovery_plan_report(report: dict[str, Any], *, report_format: str) -> str:
+    if report_format == "json":
+        return json.dumps(report, indent=2, sort_keys=True)
+    if report_format == "text":
+        return format_discovery_plan_report(report)
+    raise DiscoveryPlanOutputError(f"unsupported report format: {report_format}")
+
+
+def write_discovery_plan_report_snapshot(output_path: Path, content: str) -> Path:
+    if output_path.exists() and output_path.is_dir():
+        raise DiscoveryPlanOutputError(f"report output path is a directory: {output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content + "\n", encoding="utf-8")
+    return output_path
+
+
+def format_report_output_confirmation(report: dict[str, Any], output_path: Path) -> str:
+    summary = report["summary"]
+    lines = [
+        "Discovery dry-run plan report written.",
+        f"- Output path: {output_path}",
+        f"- Retained planned queries: {summary['retained_total_planned_queries']}",
+        f"- Active filters: {format_active_filters_inline(summary['active_filters'])}",
+        "- No live search, URL fetch, database write, Project creation, ProjectCandidate creation, or promotion was run.",
+    ]
+    return "\n".join(lines)
+
+
+def format_active_filters_inline(values: dict[str, Any]) -> str:
+    if not values:
+        return "none"
+    parts = []
+    for key, value in values.items():
+        if isinstance(value, list):
+            value_text = ",".join(value)
+        else:
+            value_text = str(value)
+        parts.append(f"{key}={value_text}")
+    return "; ".join(parts)
+
+
 def run_sources(
     *,
     dry_run: bool,
@@ -587,10 +637,12 @@ def main() -> None:
                 query_count_warning_threshold=args.query_count_warning_threshold,
                 filters=report_filters_from_args(args),
             )
-            if args.report_format == "json":
-                print(json.dumps(report, indent=2, sort_keys=True))
+            report_content = serialize_discovery_plan_report(report, report_format=args.report_format)
+            if args.report_output:
+                output_path = write_discovery_plan_report_snapshot(args.report_output, report_content)
+                print(format_report_output_confirmation(report, output_path))
             else:
-                print(format_discovery_plan_report(report))
+                print(report_content)
             raise SystemExit(0)
         payload = run_sources(
             dry_run=args.dry_run,
@@ -617,6 +669,9 @@ def main() -> None:
         )
         raise SystemExit(1) from exc
     except DiscoveryPlanFilterError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    except DiscoveryPlanOutputError as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 

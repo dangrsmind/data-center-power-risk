@@ -18,6 +18,7 @@ data/generated/
 data/cache/
 data/source_fetches/
 data/discovery_runs/
+data/discovery_plan_snapshots/
 data/imports/manual_csv/
 data/geocoding_cache/
 data/geocoding_caches/

@@ -150,6 +150,9 @@ python scripts/run_public_discovery.py --dry-run --report --exclude-generic
 python scripts/run_public_discovery.py --dry-run --report --priority high --exclude-generic --max-planned-queries 30
 python scripts/run_public_discovery.py --dry-run --report --category grid_transmission --scope location-scoped
 python scripts/run_public_discovery.py --dry-run --report --report-format json --priority high --exclude-generic --max-planned-queries 30
+python scripts/run_public_discovery.py --dry-run --report --report-output ../data/discovery_plan_snapshots/full-plan.txt
+python scripts/run_public_discovery.py --dry-run --report --exclude-generic --report-output ../data/discovery_plan_snapshots/exclude-generic.txt
+python scripts/run_public_discovery.py --dry-run --report --priority high --exclude-generic --max-planned-queries 30 --report-format json --report-output ../data/discovery_plan_snapshots/high-exclude-generic-30.json
 python scripts/run_public_discovery.py --dry-run
 python scripts/run_public_discovery.py
 WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py
@@ -159,6 +162,32 @@ WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_
 Use the report command before any live or paid search. It reads the source registry and prints total planned queries, counts by adapter/provider/source type/risk category/geography/scope, each planned query, source metadata, and warnings for duplicate, high-count, generic, or likely overbroad query templates. Report mode is read-only: it does not call Brave or any search provider, does not fetch URLs, does not require `DATABASE_URL`, and does not write discovered sources, Projects, ProjectCandidates, promotions, or runtime output.
 
 Report mode can be scoped before a live run is considered. Filters include `--category`, `--source-type`, `--priority`, `--scope`, `--geography`, `--adapter`, `--source-id`, and `--exclude-generic`; repeat a filter to allow multiple values. `--max-planned-queries` caps the retained query list after filters while preserving the original and filtered-before-cap counts in the report. Counts and warnings are based on the retained filtered set, and a valid filter combination that matches no planned queries produces an explicit zero-match warning instead of falling back to the unfiltered plan.
+
+Use `--report-output` to save a local discovery plan snapshot before any live provider run. Snapshot files are ignored runtime artifacts under `data/discovery_plan_snapshots/`; they are useful for manually comparing scoped plans with tools such as `diff`, but they are not evidence, discovered sources, extracted claims, Projects, or ProjectCandidates. When `--report-output` is present, the full text or JSON report is written to the requested file and stdout prints only a concise confirmation with the path, retained query count, active filters, and no-live-search reminder.
+
+Recommended snapshot names should describe the scope, for example `full-plan.txt`, `exclude-generic.txt`, `high-exclude-generic-30.json`, or `grid-transmission-location-scoped.json`.
+
+```bash
+python scripts/run_public_discovery.py --dry-run --report \
+  --report-output ../data/discovery_plan_snapshots/full-plan.txt
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --exclude-generic \
+  --report-output ../data/discovery_plan_snapshots/exclude-generic.txt
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --priority high \
+  --exclude-generic \
+  --max-planned-queries 30 \
+  --report-format json \
+  --report-output ../data/discovery_plan_snapshots/high-exclude-generic-30.json
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --category grid_transmission \
+  --scope location-scoped \
+  --report-format json \
+  --report-output ../data/discovery_plan_snapshots/grid-transmission-location-scoped.json
+```
 
 If `WEB_SEARCH_PROVIDER=brave` is set without `WEB_SEARCH_API_KEY`, the adapter returns `web_search_api_key_missing` and emits no discovered source records. Provider request failures are reported as structured warnings and do not crash the whole discovery run. The discovery summary reports the active provider name and result limit but never prints API keys.
 
@@ -174,7 +203,7 @@ This build-constraint expansion adds 10 enabled `web_search_pattern` entries wit
 
 These entries still emit only `discovered_sources`. Search results do not create Projects, do not create ProjectCandidates directly, and do not bypass ingestion, claim extraction, candidate generation, verification, analyst review, or the auto-admit gate. The verifier and auto-admit dry-run remain the protections between discovery and final project creation. No public source means no project record. Live Brave remains disabled unless `WEB_SEARCH_PROVIDER=brave` and a local uncommitted `WEB_SEARCH_API_KEY` are explicitly supplied.
 
-Recommended pre-live workflow: validate the registry, run the full discovery plan report, inspect high-count and overbroad query warnings, rerun scoped reports such as `--exclude-generic` or `--priority high --exclude-generic --max-planned-queries 30`, run `python scripts/run_public_discovery.py --dry-run`, and only then consider live search with explicit cost approval.
+Recommended pre-live workflow: validate the registry, run the full discovery plan report, save ignored local snapshots for scoped reports such as `--exclude-generic` or `--priority high --exclude-generic --max-planned-queries 30`, compare the snapshots, inspect high-count and overbroad query warnings, run `python scripts/run_public_discovery.py --dry-run`, and only then consider live search with explicit cost approval.
 
 ## Discovered Source Ingestion
 
@@ -314,6 +343,7 @@ Generated discovery output is runtime data and is not committed:
 - `data/cache/`
 - `data/source_fetches/`
 - `data/discovery_runs/`
+- `data/discovery_plan_snapshots/`
 - backend runtime discovery outputs
 - geocoding caches
 

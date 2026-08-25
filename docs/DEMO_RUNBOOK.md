@@ -105,12 +105,46 @@ python scripts/run_public_discovery.py --dry-run --report --report-format json
 python scripts/run_public_discovery.py --dry-run --report --exclude-generic
 python scripts/run_public_discovery.py --dry-run --report --priority high --exclude-generic --max-planned-queries 30
 python scripts/run_public_discovery.py --dry-run --report --category grid_transmission --scope location-scoped
+python scripts/run_public_discovery.py --dry-run --report --report-output ../data/discovery_plan_snapshots/full-plan.txt
 python scripts/run_public_discovery.py --dry-run
 ```
 
 The dry-run report is the first review step before any live or paid search. It shows total planned query count, counts by adapter/provider/source type/risk category/geography/scope, each query, source registry metadata, and warnings for high-count, duplicate, generic, or likely overbroad query templates. It is read-only: it does not call Brave, fetch URLs, use a database, write runtime files, create Projects, create ProjectCandidates, or promote anything.
 
 Use report filters to review a narrower safe plan before any paid provider call: `--category`, `--source-type`, `--priority`, `--scope`, `--geography`, `--adapter`, `--source-id`, `--exclude-generic`, and `--max-planned-queries`. The report shows original, filtered, and retained query counts; caps are applied after filters; and zero-match filter combinations return an explicit warning rather than an unfiltered plan.
+
+Save local discovery plan snapshots with `--report-output` when comparing scoped plans. These files belong under the ignored runtime directory `data/discovery_plan_snapshots/`, with descriptive names such as `full-plan.txt`, `exclude-generic.txt`, `high-exclude-generic-30.json`, or `grid-transmission-location-scoped.json`. Snapshots are pre-live planning artifacts only; they are not evidence, discovered sources, claims, Projects, or ProjectCandidates.
+
+Recommended snapshot workflow:
+
+```bash
+cd backend
+source .venv/bin/activate
+
+python scripts/validate_source_registry.py
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --report-output ../data/discovery_plan_snapshots/full-plan.txt
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --exclude-generic \
+  --report-output ../data/discovery_plan_snapshots/exclude-generic.txt
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --priority high \
+  --exclude-generic \
+  --max-planned-queries 30 \
+  --report-format json \
+  --report-output ../data/discovery_plan_snapshots/high-exclude-generic-30.json
+
+python scripts/run_public_discovery.py --dry-run --report \
+  --category grid_transmission \
+  --scope location-scoped \
+  --report-format json \
+  --report-output ../data/discovery_plan_snapshots/grid-transmission-location-scoped.json
+```
+
+Compare snapshots manually with `diff`, `jq`, or your editor, then keep live Brave disabled unless the session has explicit approval for a paid provider call.
 
 The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
 
