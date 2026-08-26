@@ -231,6 +231,18 @@ def run_smoke(
         command = [sys.executable, "scripts/run_public_discovery.py"]
         if args.dry_run:
             command.append("--dry-run")
+        else:
+            command.extend(
+                [
+                    "--priority",
+                    "high",
+                    "--source-type",
+                    "utility_large_load_filings",
+                    "--max-planned-queries",
+                    "30",
+                    "--confirm-live-search",
+                ]
+            )
         step = runner(command)
         payload = redact_payload(normalize_step_payload(step), env.get("WEB_SEARCH_API_KEY"))
         summary["discovery"] = {
