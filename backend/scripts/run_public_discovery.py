@@ -36,6 +36,8 @@ from app.services.source_registry import (  # noqa: E402
 
 DEFAULT_DISCOVERY_RUNS_DIR = REPO_DIR / "data" / "discovery_runs"
 DEFAULT_SOURCE_FETCHES_DIR = REPO_DIR / "data" / "source_fetches"
+DEFAULT_LIVE_RUN_METADATA_DIR = DEFAULT_DISCOVERY_RUNS_DIR / "live_run_metadata"
+DEFAULT_LIVE_QUERY_CAP = 30
 IMPLEMENTED_ADAPTERS = {
     VIRGINIA_SCC_SOURCE_ID: VirginiaSccDiscoveryAdapter,
 }
@@ -76,49 +78,59 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--category",
         action="append",
-        help="Report mode: keep planned queries tagged with this risk/source category. May be repeated.",
+        help="Report/live mode: keep planned queries tagged with this risk/source category. May be repeated.",
     )
     parser.add_argument(
         "--source-type",
         action="append",
-        help="Report mode: keep planned queries from this source type. May be repeated.",
+        help="Report/live mode: keep planned queries from this source type. May be repeated.",
     )
     parser.add_argument(
         "--priority",
         action="append",
         choices=("high", "medium", "low"),
-        help="Report mode: keep planned queries from sources with this priority. May be repeated.",
+        help="Report/live mode: keep planned queries from sources with this priority. May be repeated.",
     )
     parser.add_argument(
         "--scope",
         action="append",
         choices=("generic", "location-scoped", "registry-scoped"),
-        help="Report mode: keep planned queries with this query scope. May be repeated.",
+        help="Report/live mode: keep planned queries with this query scope. May be repeated.",
     )
     parser.add_argument(
         "--geography",
         action="append",
-        help="Report mode: keep planned queries for this geography. May be repeated.",
+        help="Report/live mode: keep planned queries for this geography. May be repeated.",
     )
     parser.add_argument(
         "--adapter",
         action="append",
-        help="Report mode: keep planned queries from this adapter. May be repeated.",
+        help="Report/live mode: keep planned queries from this adapter. May be repeated.",
     )
     parser.add_argument(
         "--source-id",
         action="append",
-        help="Report mode: keep planned queries from this source id. May be repeated.",
+        help="Report/live mode: keep planned queries from this source id. May be repeated.",
     )
     parser.add_argument(
         "--exclude-generic",
         action="store_true",
-        help="Report mode: remove generic planned queries and keep location- or registry-scoped queries.",
+        help="Report/live mode: remove generic planned queries and keep location- or registry-scoped queries.",
     )
     parser.add_argument(
         "--max-planned-queries",
         type=positive_int,
-        help="Report mode: retain at most this many planned queries after filters are applied.",
+        help="Report/live mode: retain at most this many planned queries after filters are applied.",
+    )
+    parser.add_argument(
+        "--confirm-live-search",
+        action="store_true",
+        help="Required for non-dry-run discovery; confirms live search may incur provider cost.",
+    )
+    parser.add_argument(
+        "--allow-large-live-run",
+        action="store_true",
+        help="Allow confirmed live discovery with --max-planned-queries above the conservative cap.",
     )
     parser.add_argument(
         "--output-dir",
@@ -142,6 +154,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_SOURCE_FETCHES_DIR,
         help="Runtime fetch cache directory. Ignored by Git.",
     )
+    parser.add_argument(
+        "--live-metadata-dir",
+        type=Path,
+        default=DEFAULT_LIVE_RUN_METADATA_DIR,
+        help=argparse.SUPPRESS,
+    )
     return parser.parse_args(argv)
 
 
@@ -157,6 +175,10 @@ class DiscoveryPlanFilterError(ValueError):
 
 
 class DiscoveryPlanOutputError(ValueError):
+    pass
+
+
+class LiveDiscoveryGuardrailError(ValueError):
     pass
 
 
@@ -292,6 +314,7 @@ def build_discovery_plan_report(
             "web_search_provider": provider,
             "web_search_max_results": result_limit_from_env(),
             "registry_path": str(DEFAULT_REGISTRY_PATH),
+            "registry_version": registry.version,
             "count_by_provider": dict(sorted(Counter(row["provider"] for row in retained_query_rows).items())),
             "count_by_adapter": dict(sorted(Counter(row["adapter"] for row in retained_query_rows).items())),
             "count_by_source_type": dict(sorted(Counter(row["source_type"] for row in retained_query_rows).items())),
@@ -546,6 +569,134 @@ def format_active_filters_inline(values: dict[str, Any]) -> str:
     return "; ".join(parts)
 
 
+def validate_live_discovery_guardrails(args: argparse.Namespace, report: dict[str, Any]) -> None:
+    summary = report["summary"]
+    active_filters = summary["active_filters"]
+    cap_limit = summary["cap_limit"]
+    provider = summary["web_search_provider"]
+    if not args.confirm_live_search:
+        raise LiveDiscoveryGuardrailError(
+            "live search may incur provider cost; rerun dry-run report snapshots first and pass "
+            "--confirm-live-search only after explicit approval"
+        )
+    if not active_filters:
+        raise LiveDiscoveryGuardrailError(
+            "live discovery requires at least one limiting control such as --priority, --category, "
+            "--source-type, --scope, --geography, --adapter, --source-id, --exclude-generic, or --max-planned-queries"
+        )
+    if cap_limit is None:
+        raise LiveDiscoveryGuardrailError(
+            "live discovery requires --max-planned-queries to cap provider calls; recommended maximum is 30"
+        )
+    if cap_limit > DEFAULT_LIVE_QUERY_CAP and not args.allow_large_live_run:
+        raise LiveDiscoveryGuardrailError(
+            f"live discovery cap {cap_limit} exceeds conservative limit {DEFAULT_LIVE_QUERY_CAP}; "
+            "pass --allow-large-live-run only after explicit approval"
+        )
+    if summary["retained_total_planned_queries"] == 0:
+        raise LiveDiscoveryGuardrailError("live discovery blocked because the active filters retain zero planned queries")
+    if provider == "disabled":
+        raise LiveDiscoveryGuardrailError(
+            "live discovery requires WEB_SEARCH_PROVIDER to be configured; use WEB_SEARCH_PROVIDER=mock for a "
+            "fixture-backed local run or WEB_SEARCH_PROVIDER=brave with WEB_SEARCH_API_KEY only after approval"
+        )
+    if provider not in {"mock", "brave"}:
+        raise LiveDiscoveryGuardrailError(f"live discovery provider {provider!r} is not supported")
+
+
+def format_live_discovery_preflight(report: dict[str, Any]) -> str:
+    summary = report["summary"]
+    lines = [
+        "LIVE DISCOVERY PREFLIGHT",
+        "Live search is about to run and may incur provider cost.",
+        f"- Provider: {summary['web_search_provider']}",
+        f"- Original planned queries: {summary['original_total_planned_queries']}",
+        f"- Filtered planned queries: {summary['filtered_total_planned_queries']}",
+        f"- Retained planned queries: {summary['retained_total_planned_queries']}",
+        f"- Active filters: {format_active_filters_inline(summary['active_filters'])}",
+        f"- Cap limit: {summary['cap_limit']}",
+        f"- Capped: {summary['capped']}",
+        "- Recommended snapshot first: python scripts/run_public_discovery.py --dry-run --report "
+        "--report-format json --report-output ../data/discovery_plan_snapshots/pre-live-plan.json",
+        "- No Project promotion is performed; candidates remain separate review records.",
+        "",
+        "Counts By Source Type",
+        *format_counter_lines(summary["count_by_source_type"]),
+        "",
+        "Counts By Risk Category",
+        *format_counter_lines(summary["count_by_risk_category"]),
+        "",
+        "Counts By Scope",
+        *format_counter_lines(summary["count_by_scope"]),
+    ]
+    return "\n".join(lines)
+
+
+def filtered_sources_for_plan(enabled_sources: list[Any], report: dict[str, Any]) -> list[Any]:
+    queries_by_source_id: dict[str, list[str]] = defaultdict(list)
+    for row in report["details"]:
+        queries_by_source_id[row["source_id"]].append(row["query"])
+    filtered_sources = []
+    for source in enabled_sources:
+        search_terms = queries_by_source_id.get(source.id)
+        if not search_terms:
+            continue
+        filtered_sources.append(source.model_copy(update={"search_terms": search_terms}))
+    return filtered_sources
+
+
+def write_live_run_metadata(
+    *,
+    metadata_dir: Path,
+    report: dict[str, Any],
+    argv: list[str],
+    confirmed: bool,
+) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = metadata_dir / f"{timestamp}_live_discovery_metadata.json"
+    summary = report["summary"]
+    metadata = {
+        "timestamp": timestamp,
+        "provider": summary["web_search_provider"],
+        "active_filters": summary["active_filters"],
+        "original_total_planned_queries": summary["original_total_planned_queries"],
+        "filtered_total_planned_queries": summary["filtered_total_planned_queries"],
+        "retained_total_planned_queries": summary["retained_total_planned_queries"],
+        "capped": summary["capped"],
+        "cap_limit": summary["cap_limit"],
+        "registry_path": summary["registry_path"],
+        "registry_version": summary["registry_version"],
+        "argv": redact_argv(argv),
+        "live_search_confirmed": confirmed,
+        "dry_run": False,
+        "project_promotion_statement": "No Project promotion is performed by public discovery.",
+    }
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return metadata_path
+
+
+def redact_argv(argv: list[str]) -> list[str]:
+    redacted: list[str] = []
+    redact_next = False
+    secret_markers = ("key", "secret", "token", "password")
+    for arg in argv:
+        if redact_next:
+            redacted.append("<redacted>")
+            redact_next = False
+            continue
+        lower = arg.lower()
+        if any(marker in lower for marker in secret_markers):
+            if "=" in arg:
+                redacted.append(f"{arg.split('=', 1)[0]}=<redacted>")
+            else:
+                redacted.append(arg)
+                redact_next = True
+            continue
+        redacted.append(arg)
+    return redacted
+
+
 def run_sources(
     *,
     dry_run: bool,
@@ -553,9 +704,14 @@ def run_sources(
     allow_insecure_fetch: bool = False,
     write_fetch_cache: bool = False,
     fetch_cache_dir: Path = DEFAULT_SOURCE_FETCHES_DIR,
+    plan_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     registry = load_source_registry(DEFAULT_REGISTRY_PATH)
-    enabled_sources = registry.enabled_sources
+    enabled_sources = (
+        filtered_sources_for_plan(registry.enabled_sources, plan_report)
+        if plan_report is not None and not dry_run
+        else registry.enabled_sources
+    )
     warnings: list[str] = []
     errors: list[str] = []
     adapter_results: list[dict[str, Any]] = []
@@ -632,6 +788,8 @@ def write_discovery_output(output_dir: Path, discovered_sources: list[dict[str, 
 def main() -> None:
     args = parse_args()
     try:
+        live_plan_report: dict[str, Any] | None = None
+        live_metadata_path: Path | None = None
         if args.report:
             report = build_discovery_plan_report(
                 query_count_warning_threshold=args.query_count_warning_threshold,
@@ -644,13 +802,28 @@ def main() -> None:
             else:
                 print(report_content)
             raise SystemExit(0)
+        if not args.dry_run:
+            live_plan_report = build_discovery_plan_report(filters=report_filters_from_args(args))
+            validate_live_discovery_guardrails(args, live_plan_report)
+            print(format_live_discovery_preflight(live_plan_report), file=sys.stderr)
+            live_metadata_path = write_live_run_metadata(
+                metadata_dir=args.live_metadata_dir,
+                report=live_plan_report,
+                argv=sys.argv[1:],
+                confirmed=args.confirm_live_search,
+            )
         payload = run_sources(
             dry_run=args.dry_run,
             output_dir=args.output_dir,
             allow_insecure_fetch=args.allow_insecure_fetch,
             write_fetch_cache=args.write_fetch_cache,
             fetch_cache_dir=args.fetch_cache_dir,
+            plan_report=live_plan_report,
         )
+        if live_plan_report is not None:
+            payload["live_discovery_preflight"] = live_plan_report["summary"]
+        if live_metadata_path is not None:
+            payload["live_run_metadata_path"] = str(live_metadata_path)
     except SourceRegistryValidationError as exc:
         print(
             json.dumps(
@@ -672,6 +845,9 @@ def main() -> None:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
     except DiscoveryPlanOutputError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    except LiveDiscoveryGuardrailError as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 

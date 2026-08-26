@@ -32,9 +32,14 @@ from app.services.source_registry import load_source_registry  # noqa: E402
 from run_public_discovery import run_sources  # noqa: E402
 from run_public_discovery import (  # noqa: E402
     DiscoveryPlanFilterError,
+    LiveDiscoveryGuardrailError,
     build_discovery_plan_report,
     format_discovery_plan_report,
+    format_live_discovery_preflight,
+    main as run_public_discovery_main,
     parse_args,
+    redact_argv,
+    validate_live_discovery_guardrails,
 )
 
 
@@ -375,6 +380,157 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_live_run_without_confirmation_fails_before_provider_call(self) -> None:
+        argv = ["run_public_discovery.py", "--priority", "high", "--exclude-generic", "--max-planned-queries", "30"]
+        with patch.object(sys, "argv", argv):
+            with patch("run_public_discovery.run_sources") as run_sources_mock:
+                with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    with self.assertRaises(SystemExit) as exc:
+                        run_public_discovery_main()
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertFalse(run_sources_mock.called)
+        self.assertIn("live search may incur provider cost", stderr.getvalue())
+
+    def test_live_run_without_filters_fails_before_provider_call(self) -> None:
+        args = parse_args(["--confirm-live-search"])
+        report = build_discovery_plan_report(filters={})
+
+        with self.assertRaises(LiveDiscoveryGuardrailError) as exc:
+            validate_live_discovery_guardrails(args, report)
+
+        self.assertIn("requires at least one limiting control", str(exc.exception))
+
+    def test_live_run_without_max_planned_queries_fails_before_provider_call(self) -> None:
+        args = parse_args(["--priority", "high", "--confirm-live-search"])
+        report = build_discovery_plan_report(filters={"priority": ["high"]})
+
+        with self.assertRaises(LiveDiscoveryGuardrailError) as exc:
+            validate_live_discovery_guardrails(args, report)
+
+        self.assertIn("requires --max-planned-queries", str(exc.exception))
+
+    def test_live_run_over_cap_fails_without_large_run_override(self) -> None:
+        args = parse_args(["--priority", "high", "--max-planned-queries", "31", "--confirm-live-search"])
+        with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=False):
+            report = build_discovery_plan_report(filters={"priority": ["high"], "max_planned_queries": 31})
+
+        with self.assertRaises(LiveDiscoveryGuardrailError) as exc:
+            validate_live_discovery_guardrails(args, report)
+
+        self.assertIn("exceeds conservative limit 30", str(exc.exception))
+
+    def test_invalid_live_filter_fails_before_provider_call(self) -> None:
+        argv = [
+            "run_public_discovery.py",
+            "--category",
+            "not_a_category",
+            "--max-planned-queries",
+            "30",
+            "--confirm-live-search",
+        ]
+        with patch.object(sys, "argv", argv):
+            with patch("run_public_discovery.run_sources") as run_sources_mock:
+                with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    with self.assertRaises(SystemExit) as exc:
+                        run_public_discovery_main()
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertFalse(run_sources_mock.called)
+        self.assertIn("unknown category filter", stderr.getvalue())
+
+    def test_confirmed_mock_live_run_uses_same_filtered_queries_as_report_and_writes_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "discovery_runs"
+            metadata_dir = Path(tmpdir) / "metadata"
+            env = {
+                **os.environ,
+                "WEB_SEARCH_PROVIDER": "mock",
+                "WEB_SEARCH_MOCK_RESULTS_PATH": str(FIXTURES_DIR / "generic_web_search_results.json"),
+                "WEB_SEARCH_API_KEY": "secret-test-key",
+            }
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_public_discovery.py",
+                    "--priority",
+                    "high",
+                    "--exclude-generic",
+                    "--max-planned-queries",
+                    "30",
+                    "--confirm-live-search",
+                    "--output-dir",
+                    str(output_dir),
+                    "--live-metadata-dir",
+                    str(metadata_dir),
+                ],
+                cwd=BACKEND_DIR,
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            expected_report = build_discovery_plan_report(
+                filters={"priority": ["high"], "exclude_generic": True, "max_planned_queries": 30}
+            )
+            planned_queries = [
+                planned["term"]
+                for adapter_result in payload["adapter_results"]
+                for planned in adapter_result["planned_queries"]
+            ]
+            expected_queries = [row["query"] for row in expected_report["details"]]
+            self.assertEqual(planned_queries, expected_queries)
+            self.assertEqual(
+                payload["live_discovery_preflight"]["retained_total_planned_queries"],
+                expected_report["summary"]["retained_total_planned_queries"],
+            )
+            self.assertIn("LIVE DISCOVERY PREFLIGHT", result.stderr)
+            metadata_path = Path(payload["live_run_metadata_path"])
+            self.assertTrue(metadata_path.exists())
+            metadata_text = metadata_path.read_text(encoding="utf-8")
+            metadata = json.loads(metadata_text)
+            self.assertEqual(metadata["retained_total_planned_queries"], len(expected_queries))
+            self.assertTrue(metadata["live_search_confirmed"])
+            self.assertFalse(metadata["dry_run"])
+            self.assertNotIn("secret-test-key", metadata_text)
+
+    def test_live_preflight_includes_counts_and_snapshot_reminder(self) -> None:
+        with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=False):
+            report = build_discovery_plan_report(
+                filters={"priority": ["high"], "exclude_generic": True, "max_planned_queries": 30}
+            )
+
+        text = format_live_discovery_preflight(report)
+
+        self.assertIn("Provider: mock", text)
+        self.assertIn("Original planned queries: 117", text)
+        self.assertIn("Retained planned queries:", text)
+        self.assertIn("Counts By Source Type", text)
+        self.assertIn("Counts By Risk Category", text)
+        self.assertIn("Counts By Scope", text)
+        self.assertIn("discovery_plan_snapshots", text)
+
+    def test_live_run_metadata_directory_is_ignored_by_git(self) -> None:
+        result = subprocess.run(
+            ["git", "check-ignore", "data/discovery_runs/live_run_metadata/example.json"],
+            cwd=BACKEND_DIR.parent,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_redact_argv_removes_secret_values(self) -> None:
+        redacted = redact_argv(["--api-key", "secret-value", "--token=secret-token", "--priority", "high"])
+
+        self.assertEqual(redacted, ["--api-key", "<redacted>", "--token=<redacted>", "--priority", "high"])
 
     def test_discovery_plan_report_json_shape_is_serializable(self) -> None:
         payload = json.loads(json.dumps(build_discovery_plan_report()))

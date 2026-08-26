@@ -163,6 +163,11 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
         self.assertEqual(summary["verification"]["candidates_checked"], 1)
         self.assertEqual(summary["auto_admit_dry_run"]["promoted"], 0)
         self.assertEqual(summary["promoted"], 0)
+        discovery_call = next(call for call in calls if call[1].endswith("run_public_discovery.py"))
+        self.assertIn("--confirm-live-search", discovery_call)
+        self.assertIn("--max-planned-queries", discovery_call)
+        self.assertIn("--source-type", discovery_call)
+        self.assertIn("utility_large_load_filings", discovery_call)
         auto_admit_call = next(call for call in calls if call[1].endswith("auto_admit_project_candidates.py"))
         self.assertNotIn("--confirm", auto_admit_call)
 

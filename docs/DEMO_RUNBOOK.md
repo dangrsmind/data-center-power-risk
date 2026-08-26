@@ -151,16 +151,27 @@ The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_
 For a fixture-backed local check:
 
 ```bash
-WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py
+WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py \
+  --priority high \
+  --source-type utility_large_load_filings \
+  --max-planned-queries 30 \
+  --confirm-live-search
 ```
 
-For live Brave Search API discovery, keep the key in your shell environment and do not commit it:
+For live Brave Search API discovery, keep the key in your shell environment and do not commit it. Do not run this command unless the session has explicit approval for possible provider cost:
 
 ```bash
-WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py
+WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 \
+python scripts/run_public_discovery.py \
+  --priority high \
+  --exclude-generic \
+  --max-planned-queries 30 \
+  --confirm-live-search
 ```
 
-Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted. Do not run live Brave unless explicitly approved for the session; dry-run and mock runs are the default safe checks. Recommended workflow before paid search: validate the registry, inspect the discovery plan report, review high-count and overbroad warnings, run public discovery dry-run, and only then consider live search with explicit cost approval.
+Any non-dry-run discovery command is blocked unless it passes `--confirm-live-search`, at least one limiting filter, and `--max-planned-queries`. Caps above 30 require `--allow-large-live-run`. The preflight prints provider, original/filtered/retained query counts, active filters, cap metadata, counts by source type/risk category/scope, and a reminder to save a snapshot first. Confirmed live runs write redacted metadata under ignored `data/discovery_runs/live_run_metadata/`.
+
+Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted. Do not run live Brave unless explicitly approved for the session; dry-run and mock runs are the default safe checks. Recommended workflow before paid search: validate the registry, save and inspect a scoped discovery plan snapshot, review high-count and overbroad warnings, run public discovery dry-run, and only then consider a confirmed capped live search with explicit cost approval.
 
 Discovery and triage may surface build-constraint context such as grid interconnection, transmission capacity, substations, load requests, onsite or behind-the-meter generation, diesel or backup generators, gas turbine generation, fuel cells, nuclear or SMR proposals, fuel supply, air permitting, emissions/NOx compliance, water/cooling, wastewater, drought, community opposition, public hearings, zoning/land use, moratoria, litigation, utility regulatory approval, tax incentives, cost/financing, schedule delay/pause/cancellation, or political/institutional resistance. These signals are review cues, not final project facts.
 
