@@ -106,6 +106,8 @@ python scripts/run_public_discovery.py --dry-run --report --exclude-generic
 python scripts/run_public_discovery.py --dry-run --report --priority high --exclude-generic --max-planned-queries 30
 python scripts/run_public_discovery.py --dry-run --report --category grid_transmission --scope location-scoped
 python scripts/run_public_discovery.py --dry-run --report --report-output ../data/discovery_plan_snapshots/full-plan.txt
+python scripts/run_live_discovery_smoke.py --list-recipes
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
 python scripts/run_public_discovery.py --dry-run
 ```
 
@@ -145,6 +147,42 @@ python scripts/run_public_discovery.py --dry-run --report \
 ```
 
 Compare snapshots manually with `diff`, `jq`, or your editor, then keep live Brave disabled unless the session has explicit approval for a paid provider call.
+
+The first recommended live-smoke recipe is `grid_transmission` plus `location-scoped`. It retains about 10 planned queries in the current registry, avoids broad generic templates, and focuses on official or regulatory targets. Save and review this snapshot first:
+
+```bash
+python scripts/run_public_discovery.py --dry-run --report \
+  --category grid_transmission \
+  --scope location-scoped \
+  --max-planned-queries 30 \
+  --report-format json \
+  --report-output ../data/discovery_plan_snapshots/final-grid-transmission-location-scoped.json
+```
+
+Only after explicit cost approval, the matching live command is:
+
+```bash
+WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 \
+python scripts/run_public_discovery.py \
+  --category grid_transmission \
+  --scope location-scoped \
+  --max-planned-queries 30 \
+  --confirm-live-search
+```
+
+Other focused official-source recipes use the same cap and confirmation:
+
+- Texas PUCT: `--source-id texas_puct_large_load_data_center_search --max-planned-queries 30 --confirm-live-search`
+- ERCOT: `--source-id ercot_large_load_data_center_search --max-planned-queries 30 --confirm-live-search`
+- Virginia SCC: `--source-id virginia_scc_data_center_large_load_dockets --max-planned-queries 30 --confirm-live-search`
+- Pacific Northwest utility: `--source-id pacific_northwest_utility_data_center_search --max-planned-queries 30 --confirm-live-search`
+
+The wrapper helper lists recipes and can dry-run a recipe plan without making provider calls:
+
+```bash
+python scripts/run_live_discovery_smoke.py --list-recipes
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
+```
 
 The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
 
