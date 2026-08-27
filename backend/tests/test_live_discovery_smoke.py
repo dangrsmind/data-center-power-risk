@@ -171,6 +171,106 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
         auto_admit_call = next(call for call in calls if call[1].endswith("auto_admit_project_candidates.py"))
         self.assertNotIn("--confirm", auto_admit_call)
 
+    def test_recipe_listing_contains_guarded_official_source_recipes(self) -> None:
+        recipes = run_live_discovery_smoke.recipe_listing()
+
+        expected = {
+            "grid-transmission-location-scoped",
+            "texas-puct",
+            "ercot",
+            "virginia-scc",
+            "pacific-northwest-utility",
+        }
+        self.assertEqual(set(recipes), expected)
+        for name, recipe in recipes.items():
+            with self.subTest(recipe=name):
+                self.assertLessEqual(recipe["expected_retained_queries"], 30)
+                self.assertIn("--max-planned-queries", recipe["args"])
+                self.assertIn("30", recipe["args"])
+                self.assertTrue(recipe["requires_confirm_live_search_for_live"])
+                self.assertTrue(
+                    any(flag in recipe["args"] for flag in ("--source-id", "--category", "--scope")),
+                    recipe["args"],
+                )
+
+    def test_list_recipes_exits_without_running_provider(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "scripts/run_live_discovery_smoke.py", "--list-recipes"],
+            cwd=BACKEND_DIR,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertIn("grid-transmission-location-scoped", payload["recipes"])
+        self.assertNotIn("LIVE DISCOVERY PREFLIGHT", result.stderr)
+
+    def test_recipe_dry_run_uses_report_without_live_confirmation(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_runner(command: list[str]) -> StepResult:
+            calls.append(command)
+            return StepResult(
+                returncode=0,
+                payload={
+                    "summary": {
+                        "retained_total_planned_queries": 10,
+                        "active_filters": {"category": ["grid_transmission"], "scope": ["location-scoped"]},
+                    },
+                    "details": [],
+                    "warnings": [],
+                },
+                stdout="{}",
+                stderr="",
+            )
+
+        with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=True):
+            summary, exit_code = run_live_discovery_smoke.run_smoke(
+                self._args("--recipe", "grid-transmission-location-scoped", "--dry-run"),
+                step_runner=fake_runner,
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(summary["discovery"]["sources_discovered"], 0)
+        discovery_call = calls[0]
+        self.assertIn("--dry-run", discovery_call)
+        self.assertIn("--report", discovery_call)
+        self.assertIn("--report-format", discovery_call)
+        self.assertIn("--category", discovery_call)
+        self.assertIn("grid_transmission", discovery_call)
+        self.assertIn("--scope", discovery_call)
+        self.assertIn("location-scoped", discovery_call)
+        self.assertIn("--max-planned-queries", discovery_call)
+        self.assertNotIn("--confirm-live-search", discovery_call)
+
+    def test_recipe_live_wrapper_keeps_public_discovery_guardrails(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_runner(command: list[str]) -> StepResult:
+            calls.append(command)
+            return StepResult(
+                returncode=0,
+                payload={"sources_discovered": 0, "output_path": None, "errors": [], "warnings": []},
+                stdout="{}",
+                stderr="",
+            )
+
+        with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=True):
+            _, exit_code = run_live_discovery_smoke.run_smoke(
+                self._args("--recipe", "texas-puct"),
+                step_runner=fake_runner,
+            )
+
+        self.assertEqual(exit_code, 0)
+        discovery_call = calls[0]
+        self.assertIn("--confirm-live-search", discovery_call)
+        self.assertIn("--source-id", discovery_call)
+        self.assertIn("texas_puct_large_load_data_center_search", discovery_call)
+        self.assertIn("--max-planned-queries", discovery_call)
+        self.assertIn("30", discovery_call)
+
     def test_discovery_output_skips_discovery_and_counts_fixture_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             fixture_path = Path(tmpdir) / "discovered_sources.json"

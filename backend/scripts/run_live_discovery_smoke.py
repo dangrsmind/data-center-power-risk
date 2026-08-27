@@ -37,8 +37,54 @@ class StepResult:
     stderr: str
 
 
+@dataclass(frozen=True)
+class SmokeRecipe:
+    description: str
+    args: tuple[str, ...]
+    expected_retained_queries: int
+
+
+SMOKE_RECIPES: dict[str, SmokeRecipe] = {
+    "grid-transmission-location-scoped": SmokeRecipe(
+        description="First recommended official/regulatory smoke: grid/transmission, location-scoped.",
+        args=("--category", "grid_transmission", "--scope", "location-scoped", "--max-planned-queries", "30"),
+        expected_retained_queries=10,
+    ),
+    "texas-puct": SmokeRecipe(
+        description="Texas PUCT large-load data center focused smoke.",
+        args=("--source-id", "texas_puct_large_load_data_center_search", "--max-planned-queries", "30"),
+        expected_retained_queries=2,
+    ),
+    "ercot": SmokeRecipe(
+        description="ERCOT large-load data center focused smoke.",
+        args=("--source-id", "ercot_large_load_data_center_search", "--max-planned-queries", "30"),
+        expected_retained_queries=2,
+    ),
+    "virginia-scc": SmokeRecipe(
+        description="Virginia SCC data center and large-load docket focused smoke.",
+        args=("--source-id", "virginia_scc_data_center_large_load_dockets", "--max-planned-queries", "30"),
+        expected_retained_queries=4,
+    ),
+    "pacific-northwest-utility": SmokeRecipe(
+        description="Pacific Northwest utility data center focused smoke.",
+        args=("--source-id", "pacific_northwest_utility_data_center_search", "--max-planned-queries", "30"),
+        expected_retained_queries=2,
+    ),
+}
+DEFAULT_SMOKE_RECIPE_ARGS = (
+    "--priority",
+    "high",
+    "--source-type",
+    "utility_large_load_filings",
+    "--max-planned-queries",
+    "30",
+)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a controlled live/mock public discovery smoke workflow.")
+    parser.add_argument("--list-recipes", action="store_true", help="List safe official-source smoke recipes and exit.")
+    parser.add_argument("--recipe", choices=sorted(SMOKE_RECIPES), help="Use a named guarded smoke recipe.")
     parser.add_argument("--ingest", action="store_true", help="Ingest discovered sources into discovered_sources.")
     parser.add_argument("--extract-claims", action="store_true", help="Extract claims from ingested discovered sources.")
     parser.add_argument("--generate-candidates", action="store_true", help="Generate reviewable project candidates.")
@@ -60,6 +106,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Set WEB_SEARCH_MAX_RESULTS for this process and child steps.",
     )
     return parser.parse_args(argv)
+
+
+def recipe_listing() -> dict[str, Any]:
+    return {
+        name: {
+            "description": recipe.description,
+            "args": list(recipe.args),
+            "expected_retained_queries": recipe.expected_retained_queries,
+            "requires_confirm_live_search_for_live": True,
+        }
+        for name, recipe in sorted(SMOKE_RECIPES.items())
+    }
+
+
+def recipe_args(args: argparse.Namespace) -> tuple[str, ...]:
+    if args.recipe:
+        return SMOKE_RECIPES[args.recipe].args
+    return DEFAULT_SMOKE_RECIPE_ARGS
 
 
 def run_step(command: list[str], *, env: dict[str, str]) -> StepResult:
@@ -200,7 +264,7 @@ def run_smoke(
     api_key_present = bool(env.get("WEB_SEARCH_API_KEY"))
     summary = empty_summary(provider=provider, max_results=max_results, api_key_present=api_key_present)
 
-    if (provider_raw is None or provider == "disabled") and not args.allow_disabled:
+    if not args.dry_run and (provider_raw is None or provider == "disabled") and not args.allow_disabled:
         summary["errors"].append("web_search_provider_disabled")
         summary["warnings"].append(
             "Set WEB_SEARCH_PROVIDER=mock or WEB_SEARCH_PROVIDER=brave; "
@@ -231,18 +295,10 @@ def run_smoke(
         command = [sys.executable, "scripts/run_public_discovery.py"]
         if args.dry_run:
             command.append("--dry-run")
+            if args.recipe:
+                command.extend(["--report", "--report-format", "json", *recipe_args(args)])
         else:
-            command.extend(
-                [
-                    "--priority",
-                    "high",
-                    "--source-type",
-                    "utility_large_load_filings",
-                    "--max-planned-queries",
-                    "30",
-                    "--confirm-live-search",
-                ]
-            )
+            command.extend([*recipe_args(args), "--confirm-live-search"])
         step = runner(command)
         payload = redact_payload(normalize_step_payload(step), env.get("WEB_SEARCH_API_KEY"))
         summary["discovery"] = {
@@ -293,7 +349,11 @@ def run_smoke(
 
 
 def main(argv: list[str] | None = None) -> None:
-    summary, exit_code = run_smoke(parse_args(argv))
+    args = parse_args(argv)
+    if args.list_recipes:
+        print(json.dumps({"recipes": recipe_listing()}, indent=2, sort_keys=True))
+        raise SystemExit(0)
+    summary, exit_code = run_smoke(args)
     print(json.dumps(summary, indent=2, sort_keys=True))
     raise SystemExit(exit_code)
 

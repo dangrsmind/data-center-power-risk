@@ -154,6 +154,8 @@ python scripts/run_public_discovery.py --dry-run --report --report-output ../dat
 python scripts/run_public_discovery.py --dry-run --report --exclude-generic --report-output ../data/discovery_plan_snapshots/exclude-generic.txt
 python scripts/run_public_discovery.py --dry-run --report --priority high --exclude-generic --max-planned-queries 30 --report-format json --report-output ../data/discovery_plan_snapshots/high-exclude-generic-30.json
 python scripts/run_public_discovery.py --dry-run
+python scripts/run_live_discovery_smoke.py --list-recipes
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
 WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py --priority high --source-type utility_large_load_filings --max-planned-queries 30 --confirm-live-search
 WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py --priority high --exclude-generic --max-planned-queries 30 --confirm-live-search
 ```
@@ -200,6 +202,48 @@ python scripts/run_public_discovery.py \
   --max-planned-queries 30 \
   --confirm-live-search
 ```
+
+### Official-Source Live-Smoke Recipes
+
+The first recommended live smoke is `grid_transmission` plus `location-scoped`. It is preferred because the current dry-run plan retains about 10 queries, avoids broad generic templates, and targets official or regulatory-style source patterns such as SCC, utility commission, ERCOT, and regional utility sources.
+
+Save the snapshot first:
+
+```bash
+python scripts/run_public_discovery.py --dry-run --report \
+  --category grid_transmission \
+  --scope location-scoped \
+  --max-planned-queries 30 \
+  --report-format json \
+  --report-output ../data/discovery_plan_snapshots/final-grid-transmission-location-scoped.json
+```
+
+Only after explicit cost approval, use the matching guarded live command:
+
+```bash
+WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 \
+python scripts/run_public_discovery.py \
+  --category grid_transmission \
+  --scope location-scoped \
+  --max-planned-queries 30 \
+  --confirm-live-search
+```
+
+Additional small official-source recipes:
+
+- Texas PUCT focused smoke: `--source-id texas_puct_large_load_data_center_search --max-planned-queries 30 --confirm-live-search`
+- ERCOT focused smoke: `--source-id ercot_large_load_data_center_search --max-planned-queries 30 --confirm-live-search`
+- Virginia SCC focused smoke: `--source-id virginia_scc_data_center_large_load_dockets --max-planned-queries 30 --confirm-live-search`
+- Pacific Northwest utility focused smoke: `--source-id pacific_northwest_utility_data_center_search --max-planned-queries 30 --confirm-live-search`
+
+The smoke wrapper can list and dry-run the named recipes without a live provider call:
+
+```bash
+python scripts/run_live_discovery_smoke.py --list-recipes
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
+```
+
+Live Brave may cost money and still requires explicit user approval. These recipes create only discovered-source candidates; they do not create final Projects, promote ProjectCandidates, or bypass verifier/admission safeguards.
 
 If `WEB_SEARCH_PROVIDER=brave` is set without `WEB_SEARCH_API_KEY`, the adapter returns `web_search_api_key_missing` and emits no discovered source records. Provider request failures are reported as structured warnings and do not crash the whole discovery run. The discovery summary reports the active provider name and result limit but never prints API keys.
 
