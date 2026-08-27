@@ -23,15 +23,30 @@ SCC_PUBLISHER = "Virginia State Corporation Commission"
 VIRGINIA_SCC_SOURCE_ID = "virginia_scc_data_center_large_load_dockets"
 RELEVANCE_TERMS = {
     "data center",
+    "data centers",
     "datacenter",
     "large load",
+    "load growth",
+    "hyperscale",
     "electric service agreement",
     "service agreement",
+    "electric transmission",
     "transmission interconnection",
+    "transmission",
     "interconnection",
+    "substation",
+    "energy regulation",
+    "utility regulation",
+    "pur-",
     "public utility",
-    "case",
-    "docket",
+}
+IRRELEVANT_TERMS = {
+    "safe digging month",
+    "call before you dig",
+    "insurance",
+    "securities",
+    "investor education",
+    "consumer notice",
 }
 SCC_URL_MARKERS = {
     "scc.virginia.gov",
@@ -433,6 +448,14 @@ class VirginiaSccDiscoveryAdapter:
                         discovery_method=self.source.discovery_method,
                         confidence="candidate_discovered",
                         notes="Parsed from Virginia SCC public docket/search page probe; requires analyst review.",
+                        source_query=title,
+                        source_registry_id=self.source.id,
+                        adapter_id=self.adapter_id,
+                        raw_metadata_json={
+                            "source_registry_id": self.source.id,
+                            "adapter_id": self.adapter_id,
+                            "parser": "scc_public_link_probe",
+                        },
                     )
                 )
             except ValidationError:
@@ -463,6 +486,16 @@ class VirginiaSccDiscoveryAdapter:
                         snippet=parsed_result.snippet,
                         case_number=parsed_result.case_number,
                         document_type=parsed_result.document_type or parsed_result.source_type,
+                        source_registry_id=self.source.id,
+                        adapter_id=self.adapter_id,
+                        raw_metadata_json={
+                            "source_registry_id": self.source.id,
+                            "adapter_id": self.adapter_id,
+                            "search_term": parsed_result.source_query,
+                            "case_number": parsed_result.case_number,
+                            "document_type": parsed_result.document_type,
+                            "source_type": parsed_result.source_type,
+                        },
                     )
                 )
             except ValidationError:
@@ -640,6 +673,8 @@ def is_relevant_scc_result(*, url: str, title: str | None, snippet: str | None, 
     if not any(marker in url_lower for marker in SCC_URL_MARKERS):
         return False
     haystack = " ".join(part for part in [title, snippet, absolute_url] if part).casefold()
+    if any(term in haystack for term in IRRELEVANT_TERMS):
+        return False
     return any(term in haystack for term in RELEVANCE_TERMS)
 
 

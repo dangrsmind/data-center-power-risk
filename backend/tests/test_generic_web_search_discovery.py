@@ -90,6 +90,8 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         discovered = result.discovered_sources[0]
         self.assertIsInstance(discovered, DiscoveredSource)
         self.assertEqual(discovered.source_url.unicode_string(), "https://planning.example.gov/agendas/2026-05-01-data-center.html")
+        self.assertTrue(discovered.source_url.unicode_string().startswith("https://"))
+        self.assertEqual(discovered.source_title, "Planning Commission agenda: data center special use permit")
         self.assertEqual(discovered.publisher, "Example County Planning")
         self.assertEqual(discovered.discovery_method, "web_search_pattern")
         self.assertEqual(discovered.source_registry_id, "generic_county_planning_data_center_search")

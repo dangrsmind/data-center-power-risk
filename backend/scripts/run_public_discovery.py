@@ -801,6 +801,8 @@ def run_sources(
         errors.extend(result.errors)
         discovered_sources.extend(source.model_dump(mode="json") for source in result.discovered_sources)
 
+    warnings.extend(validate_discovered_source_output_rows(discovered_sources))
+
     output_path: Path | None = None
     if not dry_run and discovered_sources:
         output_path = write_discovery_output(output_dir, discovered_sources)
@@ -838,6 +840,35 @@ def build_would_run(enabled_sources: list[Any]) -> list[str]:
         f"{source.id}: {source.discovery_method} against {source.base_url}"
         for source in enabled_sources
     ]
+
+
+def validate_discovered_source_output_rows(rows: list[dict[str, Any]]) -> list[str]:
+    warnings: list[str] = []
+    seen_urls: set[str] = set()
+    required_fields = (
+        "source_url",
+        "source_title",
+        "source_type",
+        "geography",
+        "discovery_method",
+        "source_registry_id",
+        "adapter_id",
+    )
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            warnings.append(f"discovered_source_output_validation: row {index} is not an object")
+            continue
+        for field_name in required_fields:
+            if not row.get(field_name):
+                warnings.append(f"discovered_source_output_validation: row {index} missing {field_name}")
+        source_url = str(row.get("source_url") or "")
+        if source_url:
+            if not source_url.startswith(("http://", "https://")):
+                warnings.append(f"discovered_source_output_validation: row {index} source_url is not plain http(s)")
+            if source_url in seen_urls:
+                warnings.append(f"discovered_source_output_validation: duplicate source_url {source_url}")
+            seen_urls.add(source_url)
+    return warnings
 
 
 def write_discovery_output(output_dir: Path, discovered_sources: list[dict[str, Any]]) -> Path:
