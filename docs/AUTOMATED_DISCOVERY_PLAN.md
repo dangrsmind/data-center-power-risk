@@ -245,6 +245,12 @@ python scripts/run_live_discovery_smoke.py --list-recipes
 python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
 ```
 
+After explicit approval for possible provider cost and with `WEB_SEARCH_PROVIDER=brave` plus `WEB_SEARCH_API_KEY` set in the local shell, the matching guarded wrapper command is:
+
+```bash
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --confirm-live-search
+```
+
 Live Brave may cost money and still requires explicit user approval. These recipes create only discovered-source candidates; they do not create final Projects, promote ProjectCandidates, or bypass verifier/admission safeguards.
 
 If `WEB_SEARCH_PROVIDER=brave` is set without `WEB_SEARCH_API_KEY`, the adapter returns `web_search_api_key_missing` and emits no discovered source records. Provider request failures are reported as structured warnings and do not crash the whole discovery run. The discovery summary reports the active provider name and result limit but never prints API keys.
