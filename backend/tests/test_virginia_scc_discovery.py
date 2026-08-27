@@ -14,8 +14,10 @@ sys.path.insert(0, str(BACKEND_DIR / "scripts"))
 
 from app.schemas.discovery import DiscoveredSource  # noqa: E402
 from app.services.discovery_adapters.virginia_scc import (  # noqa: E402
+    VIRGINIA_SCC_SOURCE_ID,
     VirginiaSccDiscoveryAdapter,
     extract_searchstax_config,
+    is_relevant_scc_result,
     normalize_url,
     parse_searchstax_response,
     parse_scc_search_results,
@@ -23,6 +25,7 @@ from app.services.discovery_adapters.virginia_scc import (  # noqa: E402
 from app.services.public_fetch import FetchResult  # noqa: E402
 from app.services.source_registry import load_source_registry  # noqa: E402
 from run_public_discovery import run_sources  # noqa: E402
+from run_public_discovery import validate_discovered_source_output_rows  # noqa: E402
 
 
 class StubFetchClient:
@@ -86,6 +89,10 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertIsInstance(sources[0], DiscoveredSource)
         self.assertEqual(sources[0].publisher, "Virginia State Corporation Commission")
         self.assertEqual(sources[0].confidence, "candidate_discovered")
+        self.assertEqual(sources[0].source_registry_id, VIRGINIA_SCC_SOURCE_ID)
+        self.assertEqual(sources[0].adapter_id, "virginia_scc")
+        self.assertEqual(sources[0].source_url.unicode_string(), "https://www.scc.virginia.gov/docketsearch/DOCS/example.PDF")
+        self.assertEqual(sources[0].source_title, "Data center large load docket")
 
     def test_parse_representative_scc_search_results_fixture(self) -> None:
         html = (FIXTURES_DIR / "scc_search_results.html").read_text()
@@ -257,8 +264,98 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertEqual(result.discovered_sources[0].geography, "Virginia")
         self.assertEqual(result.discovered_sources[0].discovery_method, "searchstax_query")
         self.assertEqual(result.discovered_sources[0].source_query, "data center")
+        self.assertEqual(result.discovered_sources[0].source_registry_id, VIRGINIA_SCC_SOURCE_ID)
+        self.assertEqual(result.discovered_sources[0].adapter_id, "virginia_scc")
+        self.assertTrue(result.discovered_sources[0].source_url.unicode_string().startswith("https://"))
+        self.assertTrue(result.discovered_sources[0].source_title)
         self.assertEqual(result.discovered_sources[1].case_number, "PUR-2026-00022")
         self.assertIn("Authorization", fetch_client.calls[1][1] or {})
+
+    def test_searchstax_filters_safe_digging_but_keeps_load_growth_results(self) -> None:
+        payload = {
+            "response": {
+                "docs": [
+                    {
+                        "id": "https://www.scc.virginia.gov/news/3-26-26-april-is-safe-digging-month",
+                        "url": "https://www.scc.virginia.gov/news/3-26-26-april-is-safe-digging-month",
+                        "dctitle_t": "3-26-26 April is safe digging month",
+                        "content": "Call before you dig public notice.",
+                        "sectionType_s": "news",
+                    },
+                    {
+                        "id": "https://www.scc.virginia.gov/docketsearch/DOCS/load-growth.pdf",
+                        "url": "https://www.scc.virginia.gov/docketsearch/DOCS/load-growth.pdf",
+                        "dctitle_t": "Electric transmission planning for large load growth",
+                        "content": "Utility regulation docket for data centers and interconnection.",
+                        "DocumentType_s": "pdf",
+                    },
+                    {
+                        "id": "https://www.scc.virginia.gov/case/PUR-2026-00022",
+                        "url": "https://www.scc.virginia.gov/case/PUR-2026-00022",
+                        "dctitle_t": "PUR-2026-00022 electric service agreement",
+                        "content": "Application involving hyperscale data center load.",
+                        "CaseNumberPrefix_t": "PUR",
+                        "CaseNumberCaseNumber_t": "2026-00022",
+                    },
+                ]
+            }
+        }
+
+        results = parse_searchstax_response(payload, query="large load")
+
+        titles = {result.source_title for result in results}
+        self.assertNotIn("3-26-26 April is safe digging month", titles)
+        self.assertIn("Electric transmission planning for large load growth", titles)
+        self.assertIn("PUR-2026-00022 electric service agreement", titles)
+
+    def test_scc_relevance_does_not_accept_query_text_alone(self) -> None:
+        self.assertFalse(
+            is_relevant_scc_result(
+                url="https://www.scc.virginia.gov/news/3-26-26-april-is-safe-digging-month",
+                title="3-26-26 April is safe digging month",
+                snippet="Public notice for safe excavation.",
+                query="large load",
+            )
+        )
+
+    def test_discovered_source_output_validation_checks_plain_urls_and_provenance(self) -> None:
+        warnings = validate_discovered_source_output_rows(
+            [
+                {
+                    "source_url": "https://www.scc.virginia.gov/case/PUR-2026-00022",
+                    "source_title": "PUR-2026-00022 electric service agreement",
+                    "source_type": "state_regulatory_dockets",
+                    "geography": "Virginia",
+                    "discovery_method": "searchstax_query",
+                    "source_registry_id": VIRGINIA_SCC_SOURCE_ID,
+                    "adapter_id": "virginia_scc",
+                },
+                {
+                    "source_url": "[bad](https://example.test)",
+                    "source_title": "",
+                    "source_type": "state_regulatory_dockets",
+                    "geography": "Virginia",
+                    "discovery_method": "searchstax_query",
+                    "source_registry_id": None,
+                    "adapter_id": None,
+                },
+                {
+                    "source_url": "https://www.scc.virginia.gov/case/PUR-2026-00022",
+                    "source_title": "Duplicate",
+                    "source_type": "state_regulatory_dockets",
+                    "geography": "Virginia",
+                    "discovery_method": "searchstax_query",
+                    "source_registry_id": VIRGINIA_SCC_SOURCE_ID,
+                    "adapter_id": "virginia_scc",
+                },
+            ]
+        )
+
+        self.assertTrue(any("source_url is not plain http(s)" in warning for warning in warnings))
+        self.assertTrue(any("missing source_title" in warning for warning in warnings))
+        self.assertTrue(any("missing source_registry_id" in warning for warning in warnings))
+        self.assertTrue(any("missing adapter_id" in warning for warning in warnings))
+        self.assertTrue(any("duplicate source_url" in warning for warning in warnings))
 
     def test_run_public_discovery_dry_run_skips_unimplemented_adapters(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

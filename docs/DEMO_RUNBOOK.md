@@ -192,6 +192,8 @@ After explicit approval for possible provider cost and with `WEB_SEARCH_PROVIDER
 python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --confirm-live-search
 ```
 
+Inspect live smoke output before ingest. Every discovered source row should preserve `source_registry_id`, `adapter_id`, `source_type`, `geography`, `discovery_method`, `source_query`, `publisher`, `source_title`, and a plain HTTP/HTTPS `source_url`; snippets or notes should be present when available. Adapter results should filter obvious irrelevant records before output. Live discovery output is not final Project evidence, and ingest remains a separate deliberate step.
+
 The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`; report JSON also includes `estimated_web_search_requests`, `estimated_search_cost_usd`, `search_cost_usd_per_request`, and `pricing_note`. Use `estimated_web_search_requests` as the approximate Brave Search API request count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
 
 For a fixture-backed local check:
