@@ -217,6 +217,9 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
                 payload={
                     "summary": {
                         "retained_total_planned_queries": 10,
+                        "estimated_web_search_requests": 8,
+                        "estimated_search_cost_usd": 0.04,
+                        "search_cost_usd_per_request": 0.005,
                         "active_filters": {"category": ["grid_transmission"], "scope": ["location-scoped"]},
                     },
                     "details": [],
@@ -234,6 +237,8 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(summary["discovery"]["sources_discovered"], 0)
+        self.assertEqual(summary["discovery_plan_summary"]["estimated_web_search_requests"], 8)
+        self.assertEqual(summary["discovery_plan_summary"]["estimated_search_cost_usd"], 0.04)
         discovery_call = calls[0]
         self.assertIn("--dry-run", discovery_call)
         self.assertIn("--report", discovery_call)

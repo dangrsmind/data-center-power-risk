@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -38,6 +39,13 @@ DEFAULT_DISCOVERY_RUNS_DIR = REPO_DIR / "data" / "discovery_runs"
 DEFAULT_SOURCE_FETCHES_DIR = REPO_DIR / "data" / "source_fetches"
 DEFAULT_LIVE_RUN_METADATA_DIR = DEFAULT_DISCOVERY_RUNS_DIR / "live_run_metadata"
 DEFAULT_LIVE_QUERY_CAP = 30
+DEFAULT_SEARCH_COST_USD_PER_REQUEST = 0.005
+SEARCH_COST_ENV_VAR = "WEB_SEARCH_COST_USD_PER_REQUEST"
+SEARCH_COST_PRICING_NOTE = (
+    "Preflight estimate only, not billing truth. Estimate counts retained generic_web_search planned queries; "
+    "default assumes Brave Search API Search at 0.005 USD/request. Verify provider pricing, credits, and usage "
+    "dashboard before live runs."
+)
 IMPLEMENTED_ADAPTERS = {
     VIRGINIA_SCC_SOURCE_ID: VirginiaSccDiscoveryAdapter,
 }
@@ -123,6 +131,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Report/live mode: retain at most this many planned queries after filters are applied.",
     )
     parser.add_argument(
+        "--search-cost-usd-per-request",
+        type=non_negative_float,
+        help=(
+            "Estimated web-search cost per request for report/live preflight. "
+            f"Overrides {SEARCH_COST_ENV_VAR}; default is {DEFAULT_SEARCH_COST_USD_PER_REQUEST}."
+        ),
+    )
+    parser.add_argument(
         "--confirm-live-search",
         action="store_true",
         help="Required for non-dry-run discovery; confirms live search may incur provider cost.",
@@ -167,6 +183,16 @@ def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def non_negative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a non-negative number") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative number")
     return parsed
 
 
@@ -231,10 +257,27 @@ def report_filters_from_args(args: argparse.Namespace) -> dict[str, Any]:
     return {key: value for key, value in filters.items() if value not in (None, False, [])}
 
 
+def search_cost_usd_per_request(cli_value: float | None = None) -> float:
+    if cli_value is not None:
+        return cli_value
+    raw_env_value = os.environ.get(SEARCH_COST_ENV_VAR)
+    if raw_env_value is None or raw_env_value.strip() == "":
+        return DEFAULT_SEARCH_COST_USD_PER_REQUEST
+    try:
+        return non_negative_float(raw_env_value)
+    except argparse.ArgumentTypeError as exc:
+        raise DiscoveryPlanOutputError(f"{SEARCH_COST_ENV_VAR} must be a non-negative number") from exc
+
+
+def estimated_web_search_requests(query_rows: list[dict[str, Any]]) -> int:
+    return sum(1 for row in query_rows if row["adapter"] == GENERIC_WEB_SEARCH_ADAPTER_ID)
+
+
 def build_discovery_plan_report(
     *,
     query_count_warning_threshold: int = 100,
     filters: dict[str, Any] | None = None,
+    search_cost_per_request: float | None = None,
 ) -> dict[str, Any]:
     registry = load_source_registry(DEFAULT_REGISTRY_PATH)
     all_query_rows: list[dict[str, Any]] = []
@@ -278,6 +321,9 @@ def build_discovery_plan_report(
     duplicate_counts: Counter[str] = Counter(row["query"] for row in retained_query_rows)
     duplicate_queries = sorted(query for query, count in duplicate_counts.items() if count > 1)
     retained_total = len(retained_query_rows)
+    cost_per_request = search_cost_usd_per_request(search_cost_per_request)
+    estimated_requests = estimated_web_search_requests(retained_query_rows)
+    estimated_cost = round(estimated_requests * cost_per_request, 6)
     warnings: list[str] = ["report_only: no live search was run and no runtime data was written"]
     if not active_filters:
         warnings.extend(source_warnings)
@@ -313,6 +359,10 @@ def build_discovery_plan_report(
             "cap_limit": cap_limit,
             "web_search_provider": provider,
             "web_search_max_results": result_limit_from_env(),
+            "estimated_web_search_requests": estimated_requests,
+            "estimated_search_cost_usd": estimated_cost,
+            "search_cost_usd_per_request": cost_per_request,
+            "pricing_note": SEARCH_COST_PRICING_NOTE,
             "registry_path": str(DEFAULT_REGISTRY_PATH),
             "registry_version": registry.version,
             "count_by_provider": dict(sorted(Counter(row["provider"] for row in retained_query_rows).items())),
@@ -466,6 +516,10 @@ def format_discovery_plan_report(report: dict[str, Any]) -> str:
         f"- Cap limit: {summary['cap_limit'] if summary['cap_limit'] is not None else 'none'}",
         f"- Web search provider: {summary['web_search_provider']} (not called)",
         f"- Web search max results: {summary['web_search_max_results']}",
+        f"- Estimated web-search requests: {summary['estimated_web_search_requests']}",
+        f"- Estimated search cost: ${summary['estimated_search_cost_usd']:.4f} "
+        f"at ${summary['search_cost_usd_per_request']:.4f}/request",
+        f"- Pricing note: {summary['pricing_note']}",
         f"- Registry: {summary['registry_path']}",
         f"- Duplicate queries: {summary['duplicate_query_count']}",
         f"- Warnings: {summary['warning_count']}",
@@ -550,6 +604,8 @@ def format_report_output_confirmation(report: dict[str, Any], output_path: Path)
         "Discovery dry-run plan report written.",
         f"- Output path: {output_path}",
         f"- Retained planned queries: {summary['retained_total_planned_queries']}",
+        f"- Estimated web-search requests: {summary['estimated_web_search_requests']}",
+        f"- Estimated search cost: ${summary['estimated_search_cost_usd']:.4f}",
         f"- Active filters: {format_active_filters_inline(summary['active_filters'])}",
         "- No live search, URL fetch, database write, Project creation, ProjectCandidate creation, or promotion was run.",
     ]
@@ -613,6 +669,10 @@ def format_live_discovery_preflight(report: dict[str, Any]) -> str:
         f"- Original planned queries: {summary['original_total_planned_queries']}",
         f"- Filtered planned queries: {summary['filtered_total_planned_queries']}",
         f"- Retained planned queries: {summary['retained_total_planned_queries']}",
+        f"- Estimated web-search requests: {summary['estimated_web_search_requests']}",
+        f"- Estimated search cost: ${summary['estimated_search_cost_usd']:.4f} "
+        f"at ${summary['search_cost_usd_per_request']:.4f}/request",
+        f"- Pricing note: {summary['pricing_note']}",
         f"- Active filters: {format_active_filters_inline(summary['active_filters'])}",
         f"- Cap limit: {summary['cap_limit']}",
         f"- Capped: {summary['capped']}",
@@ -663,6 +723,10 @@ def write_live_run_metadata(
         "original_total_planned_queries": summary["original_total_planned_queries"],
         "filtered_total_planned_queries": summary["filtered_total_planned_queries"],
         "retained_total_planned_queries": summary["retained_total_planned_queries"],
+        "estimated_web_search_requests": summary["estimated_web_search_requests"],
+        "estimated_search_cost_usd": summary["estimated_search_cost_usd"],
+        "search_cost_usd_per_request": summary["search_cost_usd_per_request"],
+        "pricing_note": summary["pricing_note"],
         "capped": summary["capped"],
         "cap_limit": summary["cap_limit"],
         "registry_path": summary["registry_path"],
@@ -794,6 +858,7 @@ def main() -> None:
             report = build_discovery_plan_report(
                 query_count_warning_threshold=args.query_count_warning_threshold,
                 filters=report_filters_from_args(args),
+                search_cost_per_request=args.search_cost_usd_per_request,
             )
             report_content = serialize_discovery_plan_report(report, report_format=args.report_format)
             if args.report_output:
@@ -803,7 +868,10 @@ def main() -> None:
                 print(report_content)
             raise SystemExit(0)
         if not args.dry_run:
-            live_plan_report = build_discovery_plan_report(filters=report_filters_from_args(args))
+            live_plan_report = build_discovery_plan_report(
+                filters=report_filters_from_args(args),
+                search_cost_per_request=args.search_cost_usd_per_request,
+            )
             validate_live_discovery_guardrails(args, live_plan_report)
             print(format_live_discovery_preflight(live_plan_report), file=sys.stderr)
             live_metadata_path = write_live_run_metadata(

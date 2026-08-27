@@ -193,6 +193,10 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         self.assertEqual(summary["web_search_provider"], "disabled")
         self.assertEqual(summary["count_by_adapter"]["generic_web_search"], 113)
         self.assertEqual(summary["count_by_adapter"]["virginia_scc"], 4)
+        self.assertEqual(summary["estimated_web_search_requests"], 113)
+        self.assertEqual(summary["search_cost_usd_per_request"], 0.005)
+        self.assertEqual(summary["estimated_search_cost_usd"], 0.565)
+        self.assertIn("Preflight estimate only", summary["pricing_note"])
         self.assertGreaterEqual(summary["count_by_source_type"]["air_permit"], 6)
         self.assertGreaterEqual(summary["count_by_risk_category"]["onsite_generation"], 1)
         self.assertGreaterEqual(summary["count_by_scope"]["generic"], 1)
@@ -211,8 +215,79 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
 
         self.assertIn("Discovery Dry-Run Plan Report", text)
         self.assertIn("Total planned queries: 117", text)
+        self.assertIn("Estimated web-search requests: 113", text)
+        self.assertIn("Estimated search cost: $0.5650", text)
         self.assertIn("Counts By Source Type", text)
         self.assertIn("No live search", text)
+
+    def test_discovery_plan_report_json_includes_default_cost_estimate(self) -> None:
+        with patch.dict(os.environ, {"WEB_SEARCH_COST_USD_PER_REQUEST": ""}, clear=False):
+            report = build_discovery_plan_report(
+                filters={"category": ["grid_transmission"], "scope": ["location-scoped"], "max_planned_queries": 30}
+            )
+
+        summary = report["summary"]
+        self.assertEqual(summary["retained_total_planned_queries"], 10)
+        self.assertEqual(summary["estimated_web_search_requests"], 8)
+        self.assertEqual(summary["search_cost_usd_per_request"], 0.005)
+        self.assertEqual(summary["estimated_search_cost_usd"], 0.04)
+        self.assertEqual(summary["count_by_adapter"]["virginia_scc"], 2)
+        self.assertEqual(summary["count_by_adapter"]["generic_web_search"], 8)
+
+    def test_discovery_plan_report_env_overrides_default_cost_estimate(self) -> None:
+        with patch.dict(os.environ, {"WEB_SEARCH_COST_USD_PER_REQUEST": "0.01"}, clear=False):
+            report = build_discovery_plan_report(filters={"source_id": ["texas_puct_large_load_data_center_search"]})
+
+        summary = report["summary"]
+        self.assertEqual(summary["estimated_web_search_requests"], 2)
+        self.assertEqual(summary["search_cost_usd_per_request"], 0.01)
+        self.assertEqual(summary["estimated_search_cost_usd"], 0.02)
+
+    def test_discovery_plan_report_cli_overrides_env_cost_estimate(self) -> None:
+        env = dict(os.environ)
+        env["WEB_SEARCH_COST_USD_PER_REQUEST"] = "0.02"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_public_discovery.py",
+                "--dry-run",
+                "--report",
+                "--report-format",
+                "json",
+                "--source-id",
+                "texas_puct_large_load_data_center_search",
+                "--search-cost-usd-per-request",
+                "0.01",
+            ],
+            cwd=BACKEND_DIR,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["summary"]["search_cost_usd_per_request"], 0.01)
+        self.assertEqual(payload["summary"]["estimated_search_cost_usd"], 0.02)
+
+    def test_discovery_plan_report_invalid_env_cost_fails_cleanly(self) -> None:
+        env = dict(os.environ)
+        env["WEB_SEARCH_COST_USD_PER_REQUEST"] = "not-a-number"
+        result = subprocess.run(
+            [sys.executable, "scripts/run_public_discovery.py", "--dry-run", "--report"],
+            cwd=BACKEND_DIR,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("WEB_SEARCH_COST_USD_PER_REQUEST must be a non-negative number", result.stderr)
+        self.assertNotIn("WEB_SEARCH_API_KEY", result.stdout + result.stderr)
 
     def test_discovery_plan_report_cli_supports_text_output(self) -> None:
         text_result = subprocess.run(
@@ -495,6 +570,13 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
             metadata_text = metadata_path.read_text(encoding="utf-8")
             metadata = json.loads(metadata_text)
             self.assertEqual(metadata["retained_total_planned_queries"], len(expected_queries))
+            self.assertEqual(metadata["estimated_web_search_requests"], expected_report["summary"]["estimated_web_search_requests"])
+            self.assertEqual(metadata["estimated_search_cost_usd"], expected_report["summary"]["estimated_search_cost_usd"])
+            self.assertEqual(
+                metadata["search_cost_usd_per_request"],
+                expected_report["summary"]["search_cost_usd_per_request"],
+            )
+            self.assertIn("Preflight estimate only", metadata["pricing_note"])
             self.assertTrue(metadata["live_search_confirmed"])
             self.assertFalse(metadata["dry_run"])
             self.assertNotIn("secret-test-key", metadata_text)
@@ -510,6 +592,9 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         self.assertIn("Provider: mock", text)
         self.assertIn("Original planned queries: 117", text)
         self.assertIn("Retained planned queries:", text)
+        self.assertIn("Estimated web-search requests:", text)
+        self.assertIn("Estimated search cost:", text)
+        self.assertIn("Pricing note: Preflight estimate only", text)
         self.assertIn("Counts By Source Type", text)
         self.assertIn("Counts By Risk Category", text)
         self.assertIn("Counts By Scope", text)
@@ -541,6 +626,10 @@ class GenericWebSearchDiscoveryTest(unittest.TestCase):
         self.assertEqual(payload["summary"]["retained_total_planned_queries"], 117)
         self.assertEqual(payload["summary"]["active_filters"], {})
         self.assertFalse(payload["summary"]["capped"])
+        self.assertEqual(payload["summary"]["estimated_web_search_requests"], 113)
+        self.assertEqual(payload["summary"]["estimated_search_cost_usd"], 0.565)
+        self.assertEqual(payload["summary"]["search_cost_usd_per_request"], 0.005)
+        self.assertIn("Preflight estimate only", payload["summary"]["pricing_note"])
         self.assertEqual(payload["details"][0]["provider"], payload["summary"]["web_search_provider"])
 
     def test_discovery_plan_report_filters_by_priority(self) -> None:

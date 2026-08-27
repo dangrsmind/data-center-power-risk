@@ -160,11 +160,13 @@ WEB_SEARCH_PROVIDER=mock python scripts/run_public_discovery.py --priority high 
 WEB_SEARCH_PROVIDER=brave WEB_SEARCH_API_KEY="$BRAVE_SEARCH_API_KEY" WEB_SEARCH_MAX_RESULTS=5 python scripts/run_public_discovery.py --priority high --exclude-generic --max-planned-queries 30 --confirm-live-search
 ```
 
-Use the report command before any live or paid search. It reads the source registry and prints total planned queries, counts by adapter/provider/source type/risk category/geography/scope, each planned query, source metadata, and warnings for duplicate, high-count, generic, or likely overbroad query templates. Report mode is read-only: it does not call Brave or any search provider, does not fetch URLs, does not require `DATABASE_URL`, and does not write discovered sources, Projects, ProjectCandidates, promotions, or runtime output.
+Use the report command before any live or paid search. It reads the source registry and prints total planned queries, estimated web-search requests, estimated search cost, counts by adapter/provider/source type/risk category/geography/scope, each planned query, source metadata, and warnings for duplicate, high-count, generic, or likely overbroad query templates. Report mode is read-only: it does not call Brave or any search provider, does not fetch URLs, does not require `DATABASE_URL`, and does not write discovered sources, Projects, ProjectCandidates, promotions, or runtime output.
 
 Report mode can be scoped before a live run is considered. Filters include `--category`, `--source-type`, `--priority`, `--scope`, `--geography`, `--adapter`, `--source-id`, and `--exclude-generic`; repeat a filter to allow multiple values. `--max-planned-queries` caps the retained query list after filters while preserving the original and filtered-before-cap counts in the report. Counts and warnings are based on the retained filtered set, and a valid filter combination that matches no planned queries produces an explicit zero-match warning instead of falling back to the unfiltered plan.
 
-Use `--report-output` to save a local discovery plan snapshot before any live provider run. Snapshot files are ignored runtime artifacts under `data/discovery_plan_snapshots/`; they are useful for manually comparing scoped plans with tools such as `diff`, but they are not evidence, discovered sources, extracted claims, Projects, or ProjectCandidates. When `--report-output` is present, the full text or JSON report is written to the requested file and stdout prints only a concise confirmation with the path, retained query count, active filters, and no-live-search reminder.
+The cost estimate is a preflight planning aid, not billing truth. By default it counts retained `generic_web_search` planned queries at `0.005` USD/request, matching a configurable assumption of Brave Search API Search at 5 USD per 1,000 requests. Override with `WEB_SEARCH_COST_USD_PER_REQUEST=...` or `--search-cost-usd-per-request ...`; CLI values override the environment. Always verify Brave dashboard pricing, credits, and actual usage before a live run.
+
+Use `--report-output` to save a local discovery plan snapshot before any live provider run. Snapshot files are ignored runtime artifacts under `data/discovery_plan_snapshots/`; they are useful for manually comparing scoped plans with tools such as `diff`, but they are not evidence, discovered sources, extracted claims, Projects, or ProjectCandidates. When `--report-output` is present, the full text or JSON report is written to the requested file and stdout prints only a concise confirmation with the path, retained query count, estimated web-search request count, estimated cost, active filters, and no-live-search reminder.
 
 Recommended snapshot names should describe the scope, for example `full-plan.txt`, `exclude-generic.txt`, `high-exclude-generic-30.json`, or `grid-transmission-location-scoped.json`.
 
@@ -190,7 +192,7 @@ python scripts/run_public_discovery.py --dry-run --report \
   --report-output ../data/discovery_plan_snapshots/grid-transmission-location-scoped.json
 ```
 
-Live discovery is blocked unless the run is explicitly confirmed, scoped, and capped. A non-dry-run command requires `--confirm-live-search`, at least one limiting filter, and `--max-planned-queries`; caps above 30 require the additional `--allow-large-live-run` override. The live preflight prints provider, original/filtered/retained query counts, active filters, cap metadata, counts by source type/risk category/scope, and a reminder to save a snapshot first. Confirmed live runs write redacted local metadata under ignored `data/discovery_runs/live_run_metadata/`, including registry version, active filters, query counts, cap status, redacted argv, and the statement that public discovery does not promote Projects.
+Live discovery is blocked unless the run is explicitly confirmed, scoped, and capped. A non-dry-run command requires `--confirm-live-search`, at least one limiting filter, and `--max-planned-queries`; caps above 30 require the additional `--allow-large-live-run` override. The live preflight prints provider, original/filtered/retained query counts, estimated web-search requests, estimated search cost, active filters, cap metadata, counts by source type/risk category/scope, and a reminder to save a snapshot first. Confirmed live runs write redacted local metadata under ignored `data/discovery_runs/live_run_metadata/`, including registry version, active filters, query counts, estimated cost fields, cap status, redacted argv, and the statement that public discovery does not promote Projects.
 
 Only after reviewing a saved snapshot and receiving explicit approval for possible provider cost, use the same scoped arguments for live search:
 
@@ -205,7 +207,7 @@ python scripts/run_public_discovery.py \
 
 ### Official-Source Live-Smoke Recipes
 
-The first recommended live smoke is `grid_transmission` plus `location-scoped`. It is preferred because the current dry-run plan retains about 10 queries, avoids broad generic templates, and targets official or regulatory-style source patterns such as SCC, utility commission, ERCOT, and regional utility sources.
+The first recommended live smoke is `grid_transmission` plus `location-scoped`. It is preferred because the current dry-run plan retains about 10 queries, avoids broad generic templates, and targets official or regulatory-style source patterns such as SCC, utility commission, ERCOT, and regional utility sources. The current plan estimates 8 live generic web-search requests and about 0.04 USD at the default cost assumption.
 
 Save the snapshot first:
 
@@ -381,7 +383,7 @@ DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py
 DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py --ingest --extract-claims --generate-candidates --verify-candidates --auto-admit-dry-run --healthcheck
 ```
 
-Brave API usage may create incremental API cost. Keep `WEB_SEARCH_MAX_RESULTS` small for smoke tests, keep API keys in the local shell environment only, and do not commit API keys or `.env` files. Smoke results become discovered sources first; project candidates are review records, not final Projects. Auto-admit remains dry-run in this wrapper. No public source means no project record.
+Brave API usage may create incremental API cost. Keep `WEB_SEARCH_MAX_RESULTS` small for smoke tests, keep API keys in the local shell environment only, and do not commit API keys or `.env` files. The preflight estimate uses retained planned web-search requests; `WEB_SEARCH_MAX_RESULTS` controls result volume per request, not the request count. Smoke results become discovered sources first; project candidates are review records, not final Projects. Auto-admit remains dry-run in this wrapper. No public source means no project record.
 
 ## Public Fetch Policy
 

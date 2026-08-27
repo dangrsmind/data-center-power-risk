@@ -111,9 +111,11 @@ python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-s
 python scripts/run_public_discovery.py --dry-run
 ```
 
-The dry-run report is the first review step before any live or paid search. It shows total planned query count, counts by adapter/provider/source type/risk category/geography/scope, each query, source registry metadata, and warnings for high-count, duplicate, generic, or likely overbroad query templates. It is read-only: it does not call Brave, fetch URLs, use a database, write runtime files, create Projects, create ProjectCandidates, or promote anything.
+The dry-run report is the first review step before any live or paid search. It shows total planned query count, estimated web-search requests, estimated search cost, counts by adapter/provider/source type/risk category/geography/scope, each query, source registry metadata, and warnings for high-count, duplicate, generic, or likely overbroad query templates. It is read-only: it does not call Brave, fetch URLs, use a database, write runtime files, create Projects, create ProjectCandidates, or promote anything.
 
 Use report filters to review a narrower safe plan before any paid provider call: `--category`, `--source-type`, `--priority`, `--scope`, `--geography`, `--adapter`, `--source-id`, `--exclude-generic`, and `--max-planned-queries`. The report shows original, filtered, and retained query counts; caps are applied after filters; and zero-match filter combinations return an explicit warning rather than an unfiltered plan.
+
+Estimated cost is a preflight planning estimate, not billing truth. The default assumes Brave Search API Search at `0.005` USD/request, configurable with `WEB_SEARCH_COST_USD_PER_REQUEST=...` or `--search-cost-usd-per-request ...`; CLI values override the environment. Verify Brave dashboard pricing, credits, and usage before running live discovery.
 
 Save local discovery plan snapshots with `--report-output` when comparing scoped plans. These files belong under the ignored runtime directory `data/discovery_plan_snapshots/`, with descriptive names such as `full-plan.txt`, `exclude-generic.txt`, `high-exclude-generic-30.json`, or `grid-transmission-location-scoped.json`. Snapshots are pre-live planning artifacts only; they are not evidence, discovered sources, claims, Projects, or ProjectCandidates.
 
@@ -148,7 +150,7 @@ python scripts/run_public_discovery.py --dry-run --report \
 
 Compare snapshots manually with `diff`, `jq`, or your editor, then keep live Brave disabled unless the session has explicit approval for a paid provider call.
 
-The first recommended live-smoke recipe is `grid_transmission` plus `location-scoped`. It retains about 10 planned queries in the current registry, avoids broad generic templates, and focuses on official or regulatory targets. Save and review this snapshot first:
+The first recommended live-smoke recipe is `grid_transmission` plus `location-scoped`. It retains about 10 planned queries in the current registry, estimates 8 live generic web-search requests, costs about 0.04 USD at the default assumption, avoids broad generic templates, and focuses on official or regulatory targets. Save and review this snapshot first:
 
 ```bash
 python scripts/run_public_discovery.py --dry-run --report \
@@ -184,7 +186,7 @@ python scripts/run_live_discovery_smoke.py --list-recipes
 python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
 ```
 
-The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`. Use `planned_generic_web_search_query_count` as the approximate Brave Search API query count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
+The dry-run JSON includes `planned_search_query_count` and `planned_generic_web_search_query_count`; report JSON also includes `estimated_web_search_requests`, `estimated_search_cost_usd`, `search_cost_usd_per_request`, and `pricing_note`. Use `estimated_web_search_requests` as the approximate Brave Search API request count before running live discovery. The targeted official-source and build-constraint expansions now plan 113 generic-provider queries per full run.
 
 For a fixture-backed local check:
 
@@ -207,7 +209,7 @@ python scripts/run_public_discovery.py \
   --confirm-live-search
 ```
 
-Any non-dry-run discovery command is blocked unless it passes `--confirm-live-search`, at least one limiting filter, and `--max-planned-queries`. Caps above 30 require `--allow-large-live-run`. The preflight prints provider, original/filtered/retained query counts, active filters, cap metadata, counts by source type/risk category/scope, and a reminder to save a snapshot first. Confirmed live runs write redacted metadata under ignored `data/discovery_runs/live_run_metadata/`.
+Any non-dry-run discovery command is blocked unless it passes `--confirm-live-search`, at least one limiting filter, and `--max-planned-queries`. Caps above 30 require `--allow-large-live-run`. The preflight prints provider, original/filtered/retained query counts, estimated web-search requests, estimated search cost, active filters, cap metadata, counts by source type/risk category/scope, and a reminder to save a snapshot first. Confirmed live runs write redacted metadata, including estimated cost fields, under ignored `data/discovery_runs/live_run_metadata/`.
 
 Any discovered records are written under ignored `data/discovery_runs/` runtime output and still need discovered-source ingestion, claim extraction, verification, and review before any project can be promoted. Do not run live Brave unless explicitly approved for the session; dry-run and mock runs are the default safe checks. Recommended workflow before paid search: validate the registry, save and inspect a scoped discovery plan snapshot, review high-count and overbroad warnings, run public discovery dry-run, and only then consider a confirmed capped live search with explicit cost approval.
 
@@ -323,7 +325,7 @@ DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py
 DATABASE_URL=sqlite:///local.db python scripts/run_live_discovery_smoke.py --ingest --extract-claims --generate-candidates --verify-candidates --auto-admit-dry-run --healthcheck
 ```
 
-Brave API usage may create incremental API cost, so keep `WEB_SEARCH_MAX_RESULTS` small for smoke tests. Do not commit API keys or `.env` files. Results become discovered sources first; project candidates are not final Projects. Auto-admit remains dry-run in this smoke script, and the public discoverability rule still applies: no public source means no project record.
+Brave API usage may create incremental API cost, so keep `WEB_SEARCH_MAX_RESULTS` small for smoke tests. The preflight estimate counts planned web-search requests; max results controls how many records each request asks the provider to return. Do not commit API keys or `.env` files. Results become discovered sources first; project candidates are not final Projects. Auto-admit remains dry-run in this smoke script, and the public discoverability rule still applies: no public source means no project record.
 
 For live smoke runs, keep `WEB_SEARCH_MAX_RESULTS=3` unless deliberately broadening the run. The query count controls the number of Brave API searches; max results controls how many records each query asks the provider to return.
 
