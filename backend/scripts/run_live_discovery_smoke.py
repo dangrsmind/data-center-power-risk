@@ -94,6 +94,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allow-disabled", action="store_true", help="Allow WEB_SEARCH_PROVIDER=disabled.")
     parser.add_argument("--dry-run", action="store_true", help="Avoid writes where downstream scripts support dry-run.")
     parser.add_argument(
+        "--confirm-live-search",
+        action="store_true",
+        help="Required for non-dry-run discovery; confirms live search may incur provider cost.",
+    )
+    parser.add_argument(
         "--discovery-output",
         type=Path,
         default=None,
@@ -264,6 +269,12 @@ def run_smoke(
     api_key_present = bool(env.get("WEB_SEARCH_API_KEY"))
     summary = empty_summary(provider=provider, max_results=max_results, api_key_present=api_key_present)
 
+    if not args.dry_run and not args.discovery_output and not args.confirm_live_search:
+        summary["errors"].append("live_search_not_confirmed")
+        summary["warnings"].append(
+            "Live smoke discovery requires --confirm-live-search after reviewing a dry-run report and cost preflight."
+        )
+        return summary, 1
     if not args.dry_run and (provider_raw is None or provider == "disabled") and not args.allow_disabled:
         summary["errors"].append("web_search_provider_disabled")
         summary["warnings"].append(

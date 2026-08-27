@@ -23,17 +23,23 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
     def _args(self, *argv: str):
         return run_live_discovery_smoke.parse_args(list(argv))
 
+    def test_confirm_live_search_is_accepted_by_parser(self) -> None:
+        args = self._args("--recipe", "grid-transmission-location-scoped", "--confirm-live-search")
+
+        self.assertTrue(args.confirm_live_search)
+        self.assertEqual(args.recipe, "grid-transmission-location-scoped")
+
     def test_disabled_provider_refuses_by_default(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             summary, exit_code = run_live_discovery_smoke.run_smoke(self._args())
 
         self.assertEqual(exit_code, 1)
         self.assertEqual(summary["provider"], "disabled")
-        self.assertIn("web_search_provider_disabled", summary["errors"])
+        self.assertIn("live_search_not_confirmed", summary["errors"])
 
     def test_brave_without_api_key_exits_cleanly_without_traceback(self) -> None:
         result = subprocess.run(
-            [sys.executable, "scripts/run_live_discovery_smoke.py"],
+            [sys.executable, "scripts/run_live_discovery_smoke.py", "--confirm-live-search"],
             cwd=BACKEND_DIR,
             env={"WEB_SEARCH_PROVIDER": "brave"},
             check=False,
@@ -58,7 +64,7 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
             }
         )
         result = subprocess.run(
-            [sys.executable, "scripts/run_live_discovery_smoke.py", "--max-results", "3"],
+            [sys.executable, "scripts/run_live_discovery_smoke.py", "--max-results", "3", "--confirm-live-search"],
             cwd=BACKEND_DIR,
             env=env,
             check=False,
@@ -90,7 +96,10 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
             )
 
         with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "brave", "WEB_SEARCH_API_KEY": secret}, clear=True):
-            summary, _ = run_live_discovery_smoke.run_smoke(self._args(), step_runner=fake_runner)
+            summary, _ = run_live_discovery_smoke.run_smoke(
+                self._args("--confirm-live-search"),
+                step_runner=fake_runner,
+            )
 
         rendered = json.dumps(summary)
         self.assertNotIn(secret, rendered)
@@ -105,7 +114,10 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
             )
 
         with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=True):
-            summary, exit_code = run_live_discovery_smoke.run_smoke(self._args("--ingest"), step_runner=fake_runner)
+            summary, exit_code = run_live_discovery_smoke.run_smoke(
+                self._args("--confirm-live-search", "--ingest"),
+                step_runner=fake_runner,
+            )
 
         self.assertEqual(exit_code, 1)
         self.assertIn("no_discovery_output_to_ingest", summary["errors"])
@@ -146,6 +158,7 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
         with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=True):
             summary, exit_code = run_live_discovery_smoke.run_smoke(
                 self._args(
+                    "--confirm-live-search",
                     "--ingest",
                     "--extract-claims",
                     "--generate-candidates",
@@ -170,6 +183,20 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
         self.assertIn("utility_large_load_filings", discovery_call)
         auto_admit_call = next(call for call in calls if call[1].endswith("auto_admit_project_candidates.py"))
         self.assertNotIn("--confirm", auto_admit_call)
+
+    def test_recipe_without_confirmation_fails_before_public_discovery(self) -> None:
+        def fake_runner(command: list[str]) -> StepResult:
+            raise AssertionError(f"provider path should not run: {command}")
+
+        with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=True):
+            summary, exit_code = run_live_discovery_smoke.run_smoke(
+                self._args("--recipe", "grid-transmission-location-scoped"),
+                step_runner=fake_runner,
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("live_search_not_confirmed", summary["errors"])
+        self.assertIn("--confirm-live-search", " ".join(summary["warnings"]))
 
     def test_recipe_listing_contains_guarded_official_source_recipes(self) -> None:
         recipes = run_live_discovery_smoke.recipe_listing()
@@ -207,6 +234,24 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
         self.assertIn("grid-transmission-location-scoped", payload["recipes"])
         self.assertNotIn("LIVE DISCOVERY PREFLIGHT", result.stderr)
 
+    def test_docs_command_matches_wrapper_cli(self) -> None:
+        documented_command = (
+            "python scripts/run_live_discovery_smoke.py "
+            "--recipe grid-transmission-location-scoped --confirm-live-search"
+        )
+        docs_text = "\n".join(
+            [
+                (BACKEND_DIR.parent / "docs" / "AUTOMATED_DISCOVERY_PLAN.md").read_text(encoding="utf-8"),
+                (BACKEND_DIR.parent / "docs" / "DEMO_RUNBOOK.md").read_text(encoding="utf-8"),
+            ]
+        )
+
+        self.assertIn(documented_command, docs_text)
+        parsed = run_live_discovery_smoke.parse_args(
+            ["--recipe", "grid-transmission-location-scoped", "--confirm-live-search"]
+        )
+        self.assertTrue(parsed.confirm_live_search)
+
     def test_recipe_dry_run_uses_report_without_live_confirmation(self) -> None:
         calls: list[list[str]] = []
 
@@ -220,6 +265,7 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
                         "estimated_web_search_requests": 8,
                         "estimated_search_cost_usd": 0.04,
                         "search_cost_usd_per_request": 0.005,
+                        "pricing_note": "Preflight estimate only",
                         "active_filters": {"category": ["grid_transmission"], "scope": ["location-scoped"]},
                     },
                     "details": [],
@@ -239,6 +285,8 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
         self.assertEqual(summary["discovery"]["sources_discovered"], 0)
         self.assertEqual(summary["discovery_plan_summary"]["estimated_web_search_requests"], 8)
         self.assertEqual(summary["discovery_plan_summary"]["estimated_search_cost_usd"], 0.04)
+        self.assertEqual(summary["discovery_plan_summary"]["search_cost_usd_per_request"], 0.005)
+        self.assertEqual(summary["discovery_plan_summary"]["pricing_note"], "Preflight estimate only")
         discovery_call = calls[0]
         self.assertIn("--dry-run", discovery_call)
         self.assertIn("--report", discovery_call)
@@ -264,7 +312,7 @@ class LiveDiscoverySmokeTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"WEB_SEARCH_PROVIDER": "mock"}, clear=True):
             _, exit_code = run_live_discovery_smoke.run_smoke(
-                self._args("--recipe", "texas-puct"),
+                self._args("--recipe", "texas-puct", "--confirm-live-search"),
                 step_runner=fake_runner,
             )
 
