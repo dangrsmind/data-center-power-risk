@@ -307,6 +307,10 @@ def run_smoke(
             "errors": payload.get("errors", []),
             "warnings": payload.get("warnings", []),
         }
+        if isinstance(payload.get("summary"), dict):
+            summary["discovery_plan_summary"] = payload["summary"]
+        if isinstance(payload.get("live_discovery_preflight"), dict):
+            summary["live_discovery_preflight"] = payload["live_discovery_preflight"]
         output_path = payload.get("output_path") if isinstance(payload.get("output_path"), str) else None
         append_step_errors(summary, "discovery", payload)
         if step.returncode != 0:
