@@ -60,6 +60,15 @@ SCC_URL_MARKERS = {
 }
 SEARCHSTAX_DISCOVERY_METHOD = "searchstax_query"
 SEARCHSTAX_ROWS = 10
+PUBLIC_COMMENT_FORM_NOTE = "Virginia SCC public-comment form URL; treat as fallback, not primary evidence."
+SCC_URL_QUALITY_ORDER = {
+    "docket_case_detail": 0,
+    "hearing_notice": 1,
+    "transmission_project_page": 2,
+    "public_comment_form": 3,
+    "primary_evidence": 4,
+    "fallback_reference": 5,
+}
 SEARCHSTAX_TABS = {
     "all": "all",
     "site_pages": "type_s:web page",
@@ -134,6 +143,9 @@ class ParsedSearchResult:
     source_type: str | None = None
     case_number: str | None = None
     document_type: str | None = None
+    original_source_url: str | None = None
+    alternate_urls: list[str] = field(default_factory=list)
+    source_url_quality: str = "fallback_reference"
 
 
 @dataclass
@@ -433,6 +445,7 @@ class VirginiaSccDiscoveryAdapter:
         for link in parser.links:
             href = parse.urljoin(SCC_DOCKET_SEARCH_URL, link["href"])
             title = link["title"] or href
+            url_quality = classify_scc_url_quality(url=href, title=title, snippet=None)
             haystack = f"{title} {href}".casefold()
             if not any(term in haystack for term in terms):
                 continue
@@ -449,12 +462,17 @@ class VirginiaSccDiscoveryAdapter:
                         confidence="candidate_discovered",
                         notes="Parsed from Virginia SCC public docket/search page probe; requires analyst review.",
                         source_query=title,
+                        snippet=None,
                         source_registry_id=self.source.id,
                         adapter_id=self.adapter_id,
                         raw_metadata_json={
                             "source_registry_id": self.source.id,
                             "adapter_id": self.adapter_id,
                             "parser": "scc_public_link_probe",
+                            "source_url_quality": url_quality,
+                            "url_quality_warning": PUBLIC_COMMENT_FORM_NOTE
+                            if url_quality == "public_comment_form"
+                            else None,
                         },
                     )
                 )
@@ -470,6 +488,7 @@ class VirginiaSccDiscoveryAdapter:
             if normalized_url in seen_urls:
                 continue
             seen_urls.add(normalized_url)
+            notes = build_notes(parsed_result)
             try:
                 discovered.append(
                     DiscoveredSource(
@@ -481,7 +500,7 @@ class VirginiaSccDiscoveryAdapter:
                         discovered_at=datetime.now(timezone.utc),
                         discovery_method=SEARCHSTAX_DISCOVERY_METHOD,
                         confidence="candidate_discovered",
-                        notes=build_notes(parsed_result),
+                        notes=notes,
                         source_query=parsed_result.source_query,
                         snippet=parsed_result.snippet,
                         case_number=parsed_result.case_number,
@@ -495,6 +514,12 @@ class VirginiaSccDiscoveryAdapter:
                             "case_number": parsed_result.case_number,
                             "document_type": parsed_result.document_type,
                             "source_type": parsed_result.source_type,
+                            "source_url_quality": parsed_result.source_url_quality,
+                            "original_source_url": parsed_result.original_source_url,
+                            "alternate_urls": parsed_result.alternate_urls,
+                            "url_quality_warning": PUBLIC_COMMENT_FORM_NOTE
+                            if parsed_result.source_url_quality == "public_comment_form"
+                            else None,
                         },
                     )
                 )
@@ -553,13 +578,18 @@ def parse_searchstax_response(payload: str | dict[str, Any], *, query: str) -> l
     for doc in docs:
         if not isinstance(doc, dict):
             continue
-        source_url = _first_text(doc.get("url")) or _first_text(doc.get("id"))
+        title = _first_text(doc.get("dctitle_t")) or _first_text(doc.get("LongName_txt_en"))
+        title = title or _first_text(doc.get("DocumentName_t")) or _first_text(doc.get("url")) or _first_text(doc.get("id"))
+        doc_id = _first_text(doc.get("id")) or _first_text(doc.get("url")) or ""
+        snippet = _snippet_from_highlighting(highlighting.get(doc_id)) or _first_text(doc.get("content"))
+        source_url, original_source_url, alternate_urls, source_url_quality = preferred_scc_source_url(
+            doc,
+            title=title,
+            snippet=snippet,
+        )
         if not source_url:
             continue
-        title = _first_text(doc.get("dctitle_t")) or _first_text(doc.get("LongName_txt_en"))
-        title = title or _first_text(doc.get("DocumentName_t")) or source_url
-        doc_id = _first_text(doc.get("id")) or source_url
-        snippet = _snippet_from_highlighting(highlighting.get(doc_id)) or _first_text(doc.get("content"))
+        title = title or source_url
         case_number = _case_number(doc)
         document_type = _first_text(doc.get("DocumentType_s")) or _first_text(doc.get("sectionType_s"))
         source_type = _first_text(doc.get("type_s"))
@@ -574,6 +604,9 @@ def parse_searchstax_response(payload: str | dict[str, Any], *, query: str) -> l
                 source_type=source_type,
                 case_number=case_number,
                 document_type=document_type,
+                original_source_url=original_source_url,
+                alternate_urls=alternate_urls,
+                source_url_quality=source_url_quality,
             )
         )
     deduped: dict[str, ParsedSearchResult] = {}
@@ -662,7 +695,106 @@ def clean_text(value: str | None, *, limit: int | None = None) -> str | None:
 def normalize_url(url: str) -> str:
     absolute = parse.urljoin(SCC_SEARCH_URL, url)
     parsed = parse.urlsplit(absolute)
-    return parse.urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path, parsed.query, ""))
+    return parse.urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path, parsed.query, parsed.fragment))
+
+
+def preferred_scc_source_url(
+    doc: dict[str, Any],
+    *,
+    title: str | None,
+    snippet: str | None,
+) -> tuple[str | None, str | None, list[str], str]:
+    original_url = _first_text(doc.get("url")) or _first_text(doc.get("id"))
+    candidates = []
+    for value in _candidate_url_values(doc):
+        normalized = normalize_url(value)
+        if normalized not in candidates:
+            candidates.append(normalized)
+    if original_url:
+        normalized_original = normalize_url(original_url)
+        if normalized_original not in candidates:
+            candidates.append(normalized_original)
+    if not candidates:
+        return None, normalize_url(original_url) if original_url else None, [], "fallback_reference"
+    ranked = sorted(
+        candidates,
+        key=lambda url: (
+            SCC_URL_QUALITY_ORDER[classify_scc_url_quality(url=url, title=title, snippet=snippet)],
+            candidates.index(url),
+        ),
+    )
+    preferred = ranked[0]
+    original_normalized = normalize_url(original_url) if original_url else preferred
+    alternate_urls = [url for url in candidates if url != preferred]
+    quality = classify_scc_url_quality(url=preferred, title=title, snippet=snippet)
+    return preferred, original_normalized, alternate_urls, quality
+
+
+def _candidate_url_values(doc: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    preferred_keys = (
+        "docketSearchUrl",
+        "docket_search_url",
+        "caseDetailsUrl",
+        "case_details_url",
+        "hearingNoticeUrl",
+        "hearing_notice_url",
+        "newsUrl",
+        "news_url",
+        "transmissionProjectUrl",
+        "transmission_project_url",
+        "url",
+        "id",
+    )
+    for key in preferred_keys:
+        urls.extend(_urls_from_value(doc.get(key)))
+    for key, value in doc.items():
+        key_lower = str(key).casefold()
+        if "url" in key_lower or key_lower == "id":
+            urls.extend(_urls_from_value(value))
+    return [url for url in dict.fromkeys(urls) if url]
+
+
+def _urls_from_value(value: Any) -> list[str]:
+    if isinstance(value, list):
+        urls: list[str] = []
+        for item in value:
+            urls.extend(_urls_from_value(item))
+        return urls
+    if isinstance(value, dict):
+        urls: list[str] = []
+        for item in value.values():
+            urls.extend(_urls_from_value(item))
+        return urls
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    if text.startswith(("http://", "https://", "/")):
+        return [text]
+    return []
+
+
+def classify_scc_url_quality(*, url: str, title: str | None = None, snippet: str | None = None) -> str:
+    normalized = normalize_url(url)
+    parsed = parse.urlsplit(normalized)
+    haystack = " ".join(part for part in [normalized, title, snippet] if part).casefold()
+    path = parsed.path.casefold()
+    fragment = parsed.fragment.casefold()
+    if "/case-information/submit-public-comments/cases/" in path:
+        return "public_comment_form"
+    if "/docketsearch" in path and ("casedetails" in fragment or "caseDetails" in parsed.fragment):
+        return "docket_case_detail"
+    if "/news" in path or ("hearing" in haystack and "notice" in haystack):
+        return "hearing_notice"
+    if "transmission-line" in haystack or "transmission project" in haystack:
+        return "transmission_project_page"
+    if "case comments for" in haystack:
+        return "public_comment_form"
+    if any(term in haystack for term in RELEVANCE_TERMS):
+        return "primary_evidence"
+    return "fallback_reference"
 
 
 def is_relevant_scc_result(*, url: str, title: str | None, snippet: str | None, query: str) -> bool:
@@ -680,6 +812,12 @@ def is_relevant_scc_result(*, url: str, title: str | None, snippet: str | None, 
 
 def build_notes(result: ParsedSearchResult) -> str:
     parts = [f"Parsed from Virginia SCC public SearchStax results for query {result.source_query!r}."]
+    if result.source_url_quality == "public_comment_form":
+        parts.append(PUBLIC_COMMENT_FORM_NOTE)
+    elif result.source_url_quality:
+        parts.append(f"URL quality: {result.source_url_quality}.")
+    if result.original_source_url and normalize_url(result.original_source_url) != normalize_url(result.source_url):
+        parts.append(f"Original SearchStax URL retained in metadata: {result.original_source_url}.")
     if result.case_number:
         parts.append(f"Case number: {result.case_number}.")
     if result.document_type or result.source_type:

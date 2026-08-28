@@ -845,6 +845,7 @@ def build_would_run(enabled_sources: list[Any]) -> list[str]:
 def validate_discovered_source_output_rows(rows: list[dict[str, Any]]) -> list[str]:
     warnings: list[str] = []
     seen_urls: set[str] = set()
+    weak_public_comment_count = 0
     required_fields = (
         "source_url",
         "source_title",
@@ -868,7 +869,31 @@ def validate_discovered_source_output_rows(rows: list[dict[str, Any]]) -> list[s
             if source_url in seen_urls:
                 warnings.append(f"discovered_source_output_validation: duplicate source_url {source_url}")
             seen_urls.add(source_url)
+            if is_scc_public_comment_form_row(row):
+                weak_public_comment_count += 1
+                warnings.append(
+                    f"discovered_source_output_validation: row {index} has weak SCC public-comment form URL"
+                )
+    if weak_public_comment_count:
+        warnings.append(
+            "discovered_source_output_validation: "
+            f"{weak_public_comment_count} SCC public-comment form URL(s) retained as fallback references"
+        )
     return warnings
+
+
+def is_scc_public_comment_form_row(row: dict[str, Any]) -> bool:
+    source_url = str(row.get("source_url") or "").casefold()
+    title = str(row.get("source_title") or "").casefold()
+    snippet = str(row.get("snippet") or "").casefold()
+    notes = str(row.get("notes") or "").casefold()
+    metadata = row.get("raw_metadata_json") if isinstance(row.get("raw_metadata_json"), dict) else {}
+    quality = str(metadata.get("source_url_quality") or "").casefold()
+    return (
+        quality == "public_comment_form"
+        or "/case-information/submit-public-comments/cases/" in source_url
+        or "case comments for" in " ".join([title, snippet, notes])
+    )
 
 
 def write_discovery_output(output_dir: Path, discovered_sources: list[dict[str, Any]]) -> Path:
