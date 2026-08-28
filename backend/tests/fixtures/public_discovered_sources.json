@@ -12,6 +12,11 @@
     "snippet": "Case Comments for PUR-2026-00022",
     "case_number": "PUR-2026-00022",
     "document_type": "case",
+    "source_registry_id": "virginia_scc_data_center_large_load_dockets",
+    "adapter_id": "virginia_scc",
+    "raw_metadata_json": {
+      "source_url_quality": "public_comment_form"
+    },
     "extra_fixture_field": "preserved"
   },
   {
@@ -25,6 +30,11 @@
     "confidence": "0.7",
     "source_query": "data center",
     "snippet": "SCC Data Center Initiatives",
-    "document_type": "pdf"
+    "document_type": "pdf",
+    "source_registry_id": "virginia_scc_data_center_large_load_dockets",
+    "adapter_id": "virginia_scc",
+    "raw_metadata_json": {
+      "source_url_quality": "primary_evidence"
+    }
   }
 ]

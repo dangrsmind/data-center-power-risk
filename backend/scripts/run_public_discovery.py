@@ -855,7 +855,7 @@ def validate_discovered_source_output_rows(rows: list[dict[str, Any]]) -> list[s
         "source_registry_id",
         "adapter_id",
     )
-    for index, row in enumerate(rows):
+    for index, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             warnings.append(f"discovered_source_output_validation: row {index} is not an object")
             continue
