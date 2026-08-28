@@ -229,6 +229,27 @@ ProjectCandidates may also show siting-friction signals for categories such as p
 
 Live discovery outputs may include duplicate `source_url` values across query patterns or repeat runs. Ingestion is expected to be duplicate-safe and idempotent by `source_url`: duplicate input URLs and already-ingested URLs are skipped unless safe metadata updates are requested with `--allow-existing`.
 
+Guarded live-output ingest flow:
+
+```bash
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --dry-run
+
+# Only after explicit approval for possible provider cost:
+python scripts/run_live_discovery_smoke.py --recipe grid-transmission-location-scoped --confirm-live-search
+
+# Inspect the reviewed output file before ingest:
+python scripts/ingest_public_discovered_sources.py \
+  --input ../data/discovery_runs/20260828T193254Z/discovered_sources.json \
+  --dry-run
+
+# Confirmed ingest is a separate decision:
+python scripts/ingest_public_discovered_sources.py \
+  --input ../data/discovery_runs/20260828T193254Z/discovered_sources.json \
+  --confirm
+```
+
+The dry-run ingest report writes nothing and distinguishes structural blockers, duplicate input URLs, already-ingested URLs, would-create/would-update counts, and review-only weak SCC public-comment fallback warnings. Do not ingest old pre-hardening runs. Claim extraction, candidate generation, verification, auto-admit, and promotion remain separate steps.
+
 ## Optional: Import Manual CSV Datasets
 
 Manual CSV imports are disabled-by-default review inputs for external datasets. Use them as a two-step workflow:

@@ -14,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.core.db import SessionLocal, create_db_and_tables  # noqa: E402
 from app.services.discovered_source_service import DiscoveredSourceService  # noqa: E402
+from run_public_discovery import validate_discovered_source_output_rows  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to a discovery-run discovered_sources.json file.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Validate and summarize without writing rows.")
+    parser.add_argument("--confirm", action="store_true", help="Required to write discovered source rows.")
     parser.add_argument(
         "--allow-existing",
         action="store_true",
@@ -85,9 +87,13 @@ def load_discovered_source_rows(path: Path) -> tuple[list[dict[str, Any]], dict[
 
 def main() -> None:
     args = parse_args()
+    if not args.dry_run and not args.confirm:
+        print("error: ingest requires --dry-run or explicit --confirm", file=sys.stderr)
+        raise SystemExit(2)
     input_path = resolve_path(args.input)
     rows, context = load_discovered_source_rows(input_path)
     discovery_run_id = infer_discovery_run_id(input_path)
+    output_validation_warnings = validate_discovered_source_output_rows(rows)
 
     with SessionLocal() as db:
         if not args.dry_run:
@@ -100,10 +106,13 @@ def main() -> None:
             adapter_id=context["adapter_id"],
             source_registry_id=context["source_registry_id"],
         )
+        summary.warnings.extend(output_validation_warnings)
         if not args.dry_run:
             db.commit()
 
     print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    if summary.validation_errors:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

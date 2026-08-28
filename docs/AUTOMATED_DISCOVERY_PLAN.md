@@ -273,7 +273,23 @@ Recommended pre-live workflow: validate the registry, run the full discovery pla
 
 ## Discovered Source Ingestion
 
-Discovery run output remains runtime data and is ignored under `data/discovery_runs/`. When a run finds source records, `backend/scripts/ingest_public_discovered_sources.py --input data/discovery_runs/<timestamp>/discovered_sources.json` can validate those records and upsert them into the database `discovered_sources` table by `source_url`.
+Discovery run output remains runtime data and is ignored under `data/discovery_runs/`. Use a dry-run ingest report before any database write:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/ingest_public_discovered_sources.py \
+  --input ../data/discovery_runs/20260828T193254Z/discovered_sources.json \
+  --dry-run
+```
+
+The dry-run validates rows, reports structural blockers, duplicate input URLs, existing database URLs, would-create/would-update counts, and weak SCC public-comment fallback URLs without writing anything. Weak SCC public-comment URLs are review warnings, not structural failures. Do not ingest old pre-hardening discovery runs that lack registry/adapter provenance or URL-quality metadata.
+
+Only after reviewing the output file and dry-run report, confirmed ingest can upsert source rows into the database `discovered_sources` table by `source_url`:
+
+```bash
+DATABASE_URL=sqlite:///local.db python scripts/ingest_public_discovered_sources.py \
+  --input ../data/discovery_runs/20260828T193254Z/discovered_sources.json \
+  --confirm
+```
 
 Ingested discovered sources are source/evidence candidates only. Ingestion stores URLs, titles, publisher/geography, discovery method, search term, snippet, case number/document type, registry/adapter context when present, raw metadata, and review status. It does not create projects, claims, project links, or promoted evidence. Re-running the ingest is idempotent by `source_url`: duplicate URLs within one discovery output are skipped deterministically, existing database URLs are skipped by default, and safe metadata can be updated with `--allow-existing` without overwriting analyst review status.
 

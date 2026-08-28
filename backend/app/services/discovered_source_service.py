@@ -66,16 +66,25 @@ class DiscoveredSourceValidationError:
 @dataclass
 class DiscoveredSourceIngestSummary:
     rows_read: int = 0
+    dry_run: bool = False
+    allow_existing: bool = False
     sources_created: int = 0
     sources_updated: int = 0
     rows_skipped: int = 0
     duplicate_input_urls_skipped: int = 0
     duplicate_existing_urls_skipped: int = 0
+    weak_scc_public_comment_form_count: int = 0
+    weak_scc_public_comment_form_rows: list[dict[str, Any]] = field(default_factory=list)
     validation_errors: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["would_create"] = self.sources_created if self.dry_run else 0
+        payload["would_skip_existing"] = self.duplicate_existing_urls_skipped if self.dry_run else 0
+        payload["would_update_existing"] = self.sources_updated if self.dry_run and self.allow_existing else 0
+        payload["structural_error_count"] = len(self.validation_errors)
+        return payload
 
 
 def clean_string(value: Any) -> str | None:
@@ -155,24 +164,56 @@ def validate_discovered_source_row(
         **unknown_fields,
         "original_row_number": row_number,
     }
+    source_title = clean_string(raw.get("source_title"))
+    source_type = clean_string(raw.get("source_type"))
+    geography = clean_string(raw.get("geography"))
+    discovery_method = clean_string(raw.get("discovery_method"))
+    resolved_source_registry_id = clean_string(raw.get("source_registry_id")) or source_registry_id
+    resolved_adapter_id = clean_string(raw.get("adapter_id")) or adapter_id
+    required_values = {
+        "source_title": source_title,
+        "source_type": source_type,
+        "geography": geography,
+        "discovery_method": discovery_method,
+        "source_registry_id": resolved_source_registry_id,
+        "adapter_id": resolved_adapter_id,
+    }
+    missing_fields = [field_name for field_name, value in required_values.items() if not value]
+    if missing_fields:
+        raise ValueError(f"missing required discovered-source field(s): {', '.join(missing_fields)}")
     return ValidatedDiscoveredSource(
         source_url=source_url,
-        source_title=clean_string(raw.get("source_title")),
-        source_type=clean_string(raw.get("source_type")),
+        source_title=source_title,
+        source_type=source_type,
         publisher=clean_string(raw.get("publisher")),
-        geography=clean_string(raw.get("geography")),
-        discovery_method=clean_string(raw.get("discovery_method")),
+        geography=geography,
+        discovery_method=discovery_method,
         discovered_at=discovered_at,
         confidence=validate_confidence(raw.get("confidence")),
         search_term=clean_string(raw.get("search_term")) or clean_string(raw.get("source_query")),
         snippet=clean_string(raw.get("snippet")),
         case_number=clean_string(raw.get("case_number")),
         document_type=clean_string(raw.get("document_type")),
-        source_registry_id=clean_string(raw.get("source_registry_id")) or source_registry_id,
-        adapter_id=clean_string(raw.get("adapter_id")) or adapter_id,
+        source_registry_id=resolved_source_registry_id,
+        adapter_id=resolved_adapter_id,
         discovery_run_id=clean_string(raw.get("discovery_run_id")) or discovery_run_id,
         raw_metadata_json=raw_metadata,
         status=validate_status(raw.get("status")),
+    )
+
+
+def is_weak_scc_public_comment_form(row: dict[str, Any]) -> bool:
+    source_url = clean_string(row.get("source_url")) or ""
+    source_title = clean_string(row.get("source_title")) or ""
+    snippet = clean_string(row.get("snippet")) or ""
+    notes = clean_string(row.get("notes")) or ""
+    metadata = row.get("raw_metadata_json") if isinstance(row.get("raw_metadata_json"), dict) else {}
+    quality = clean_string(metadata.get("source_url_quality")) or ""
+    haystack = " ".join([source_url, source_title, snippet, notes]).casefold()
+    return (
+        quality.casefold() == "public_comment_form"
+        or "/case-information/submit-public-comments/cases/" in source_url.casefold()
+        or "case comments for" in haystack
     )
 
 
@@ -190,9 +231,21 @@ class DiscoveredSourceService:
         adapter_id: str | None = None,
         source_registry_id: str | None = None,
     ) -> DiscoveredSourceIngestSummary:
-        summary = DiscoveredSourceIngestSummary(rows_read=len(rows))
+        summary = DiscoveredSourceIngestSummary(rows_read=len(rows), dry_run=dry_run, allow_existing=allow_existing)
         validated_by_url: dict[str, ValidatedDiscoveredSource] = {}
         for index, raw in enumerate(rows, start=1):
+            if isinstance(raw, dict) and is_weak_scc_public_comment_form(raw):
+                summary.weak_scc_public_comment_form_count += 1
+                summary.weak_scc_public_comment_form_rows.append(
+                    {
+                        "row_number": index,
+                        "source_url": raw.get("source_url"),
+                        "source_title": raw.get("source_title"),
+                    }
+                )
+                summary.warnings.append(
+                    f"weak_scc_public_comment_form_url: row {index} retained as fallback reference"
+                )
             try:
                 validated = validate_discovered_source_row(
                     raw,
