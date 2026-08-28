@@ -16,6 +16,7 @@ from app.schemas.discovery import DiscoveredSource  # noqa: E402
 from app.services.discovery_adapters.virginia_scc import (  # noqa: E402
     VIRGINIA_SCC_SOURCE_ID,
     VirginiaSccDiscoveryAdapter,
+    classify_scc_url_quality,
     extract_searchstax_config,
     is_relevant_scc_result,
     normalize_url,
@@ -135,6 +136,11 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertIn("Data Center Initiatives", results[0].snippet or "")
         self.assertEqual(results[0].document_type, "pdf")
         self.assertEqual(results[1].case_number, "PUR-2026-00022")
+        self.assertEqual(results[1].source_url_quality, "public_comment_form")
+        self.assertEqual(
+            results[1].original_source_url,
+            "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00022.html",
+        )
 
     def test_relative_url_normalization(self) -> None:
         self.assertEqual(
@@ -269,7 +275,74 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertTrue(result.discovered_sources[0].source_url.unicode_string().startswith("https://"))
         self.assertTrue(result.discovered_sources[0].source_title)
         self.assertEqual(result.discovered_sources[1].case_number, "PUR-2026-00022")
+        self.assertEqual(result.discovered_sources[1].raw_metadata_json["source_url_quality"], "public_comment_form")
+        self.assertIn("public-comment form URL", result.discovered_sources[1].notes or "")
         self.assertIn("Authorization", fetch_client.calls[1][1] or {})
+
+    def test_scc_public_comment_urls_are_classified_as_weak_fallback(self) -> None:
+        self.assertEqual(
+            classify_scc_url_quality(
+                url="https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00050.html"
+            ),
+            "public_comment_form",
+        )
+        self.assertEqual(
+            classify_scc_url_quality(
+                url="https://www.scc.virginia.gov/case-information/cases/example.html",
+                title="Case Comments for PUR-2026-00050",
+            ),
+            "public_comment_form",
+        )
+
+    def test_scc_stronger_url_quality_classifications(self) -> None:
+        self.assertEqual(
+            classify_scc_url_quality(url="https://www.scc.virginia.gov/docketsearch#/caseDetails/144/999"),
+            "docket_case_detail",
+        )
+        self.assertEqual(
+            classify_scc_url_quality(
+                url="https://www.scc.virginia.gov/news/2026/notice-of-hearing-data-center-load"
+            ),
+            "hearing_notice",
+        )
+        self.assertEqual(
+            classify_scc_url_quality(
+                url="https://www.scc.virginia.gov/pages/transmission-line-projects",
+                title="Transmission line project for data center load",
+            ),
+            "transmission_project_page",
+        )
+
+    def test_searchstax_prefers_stronger_url_and_preserves_public_comment_url(self) -> None:
+        public_comment_url = (
+            "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00050.html"
+        )
+        docket_url = "https://www.scc.virginia.gov/docketsearch#/caseDetails/144/345"
+        payload = {
+            "response": {
+                "docs": [
+                    {
+                        "id": public_comment_url,
+                        "url": [public_comment_url],
+                        "caseDetailsUrl": docket_url,
+                        "dctitle_t": "Case Comments for PUR-2026-00050",
+                        "content": "Application for data center large load interconnection.",
+                        "CaseNumberPrefix_t": "PUR",
+                        "CaseNumberCaseNumber_t": "2026-00050",
+                    }
+                ]
+            }
+        }
+
+        parsed = parse_searchstax_response(payload, query="large load")
+        adapter = VirginiaSccDiscoveryAdapter(self._source())
+        sources = adapter._sources_from_results(parsed)  # noqa: SLF001 - output mapping is intentionally tested
+
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(sources[0].source_url.unicode_string(), docket_url)
+        self.assertEqual(sources[0].raw_metadata_json["source_url_quality"], "docket_case_detail")
+        self.assertEqual(sources[0].raw_metadata_json["original_source_url"], public_comment_url)
+        self.assertIn(public_comment_url, sources[0].raw_metadata_json["alternate_urls"])
 
     def test_searchstax_filters_safe_digging_but_keeps_load_growth_results(self) -> None:
         payload = {
@@ -348,6 +421,16 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
                     "source_registry_id": VIRGINIA_SCC_SOURCE_ID,
                     "adapter_id": "virginia_scc",
                 },
+                {
+                    "source_url": "https://www.scc.virginia.gov/case-information/submit-public-comments/cases/pur-2026-00050.html",
+                    "source_title": "Case Comments for PUR-2026-00050",
+                    "source_type": "state_regulatory_dockets",
+                    "geography": "Virginia",
+                    "discovery_method": "searchstax_query",
+                    "source_registry_id": VIRGINIA_SCC_SOURCE_ID,
+                    "adapter_id": "virginia_scc",
+                    "raw_metadata_json": {"source_url_quality": "public_comment_form"},
+                },
             ]
         )
 
@@ -356,6 +439,8 @@ class VirginiaSccDiscoveryTest(unittest.TestCase):
         self.assertTrue(any("missing source_registry_id" in warning for warning in warnings))
         self.assertTrue(any("missing adapter_id" in warning for warning in warnings))
         self.assertTrue(any("duplicate source_url" in warning for warning in warnings))
+        self.assertTrue(any("weak SCC public-comment form URL" in warning for warning in warnings))
+        self.assertTrue(any("retained as fallback references" in warning for warning in warnings))
 
     def test_run_public_discovery_dry_run_skips_unimplemented_adapters(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
