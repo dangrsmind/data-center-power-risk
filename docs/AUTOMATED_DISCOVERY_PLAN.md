@@ -293,6 +293,8 @@ DATABASE_URL=sqlite:///local.db python scripts/ingest_public_discovered_sources.
 
 Ingested discovered sources are source/evidence candidates only. Ingestion stores URLs, titles, publisher/geography, discovery method, search term, snippet, case number/document type, registry/adapter context when present, raw metadata, and review status. It does not create projects, claims, project links, or promoted evidence. Re-running the ingest is idempotent by `source_url`: duplicate URLs within one discovery output are skipped deterministically, existing database URLs are skipped by default, and safe metadata can be updated with `--allow-existing` without overwriting analyst review status.
 
+Use the read-only `GET /discovered-sources` and `GET /discovered-sources/summary` endpoints, or the `/discovered-sources` analyst console page, to inspect ingested `DiscoveredSourceRecord` rows before claim extraction, candidate generation, verification, auto-admission, or promotion. The review surface supports filtering by run, registry, adapter, source type, geography, status, publisher, URL quality, weak URL quality, and text search over title, URL, snippet, and query. List responses expose bounded provenance and URL-quality fields by default; the single-record endpoint returns full raw metadata for one source. SCC public-comment form and fallback-reference URL-quality warnings are review signals only, not structural failures.
+
 The next stage after discovered-source ingestion is document fetch/text extraction and analyst-reviewed project/candidate extraction. A discovered source must still support a project-specific public claim before any project record is created.
 
 ## Extracted Claims From Discovered Sources

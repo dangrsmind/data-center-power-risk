@@ -1,29 +1,45 @@
-import { useEffect, useState, useMemo } from "react";
-import type { DiscoveredSource, DiscoverDecisions } from "../api/types";
-import { getDiscoveredSources, getDiscoverDecisions } from "../api/adapter";
+import { useEffect, useMemo, useState } from "react";
+import type { DiscoveredSourceReviewItem, DiscoveredSourceReviewSummaryResponse } from "../api/types";
+import { getDiscoveredSourceReview, getDiscoveredSourceReviewSummary } from "../api/adapter";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+interface Filters {
+  discovery_run_id: string;
+  source_registry_id: string;
+  adapter_id: string;
+  source_type: string;
+  geography: string;
+  status: string;
+  has_weak_url_quality: boolean;
+  q: string;
+}
 
-type Status = "pending" | "approved" | "rejected";
-type StatusFilter = "all" | "pending" | "approved" | "rejected";
+const EMPTY_FILTERS: Filters = {
+  discovery_run_id: "",
+  source_registry_id: "",
+  adapter_id: "",
+  source_type: "",
+  geography: "",
+  status: "",
+  has_weak_url_quality: false,
+  q: "",
+};
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const PAGE_LIMIT = 100;
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso.slice(0, 10);
-  }
+function formatCount(value: number | null | undefined): string {
+  return value == null ? "0" : value.toLocaleString("en-US");
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function sourceTypeLabel(value: string | null | undefined): string {
+  if (!value) return "-";
+  return value.replace(/_/g, " ");
 }
 
 function hostname(url: string): string {
@@ -34,352 +50,236 @@ function hostname(url: string): string {
   }
 }
 
-function sourceTypeLabel(t: string): string {
-  const map: Record<string, string> = {
-    developer_statement: "Developer Statement",
-    official_filing:     "Official Filing",
-    utility_statement:   "Utility Statement",
-    regulatory_record:   "Regulatory Record",
-    county_record:       "County Record",
-    press:               "Press",
-    url_seed:            "URL Seed",
+function isWeakQuality(source: DiscoveredSourceReviewItem): boolean {
+  return source.source_url_quality === "public_comment_form" || source.source_url_quality === "fallback_reference";
+}
+
+function apiFilters(filters: Filters, offset = 0) {
+  return {
+    discovery_run_id: filters.discovery_run_id || undefined,
+    source_registry_id: filters.source_registry_id || undefined,
+    adapter_id: filters.adapter_id || undefined,
+    source_type: filters.source_type || undefined,
+    geography: filters.geography || undefined,
+    status: filters.status || undefined,
+    has_weak_url_quality: filters.has_weak_url_quality ? true : undefined,
+    q: filters.q || undefined,
+    limit: PAGE_LIMIT,
+    offset,
   };
-  return map[t] ?? t;
 }
 
-function statusFromDecisions(
-  id: string,
-  decisions: DiscoverDecisions | null
-): Status {
-  if (!decisions) return "pending";
-  if (decisions.approved.includes(id)) return "approved";
-  if (decisions.rejected.includes(id)) return "rejected";
-  return "pending";
+function topKey(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return "-";
+  return entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
 }
 
-// ---------------------------------------------------------------------------
-// Badge components
-// ---------------------------------------------------------------------------
-
-function ConfBadge({ value }: { value: string }) {
-  const cfg: Record<string, { color: string; bg: string }> = {
-    high:   { color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
-    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-    low:    { color: "#ef4444", bg: "rgba(239,68,68,0.15)" },
-  };
-  const c = cfg[value] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.12)" };
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
-      letterSpacing: "0.06em", padding: "3px 8px", borderRadius: 3,
-      color: c.color, background: c.bg, border: `1px solid ${c.color}44`,
-      whiteSpace: "nowrap" as const, display: "inline-block",
-    }}>
-      {value || "—"}
-    </span>
-  );
+function shortId(value: string | null | undefined): string {
+  if (!value) return "-";
+  return value.length > 22 ? `${value.slice(0, 22)}...` : value;
 }
 
-function StatusBadge({ status }: { status: Status }) {
-  const cfg = {
-    pending:  { label: "Pending",  color: "#cbd5e1", bg: "rgba(148,163,184,0.14)" },
-    approved: { label: "Approved", color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
-    rejected: { label: "Rejected", color: "#ef4444", bg: "rgba(239,68,68,0.15)" },
-  }[status];
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
-      letterSpacing: "0.06em", padding: "3px 8px", borderRadius: 3,
-      color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.color}44`,
-      whiteSpace: "nowrap" as const, display: "inline-block",
-    }}>
-      {cfg.label}
-    </span>
-  );
+function filterActive(filters: Filters): boolean {
+  return Object.entries(filters).some(([key, value]) => key === "has_weak_url_quality" ? value === true : value !== "");
 }
-
-// ---------------------------------------------------------------------------
-// Action buttons — larger, always visible
-// ---------------------------------------------------------------------------
-
-const actionBtnBase: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  fontSize: 11,
-  fontWeight: 600,
-  padding: "5px 10px",
-  borderRadius: 4,
-  cursor: "pointer",
-  whiteSpace: "nowrap" as const,
-  textAlign: "left" as const,
-  transition: "background 0.12s",
-  lineHeight: 1.4,
-};
-
-function OpenSourceButton({ url }: { url: string }) {
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{
-        ...actionBtnBase,
-        background: "rgba(99,179,237,0.1)",
-        border: "1px solid rgba(99,179,237,0.35)",
-        color: "#7ec8e3",
-        textDecoration: "none",
-      }}
-    >
-      ↗ Open source
-    </a>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  function handleCopy() {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    });
-  }
-  return (
-    <button
-      onClick={handleCopy}
-      style={{
-        ...actionBtnBase,
-        background: copied ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
-        border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.12)"}`,
-        color: copied ? "#22c55e" : "#cbd5e1",
-      }}
-    >
-      {copied ? "✓ Copied" : "⎘ Copy URL"}
-    </button>
-  );
-}
-
-function DetailsToggleButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        ...actionBtnBase,
-        background: expanded ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)",
-        border: `1px solid ${expanded ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)"}`,
-        color: expanded ? "#e2e8f0" : "#94a3b8",
-      }}
-    >
-      {expanded ? "▲ Hide details" : "▼ Details"}
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Expandable details panel
-// ---------------------------------------------------------------------------
-
-const DETAIL_FIELDS: [string, (s: DiscoveredSource) => string][] = [
-  ["Discovery ID",       s => s.discovery_id],
-  ["Candidate name",     s => s.candidate_project_name || "—"],
-  ["Developer",          s => s.developer || "—"],
-  ["State",              s => s.state || "—"],
-  ["County",             s => s.county || "—"],
-  ["Source type",        s => sourceTypeLabel(s.source_type)],
-  ["Source date",        s => s.source_date || "—"],
-  ["Discovery method",   s => s.discovery_method || "—"],
-  ["Detected region",    s => s.detected_region || "—"],
-  ["Detected utility",   s => s.detected_utility || "—"],
-  ["Detected load (MW)", s => s.detected_load_mw != null ? String(s.detected_load_mw) : "—"],
-  ["Confidence",         s => s.confidence || "—"],
-  ["Retrieved at",       s => s.retrieved_at || "—"],
-  ["Review reason",      s => s.requires_review_reason || "—"],
-];
-
-function DetailsPanel({ source }: { source: DiscoveredSource }) {
-  return (
-    <div style={{
-      padding: "16px 20px",
-      background: "rgba(0,0,0,0.28)",
-      borderTop: "1px solid rgba(255,255,255,0.07)",
-    }}>
-      <div style={{
-        fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-        letterSpacing: "0.1em", color: "#94a3b8", marginBottom: 12,
-      }}>
-        Source details
-      </div>
-
-      {/* Key-value grid */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-        gap: "8px 24px",
-        marginBottom: source.extracted_text ? 16 : 0,
-      }}>
-        {DETAIL_FIELDS.map(([label, getter]) => (
-          <div key={label} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-            <span style={{
-              fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const,
-              letterSpacing: "0.06em", color: "#64748b",
-              minWidth: 130, flexShrink: 0,
-            }}>
-              {label}
-            </span>
-            <span style={{
-              fontSize: 12, color: "#cbd5e1",
-              wordBreak: "break-word",
-              lineHeight: 1.4,
-            }}>
-              {getter(source)}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Source URL */}
-      {source.source_url && (
-        <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 14 }}>
-          <span style={{
-            fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const,
-            letterSpacing: "0.06em", color: "#64748b",
-            minWidth: 130, flexShrink: 0,
-          }}>
-            Source URL
-          </span>
-          <a
-            href={source.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: 12, color: "#7ec8e3",
-              wordBreak: "break-all", lineHeight: 1.4,
-            }}
-          >
-            {source.source_url}
-          </a>
-        </div>
-      )}
-
-      {/* Extracted text */}
-      {source.extracted_text && (
-        <div>
-          <div style={{
-            fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-            letterSpacing: "0.1em", color: "#94a3b8", marginBottom: 8,
-          }}>
-            Extracted text
-          </div>
-          <pre style={{
-            margin: 0,
-            fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace",
-            fontSize: 11,
-            lineHeight: 1.65,
-            whiteSpace: "pre-wrap" as const,
-            wordBreak: "break-word" as const,
-            color: "#cbd5e1",
-            background: "rgba(0,0,0,0.35)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 4,
-            padding: "12px 14px",
-            maxHeight: 200,
-            overflowY: "auto",
-          }}>
-            {source.extracted_text}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function EmptyState() {
-  return (
-    <div style={{
-      textAlign: "center",
-      padding: "56px 24px 64px",
-    }}>
-      <div style={{ fontSize: 38, marginBottom: 14, opacity: 0.35 }}>⊡</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
-        No discovered sources found
-      </div>
-      <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.7, maxWidth: 480, margin: "0 auto 20px" }}>
-        The discovery CSV is missing or empty. Run the following commands from the
-        <code style={{ fontSize: 12, background: "rgba(255,255,255,0.07)", padding: "1px 5px", borderRadius: 3, color: "#cbd5e1" }}>backend/</code> directory:
-      </div>
-      <ol style={{
-        textAlign: "left", fontSize: 13, lineHeight: 2.1,
-        maxWidth: 460, margin: "0 auto",
-        color: "#94a3b8",
-        paddingLeft: 22,
-      }}>
-        <li>
-          Run public discovery:
-          <div style={{ marginTop: 4, marginBottom: 4 }}>
-            <code style={{
-              fontSize: 12, background: "rgba(255,255,255,0.07)",
-              padding: "4px 10px", borderRadius: 4, color: "#e2e8f0",
-              display: "inline-block",
-            }}>
-              python scripts/discover_starter_dataset.py
-            </code>
-          </div>
-        </li>
-        <li>
-          Ingest the discovered sources:
-          <div style={{ marginTop: 4, marginBottom: 4 }}>
-            <code style={{
-              fontSize: 12, background: "rgba(255,255,255,0.07)",
-              padding: "4px 10px", borderRadius: 4, color: "#e2e8f0",
-              display: "inline-block",
-            }}>
-              python scripts/ingest_discovered_sources.py
-            </code>
-          </div>
-        </li>
-        <li>Refresh this page.</li>
-      </ol>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Filter / input styles
-// ---------------------------------------------------------------------------
 
 const inputStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.06)",
   border: "1px solid rgba(255,255,255,0.12)",
   borderRadius: 4,
-  padding: "6px 10px",
-  fontSize: 12,
   color: "#e2e8f0",
+  fontSize: 12,
+  minWidth: 0,
   outline: "none",
+  padding: "6px 8px",
 };
 
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  cursor: "pointer",
-  minWidth: 140,
+const labelStyle: React.CSSProperties = {
+  color: "var(--text-dim)",
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: "0.07em",
+  textTransform: "uppercase",
 };
 
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
+function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div style={{
+      border: "1px solid var(--border)",
+      borderRadius: 6,
+      background: "rgba(255,255,255,0.03)",
+      padding: "10px 12px",
+      minWidth: 0,
+    }}>
+      <div style={labelStyle}>{label}</div>
+      <div style={{ color: "#f1f5f9", fontSize: 20, fontWeight: 750, lineHeight: 1.15, marginTop: 6 }}>
+        {value}
+      </div>
+      {sub && (
+        <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QualityBadge({ source }: { source: DiscoveredSourceReviewItem }) {
+  const quality = source.source_url_quality;
+  if (!quality) return <span style={{ color: "var(--text-dim)" }}>-</span>;
+  const weak = isWeakQuality(source);
+  return (
+    <span title={source.url_quality_warning ?? undefined} style={{
+      background: weak ? "rgba(245,158,11,0.12)" : "rgba(34,197,94,0.1)",
+      border: `1px solid ${weak ? "rgba(245,158,11,0.35)" : "rgba(34,197,94,0.28)"}`,
+      borderRadius: 3,
+      color: weak ? "#fbbf24" : "#4ade80",
+      display: "inline-block",
+      fontSize: 10,
+      fontWeight: 700,
+      letterSpacing: "0.05em",
+      padding: "3px 7px",
+      textTransform: "uppercase",
+      whiteSpace: "nowrap",
+    }}>
+      {quality.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+function DetailLine({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={labelStyle}>{label}</div>
+      <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.45, marginTop: 3, overflowWrap: "anywhere" }}>
+        {value || "-"}
+      </div>
+    </div>
+  );
+}
+
+function SourceDetails({ source }: { source: DiscoveredSourceReviewItem }) {
+  return (
+    <div style={{
+      background: "rgba(0,0,0,0.24)",
+      borderTop: "1px solid rgba(255,255,255,0.08)",
+      padding: "14px 16px",
+    }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+        <DetailLine label="Source Query" value={source.source_query} />
+        <DetailLine label="Publisher" value={source.publisher} />
+        <DetailLine label="Discovery Method" value={source.discovery_method} />
+        <DetailLine label="Registry" value={source.source_registry_id} />
+        <DetailLine label="Adapter" value={source.adapter_id} />
+        <DetailLine label="Run ID" value={source.discovery_run_id} />
+      </div>
+      {source.snippet && (
+        <div style={{ marginTop: 14 }}>
+          <div style={labelStyle}>Snippet</div>
+          <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>
+            {source.snippet}
+          </div>
+        </div>
+      )}
+      {source.alternate_urls.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={labelStyle}>Alternate URLs</div>
+          <div style={{ display: "grid", gap: 4, marginTop: 5 }}>
+            {source.alternate_urls.map((url) => (
+              <a key={url} href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#7ec8e3", fontSize: 12, overflowWrap: "anywhere" }}>
+                {url}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourceRow({ source }: { source: DiscoveredSourceReviewItem }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", verticalAlign: "top" }}>
+        <td style={{ padding: "11px 10px", minWidth: 0 }}>
+          <button
+            onClick={() => setExpanded((value) => !value)}
+            title={expanded ? "Hide details" : "Show details"}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: expanded ? "#7ec8e3" : "#94a3b8",
+              cursor: "pointer",
+              fontSize: 14,
+              padding: 0,
+            }}
+          >
+            {expanded ? "▾" : "▸"}
+          </button>
+        </td>
+        <td style={{ padding: "11px 10px", minWidth: 0 }}>
+          <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 650, lineHeight: 1.35, overflowWrap: "anywhere" }}>
+            {source.source_title || "Untitled source"}
+          </div>
+          <a href={source.source_url} target="_blank" rel="noopener noreferrer" style={{
+            color: "#7ec8e3",
+            display: "block",
+            fontSize: 11,
+            marginTop: 4,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            {hostname(source.source_url)}
+          </a>
+        </td>
+        <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{sourceTypeLabel(source.source_type)}</td>
+        <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{source.geography || "-"}</td>
+        <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{source.publisher || "-"}</td>
+        <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{source.status}</td>
+        <td style={{ padding: "11px 10px" }}><QualityBadge source={source} /></td>
+        <td style={{ padding: "11px 10px", color: "#94a3b8", fontSize: 12 }}>{shortId(source.discovery_run_id)}</td>
+        <td style={{ padding: "11px 10px", color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap" }}>{formatDate(source.created_at)}</td>
+      </tr>
+      {expanded && (
+        <tr style={{ borderBottom: "1px solid rgba(126,200,227,0.2)" }}>
+          <td colSpan={9} style={{ padding: 0 }}>
+            <SourceDetails source={source} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function FilterInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label style={{ display: "grid", gap: 4, minWidth: 150, flex: "1 1 150px" }}>
+      <span style={labelStyle}>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} style={inputStyle} />
+    </label>
+  );
+}
 
 export function DiscoveredSourcesPage() {
-  const [sources, setSources]     = useState<DiscoveredSource[]>([]);
-  const [decisions, setDecisions] = useState<DiscoverDecisions | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-
-  const [statusFilter,    setStatusFilter]    = useState<StatusFilter>("all");
-  const [typeFilter,      setTypeFilter]      = useState<string>("all");
-  const [publisherFilter, setPublisherFilter] = useState<string>("all");
-  const [search,          setSearch]          = useState<string>("");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [sources, setSources] = useState<DiscoveredSourceReviewItem[]>([]);
+  const [summary, setSummary] = useState<DiscoveredSourceReviewSummaryResponse | null>(null);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -387,282 +287,167 @@ export function DiscoveredSourcesPage() {
       setLoading(true);
       setError(null);
       try {
-        const [srcs, dec] = await Promise.all([
-          getDiscoveredSources(),
-          getDiscoverDecisions().catch(() => null),
+        const [listResponse, summaryResponse] = await Promise.all([
+          getDiscoveredSourceReview(apiFilters(filters)),
+          getDiscoveredSourceReviewSummary(apiFilters(filters)),
         ]);
         if (!cancelled) {
-          setSources(srcs);
-          setDecisions(dec);
+          setSources(listResponse.items);
+          setTotal(listResponse.total);
+          setSummary(summaryResponse);
         }
-      } catch (e) {
-        if (!cancelled) setError(String(e));
+      } catch (err) {
+        if (!cancelled) setError(String(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [filters]);
 
-  const typeOptions = useMemo(() => {
-    return [...new Set(sources.map(s => s.source_type).filter(Boolean))].sort();
-  }, [sources]);
+  const sourceTypeSummary = useMemo(() => {
+    const counts = summary?.counts_by_source_type ?? {};
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 3);
+    return entries.length > 0 ? entries.map(([key, value]) => `${sourceTypeLabel(key)} ${value}`).join(" · ") : "No source types";
+  }, [summary]);
 
-  const publisherOptions = useMemo(() => {
-    return [...new Set(sources.map(s => s.developer).filter(Boolean))].sort();
-  }, [sources]);
+  const active = filterActive(filters);
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    return sources.filter(s => {
-      const status = statusFromDecisions(s.discovery_id, decisions);
-      if (statusFilter !== "all" && status !== statusFilter) return false;
-      if (typeFilter !== "all" && s.source_type !== typeFilter) return false;
-      if (publisherFilter !== "all" && s.developer !== publisherFilter) return false;
-      if (q) {
-        const hay = [s.title, s.candidate_project_name, s.developer, s.source_url, s.state, s.county]
-          .join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [sources, decisions, statusFilter, typeFilter, publisherFilter, search]);
-
-  const counts = useMemo(() => {
-    let pending = 0, approved = 0, rejected = 0;
-    for (const s of sources) {
-      const st = statusFromDecisions(s.discovery_id, decisions);
-      if (st === "approved") approved++;
-      else if (st === "rejected") rejected++;
-      else pending++;
-    }
-    return { pending, approved, rejected, total: sources.length };
-  }, [sources, decisions]);
-
-  const filtersActive = search !== "" || statusFilter !== "all" || typeFilter !== "all" || publisherFilter !== "all";
+  function updateFilter(key: keyof Filters, value: string | boolean) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-
-      {/* ── Header ── */}
-      <div style={{
-        padding: "14px 20px 12px",
-        borderBottom: "1px solid var(--border)",
-        flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#f1f5f9" }}>
-            Discovered Sources
-          </h1>
-          {!loading && !error && (
-            <span style={{ fontSize: 13, color: "#94a3b8" }}>
-              {filtered.length} of {counts.total} sources
-            </span>
-          )}
+      <div style={{ borderBottom: "1px solid var(--border)", flexShrink: 0, padding: "14px 20px 12px" }}>
+        <div style={{ alignItems: "baseline", display: "flex", flexWrap: "wrap", gap: 12 }}>
+          <h1 style={{ color: "#f1f5f9", fontSize: 16, fontWeight: 750, margin: 0 }}>Discovered Sources</h1>
+          <span style={{ color: "#94a3b8", fontSize: 12 }}>Read-only pre-extraction review</span>
         </div>
 
-        {/* Notice banners */}
-        <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
-          <span style={{
-            fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
-            padding: "4px 10px", borderRadius: 3,
-            background: "rgba(245,158,11,0.12)", color: "#fbbf24",
-            border: "1px solid rgba(245,158,11,0.3)",
-          }}>
-            Source candidates only — not yet projects
-          </span>
-          <span style={{
-            fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
-            padding: "4px 10px", borderRadius: 3,
-            background: "rgba(255,255,255,0.05)", color: "#94a3b8",
-            border: "1px solid rgba(255,255,255,0.1)",
-          }}>
-            No public source, no project record
-          </span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 12 }}>
+          <Metric label="Total" value={formatCount(summary?.total ?? total)} />
+          <Metric label="Weak URL Quality" value={formatCount(summary?.weak_url_quality_count)} sub="Review signal only" />
+          <Metric label="Top Run ID" value={topKey(summary?.counts_by_discovery_run_id ?? {})} />
+          <Metric label="Source Types" value={formatCount(Object.keys(summary?.counts_by_source_type ?? {}).length)} sub={sourceTypeSummary} />
         </div>
-
-        {/* Count pills */}
-        {!loading && !error && counts.total > 0 && (
-          <div style={{ display: "flex", gap: 24, marginTop: 12 }}>
-            {[
-              { label: "Total",    value: counts.total,    color: "#e2e8f0" },
-              { label: "Pending",  value: counts.pending,  color: "#94a3b8" },
-              { label: "Approved", value: counts.approved, color: "#22c55e" },
-              { label: "Rejected", value: counts.rejected, color: "#f87171" },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 17, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-                <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", marginTop: 3 }}>
-                  {label}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* ── Filter bar ── */}
       <div style={{
-        padding: "10px 20px",
-        borderBottom: "1px solid var(--border)",
-        display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center",
-        flexShrink: 0,
         background: "rgba(0,0,0,0.12)",
+        borderBottom: "1px solid var(--border)",
+        display: "flex",
+        flexShrink: 0,
+        flexWrap: "wrap",
+        gap: 10,
+        padding: "10px 20px",
       }}>
-        <input
-          type="text"
-          placeholder="Search title, project, URL…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ ...inputStyle, minWidth: 220, flex: "1 1 220px" }}
-        />
-
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-          style={selectStyle}
-        >
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-        </select>
-
-        <select
-          value={typeFilter}
-          onChange={e => setTypeFilter(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="all">All source types</option>
-          {typeOptions.map(t => (
-            <option key={t} value={t}>{sourceTypeLabel(t)}</option>
-          ))}
-        </select>
-
-        <select
-          value={publisherFilter}
-          onChange={e => setPublisherFilter(e.target.value)}
-          style={{ ...selectStyle, maxWidth: 210 }}
-        >
-          <option value="all">All publishers</option>
-          {publisherOptions.map(p => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-
-        {filtersActive && (
+        <FilterInput label="Search" value={filters.q} onChange={(value) => updateFilter("q", value)} placeholder="title, URL, snippet, query" />
+        <FilterInput label="Run ID" value={filters.discovery_run_id} onChange={(value) => updateFilter("discovery_run_id", value)} />
+        <FilterInput label="Registry" value={filters.source_registry_id} onChange={(value) => updateFilter("source_registry_id", value)} />
+        <FilterInput label="Adapter" value={filters.adapter_id} onChange={(value) => updateFilter("adapter_id", value)} />
+        <FilterInput label="Source Type" value={filters.source_type} onChange={(value) => updateFilter("source_type", value)} />
+        <FilterInput label="Geography" value={filters.geography} onChange={(value) => updateFilter("geography", value)} />
+        <label style={{ display: "grid", gap: 4, minWidth: 140 }}>
+          <span style={labelStyle}>Status</span>
+          <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+            <option value="">All statuses</option>
+            <option value="discovered">Discovered</option>
+            <option value="candidate">Candidate</option>
+            <option value="rejected">Rejected</option>
+            <option value="promoted">Promoted</option>
+          </select>
+        </label>
+        <label style={{ alignItems: "center", color: "#cbd5e1", display: "flex", fontSize: 12, gap: 8, paddingTop: 17 }}>
+          <input
+            checked={filters.has_weak_url_quality}
+            onChange={(event) => updateFilter("has_weak_url_quality", event.target.checked)}
+            type="checkbox"
+          />
+          Weak URL only
+        </label>
+        {active && (
           <button
-            onClick={() => { setSearch(""); setStatusFilter("all"); setTypeFilter("all"); setPublisherFilter("all"); }}
+            onClick={() => setFilters(EMPTY_FILTERS)}
             style={{
-              fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 4,
-              background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
-              color: "#f87171", cursor: "pointer",
+              alignSelf: "end",
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              borderRadius: 4,
+              color: "#e2e8f0",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 650,
+              padding: "6px 10px",
             }}
           >
-            ✕ Clear filters
+            Clear
           </button>
         )}
       </div>
 
-      {/* ── Body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 24px" }}>
-
+      <div style={{ flex: 1, overflow: "auto", padding: "0 20px 24px" }}>
         {loading && (
-          <div style={{ padding: "48px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-            Loading discovered sources…
+          <div style={{ color: "#94a3b8", fontSize: 13, padding: "42px 0", textAlign: "center" }}>
+            Loading discovered sources...
           </div>
         )}
 
         {!loading && error && (
           <div style={{
-            margin: "20px 0", padding: "16px 18px",
-            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 6, lineHeight: 1.7,
+            background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 6,
+            color: "#fca5a5",
+            fontSize: 12,
+            lineHeight: 1.6,
+            marginTop: 16,
+            padding: "14px 16px",
           }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 6 }}>
-              Failed to load discovered sources
-            </div>
-            <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 8 }}>
-              {error}
-            </div>
-            <div style={{ fontSize: 12, color: "#94a3b8" }}>
-              Make sure the backend is running and the CSV exists at{" "}
-              <code style={{
-                fontSize: 11, background: "rgba(255,255,255,0.07)",
-                padding: "2px 6px", borderRadius: 3, color: "#cbd5e1",
-              }}>
-                backend/runtime_data/starter_sources/discovered_sources_v0_1.csv
-              </code>.
-              Run{" "}
-              <code style={{
-                fontSize: 11, background: "rgba(255,255,255,0.07)",
-                padding: "2px 6px", borderRadius: 3, color: "#cbd5e1",
-              }}>
-                python scripts/discover_starter_dataset.py
-              </code>{" "}
-              to generate it.
-            </div>
+            {error}
           </div>
         )}
 
-        {!loading && !error && filtered.length === 0 && sources.length === 0 && (
-          <EmptyState />
-        )}
-
-        {!loading && !error && filtered.length === 0 && sources.length > 0 && (
-          <div style={{ padding: "48px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-            No sources match the current filters.{" "}
-            <button
-              onClick={() => { setSearch(""); setStatusFilter("all"); setTypeFilter("all"); setPublisherFilter("all"); }}
-              style={{
-                fontSize: 13, fontWeight: 600, background: "none", border: "none",
-                color: "#7ec8e3", cursor: "pointer", padding: 0, textDecoration: "underline",
-              }}
-            >
-              Clear filters
-            </button>
+        {!loading && !error && sources.length === 0 && (
+          <div style={{ color: "#94a3b8", fontSize: 13, padding: "42px 0", textAlign: "center" }}>
+            No discovered sources match the current filters.
           </div>
         )}
 
-        {!loading && !error && filtered.length > 0 && (
-          <div style={{ overflowX: "auto", marginTop: 12 }}>
-            <table style={{
-              borderCollapse: "collapse",
-              fontSize: 12,
-              tableLayout: "fixed",
-              width: "100%",
-              minWidth: 900,
-            }}>
-              {/* Column widths: 210+110+120+110+90+88+86+86+130 = 1030px */}
+        {!loading && !error && sources.length > 0 && (
+          <div style={{ marginTop: 12, overflowX: "auto" }}>
+            <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>
+              Showing {sources.length} of {total} sources
+            </div>
+            <table style={{ borderCollapse: "collapse", minWidth: 1040, tableLayout: "fixed", width: "100%" }}>
               <colgroup>
-                <col style={{ width: 210 }} />
-                <col style={{ width: 110 }} />
+                <col style={{ width: 34 }} />
+                <col style={{ width: 300 }} />
+                <col style={{ width: 150 }} />
                 <col style={{ width: 120 }} />
-                <col style={{ width: 110 }} />
-                <col style={{ width: 90 }} />
-                <col style={{ width: 88 }} />
-                <col style={{ width: 86 }} />
-                <col style={{ width: 86 }} />
-                <col style={{ width: 130 }} />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 95 }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: 105 }} />
               </colgroup>
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
-                  {["Title / Project", "Publisher", "Type", "Geography", "Method", "Confidence", "Status", "Discovered", "Actions"].map((label, i) => (
+                  {["", "Source", "Type", "Geography", "Publisher", "Status", "URL Quality", "Run ID", "Created"].map((label) => (
                     <th key={label} style={{
-                      padding: "9px 10px", textAlign: "left",
-                      fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-                      letterSpacing: "0.08em", color: "#94a3b8",
-                      whiteSpace: "nowrap" as const,
-                      overflow: "hidden",
-                      position: "sticky" as const, top: 0,
-                      background: "var(--bg)", zIndex: i === 8 ? 3 : 1,
-                      borderBottom: "1px solid rgba(255,255,255,0.08)",
-                      // Actions column sticky-right
-                      ...(i === 8 ? {
-                        right: 0,
-                        boxShadow: "-2px 0 6px rgba(0,0,0,0.3)",
-                      } : {}),
+                      background: "var(--bg)",
+                      color: "#94a3b8",
+                      fontSize: 10,
+                      fontWeight: 750,
+                      letterSpacing: "0.08em",
+                      padding: "9px 10px",
+                      position: "sticky",
+                      textAlign: "left",
+                      textTransform: "uppercase",
+                      top: 0,
+                      whiteSpace: "nowrap",
+                      zIndex: 1,
                     }}>
                       {label}
                     </th>
@@ -670,159 +455,12 @@ export function DiscoveredSourcesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(source => {
-                  const status = statusFromDecisions(source.discovery_id, decisions);
-                  return (
-                    <SourceRow
-                      key={source.discovery_id}
-                      source={source}
-                      status={status}
-                    />
-                  );
-                })}
+                {sources.map((source) => <SourceRow key={source.id} source={source} />)}
               </tbody>
             </table>
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Table row
-// ---------------------------------------------------------------------------
-
-function SourceRow({
-  source,
-  status,
-}: {
-  source: DiscoveredSource;
-  status: Status;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const rowBorder = expanded
-    ? "1px solid rgba(99,179,237,0.2)"
-    : "1px solid rgba(255,255,255,0.06)";
-
-  return (
-    <>
-      <tr style={{
-        borderBottom: rowBorder,
-        background: expanded ? "rgba(99,179,237,0.03)" : "transparent",
-        verticalAlign: "top",
-        transition: "background 0.12s",
-      }}>
-
-        {/* Title / Project — wraps to 2 lines, clips beyond */}
-        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
-          <div style={{
-            fontWeight: 600, color: "#e2e8f0", lineHeight: 1.35,
-            marginBottom: 2,
-            overflow: "hidden",
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-          } as React.CSSProperties}>
-            {source.title || <span style={{ color: "#64748b", fontStyle: "italic", fontWeight: 400 }}>Untitled</span>}
-          </div>
-          {source.candidate_project_name && (
-            <div style={{
-              fontSize: 11, color: "#94a3b8",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
-              {source.candidate_project_name}
-            </div>
-          )}
-          {source.source_url && (
-            <div style={{
-              fontSize: 11, color: "#64748b",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
-              {hostname(source.source_url)}
-            </div>
-          )}
-        </td>
-
-        {/* Publisher */}
-        <td style={{
-          padding: "11px 10px", color: "#cbd5e1",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
-        }}>
-          {source.developer || <span style={{ color: "#64748b" }}>—</span>}
-        </td>
-
-        {/* Type */}
-        <td style={{
-          padding: "11px 10px", color: "#cbd5e1",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
-        }}>
-          {sourceTypeLabel(source.source_type)}
-        </td>
-
-        {/* Geography */}
-        <td style={{
-          padding: "11px 10px", color: "#cbd5e1",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
-        }}>
-          {[source.county, source.state].filter(Boolean).join(", ") || (
-            <span style={{ color: "#64748b" }}>—</span>
-          )}
-        </td>
-
-        {/* Method */}
-        <td style={{
-          padding: "11px 10px", color: "#94a3b8", fontSize: 12,
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
-        }}>
-          {source.discovery_method || <span style={{ color: "#64748b" }}>—</span>}
-        </td>
-
-        {/* Confidence */}
-        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
-          <ConfBadge value={source.confidence} />
-        </td>
-
-        {/* Status */}
-        <td style={{ padding: "11px 10px", overflow: "hidden" }}>
-          <StatusBadge status={status} />
-        </td>
-
-        {/* Discovered */}
-        <td style={{
-          padding: "11px 10px", color: "#94a3b8", fontSize: 12,
-          whiteSpace: "nowrap" as const, overflow: "hidden",
-        }}>
-          {formatDate(source.retrieved_at)}
-        </td>
-
-        {/* Actions — sticky right, always visible */}
-        <td style={{
-          padding: "9px 10px",
-          position: "sticky" as const,
-          right: 0,
-          background: expanded ? "rgba(15,23,42,0.97)" : "var(--bg)",
-          boxShadow: "-2px 0 8px rgba(0,0,0,0.35)",
-          zIndex: 2,
-        }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {source.source_url && <OpenSourceButton url={source.source_url} />}
-            {source.source_url && <CopyButton text={source.source_url} />}
-            <DetailsToggleButton expanded={expanded} onClick={() => setExpanded(e => !e)} />
-          </div>
-        </td>
-
-      </tr>
-
-      {/* Expandable details row */}
-      {expanded && (
-        <tr style={{ borderBottom: "1px solid rgba(99,179,237,0.2)" }}>
-          <td colSpan={9} style={{ padding: 0 }}>
-            <DetailsPanel source={source} />
-          </td>
-        </tr>
-      )}
-    </>
   );
 }

@@ -38,6 +38,8 @@ import type {
   ProjectCandidateReviewDecision,
   ProjectCandidateReviewDecisionRequest,
   DiscoveredSource,
+  DiscoveredSourceReviewListResponse,
+  DiscoveredSourceReviewSummaryResponse,
   DiscoveredSourceClaimListResponse,
   DiscoverDecisions,
   ManualCapture,
@@ -768,6 +770,91 @@ export async function getDiscoveredSources(): Promise<DiscoveredSource[]> {
     return [];
   }
   return fetchJson<DiscoveredSource[]>("/discover/sources");
+}
+
+export async function getDiscoveredSourceReview(params?: {
+  discovery_run_id?: string;
+  source_registry_id?: string;
+  adapter_id?: string;
+  source_type?: string;
+  geography?: string;
+  status?: string;
+  publisher?: string;
+  source_url_quality?: string;
+  has_weak_url_quality?: boolean;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<DiscoveredSourceReviewListResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return { items: [], total: 0, limit: params?.limit ?? 50, offset: params?.offset ?? 0, applied_filters: {} };
+  }
+  const qs = new URLSearchParams();
+  setNonEmptyParam(qs, "discovery_run_id", params?.discovery_run_id);
+  setNonEmptyParam(qs, "source_registry_id", params?.source_registry_id);
+  setNonEmptyParam(qs, "adapter_id", params?.adapter_id);
+  setNonEmptyParam(qs, "source_type", params?.source_type);
+  setNonEmptyParam(qs, "geography", params?.geography);
+  setNonEmptyParam(qs, "status", params?.status);
+  setNonEmptyParam(qs, "publisher", params?.publisher);
+  setNonEmptyParam(qs, "source_url_quality", params?.source_url_quality);
+  setNonEmptyParam(qs, "q", params?.q);
+  if (typeof params?.has_weak_url_quality === "boolean") {
+    qs.set("has_weak_url_quality", params.has_weak_url_quality ? "true" : "false");
+  }
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    qs.set("limit", String(Math.max(1, Math.min(200, Math.trunc(params.limit)))));
+  }
+  if (typeof params?.offset === "number" && Number.isFinite(params.offset)) {
+    qs.set("offset", String(Math.max(0, Math.trunc(params.offset))));
+  }
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return fetchJson<DiscoveredSourceReviewListResponse>(`/discovered-sources${query}`);
+}
+
+export async function getDiscoveredSourceReviewSummary(params?: {
+  discovery_run_id?: string;
+  source_registry_id?: string;
+  adapter_id?: string;
+  source_type?: string;
+  geography?: string;
+  status?: string;
+  publisher?: string;
+  source_url_quality?: string;
+  has_weak_url_quality?: boolean;
+  q?: string;
+}): Promise<DiscoveredSourceReviewSummaryResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      total: 0,
+      counts_by_status: {},
+      counts_by_source_type: {},
+      counts_by_geography: {},
+      counts_by_source_registry_id: {},
+      counts_by_adapter_id: {},
+      counts_by_discovery_run_id: {},
+      weak_url_quality_count: 0,
+      weak_url_quality_examples: [],
+      applied_filters: {},
+    };
+  }
+  const qs = new URLSearchParams();
+  setNonEmptyParam(qs, "discovery_run_id", params?.discovery_run_id);
+  setNonEmptyParam(qs, "source_registry_id", params?.source_registry_id);
+  setNonEmptyParam(qs, "adapter_id", params?.adapter_id);
+  setNonEmptyParam(qs, "source_type", params?.source_type);
+  setNonEmptyParam(qs, "geography", params?.geography);
+  setNonEmptyParam(qs, "status", params?.status);
+  setNonEmptyParam(qs, "publisher", params?.publisher);
+  setNonEmptyParam(qs, "source_url_quality", params?.source_url_quality);
+  setNonEmptyParam(qs, "q", params?.q);
+  if (typeof params?.has_weak_url_quality === "boolean") {
+    qs.set("has_weak_url_quality", params.has_weak_url_quality ? "true" : "false");
+  }
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return fetchJson<DiscoveredSourceReviewSummaryResponse>(`/discovered-sources/summary${query}`);
 }
 
 export async function getDiscoverDecisions(): Promise<DiscoverDecisions> {

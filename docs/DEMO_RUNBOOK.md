@@ -250,6 +250,8 @@ python scripts/ingest_public_discovered_sources.py \
 
 The dry-run ingest report writes nothing and distinguishes structural blockers, duplicate input URLs, already-ingested URLs, would-create/would-update counts, and review-only weak SCC public-comment fallback warnings. Do not ingest old pre-hardening runs. Claim extraction, candidate generation, verification, auto-admit, and promotion remain separate steps.
 
+After confirmed ingest, inspect stored discovered-source rows through the read-only `/discovered-sources` analyst page or `GET /discovered-sources` plus `GET /discovered-sources/summary`. Filter by discovery run, registry, adapter, source type, geography, status, publisher, URL quality, weak URL quality, or search text before starting claim extraction or candidate generation. SCC public-comment form and fallback-reference warnings are review cues only; they do not create Projects, ProjectCandidates, claims, verification decisions, or promotions.
+
 ## Optional: Import Manual CSV Datasets
 
 Manual CSV imports are disabled-by-default review inputs for external datasets. Use them as a two-step workflow:
