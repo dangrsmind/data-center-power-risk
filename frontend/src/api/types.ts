@@ -767,3 +767,45 @@ export interface DiscoveredSource {
   discovery_method: string;
   retrieved_at: string;
 }
+
+export interface DiscoveredSourceReviewItem {
+  id: string;
+  source_title: string | null;
+  source_url: string;
+  source_type: string | null;
+  geography: string | null;
+  publisher: string | null;
+  status: string;
+  discovery_run_id: string | null;
+  source_registry_id: string | null;
+  adapter_id: string | null;
+  discovery_method: string | null;
+  source_query: string | null;
+  snippet: string | null;
+  created_at: string;
+  updated_at: string;
+  source_url_quality: string | null;
+  url_quality_warning: string | null;
+  alternate_urls: string[];
+}
+
+export interface DiscoveredSourceReviewListResponse {
+  items: DiscoveredSourceReviewItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  applied_filters: Record<string, unknown>;
+}
+
+export interface DiscoveredSourceReviewSummaryResponse {
+  total: number;
+  counts_by_status: Record<string, number>;
+  counts_by_source_type: Record<string, number>;
+  counts_by_geography: Record<string, number>;
+  counts_by_source_registry_id: Record<string, number>;
+  counts_by_adapter_id: Record<string, number>;
+  counts_by_discovery_run_id: Record<string, number>;
+  weak_url_quality_count: number;
+  weak_url_quality_examples: DiscoveredSourceReviewItem[];
+  applied_filters: Record<string, unknown>;
+}
