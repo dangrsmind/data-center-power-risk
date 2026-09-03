@@ -366,7 +366,7 @@ For live smoke runs, keep `WEB_SEARCH_MAX_RESULTS=3` unless deliberately broaden
 DATABASE_URL=sqlite:///local.db uvicorn app.main:app --reload
 ```
 
-The API is available at `http://127.0.0.1:8000`.
+The backend API is available at `http://localhost:8000`.
 
 ## 7. Start the Frontend
 
@@ -374,10 +374,10 @@ In a separate terminal:
 
 ```bash
 cd frontend
-npm run dev
+VITE_API_BASE_URL=http://localhost:8000 npm run dev -- --host 0.0.0.0 --port 8001
 ```
 
-Open `http://localhost:5000/map`.
+Open `http://localhost:8001/discovered-sources`.
 
 ## 8. Verify Projects
 

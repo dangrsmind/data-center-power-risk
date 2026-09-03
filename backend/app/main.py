@@ -17,6 +17,7 @@ from app.api.routes import (
     projects_router,
     queue_router,
 )
+from app.core.config import get_backend_cors_origins
 from app.core.db import DATABASE_URL, create_db_and_tables
 
 
@@ -34,14 +35,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5000",
-        "http://127.0.0.1:5000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5001",
-        "http://127.0.0.1:5001",
-    ],
+    allow_origins=get_backend_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
