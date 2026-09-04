@@ -11,7 +11,9 @@ from app.api.routes.discovered_sources import (
     get_discovered_source,
     list_discovered_sources,
     summarize_discovered_sources,
+    update_discovered_source_review,
 )
+from app.schemas.discovered_source import DiscoveredSourceReviewUpdate
 from app.models import Base
 from app.models.discovered_source import DiscoveredSourceClaim, DiscoveredSourceRecord
 from app.models.evidence import Claim, Evidence
@@ -75,6 +77,9 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
                         discovery_run_id="run-b",
                         raw_metadata_json={"source_url_quality": "primary_source"},
                         status="candidate",
+                        review_status="useful",
+                        review_notes="Good planning source",
+                        reviewed_by="analyst@example.com",
                     ),
                     DiscoveredSourceRecord(
                         source_url="https://example.gov/fallback/reference",
@@ -129,6 +134,11 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(weak.source_query, "Virginia data center large load SCC")
         self.assertEqual(weak.url_quality_warning, "weak public-comment fallback")
         self.assertEqual(weak.alternate_urls, ["https://www.scc.virginia.gov/docketsearch#/caseDetails/1"])
+        self.assertEqual(weak.review_status, "unreviewed")
+        self.assertIsNone(weak.review_notes)
+        useful = next(item for item in response.items if item.review_status == "useful")
+        self.assertEqual(useful.review_notes, "Good planning source")
+        self.assertEqual(useful.reviewed_by, "analyst@example.com")
 
     def test_filters_search_limit_and_offset_are_applied(self) -> None:
         db = self.SessionLocal()
@@ -166,6 +176,28 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(len(summary.weak_url_quality_examples), 2)
         self.assertEqual(summary.counts_by_status, {"candidate": 1, "discovered": 2})
         self.assertEqual(summary.counts_by_discovery_run_id, {"run-a": 1, "run-b": 1, "run-c": 1})
+        self.assertEqual(summary.counts_by_review_status, {"unreviewed": 2, "useful": 1})
+        self.assertEqual(summary.reviewed_count, 1)
+        self.assertEqual(summary.unreviewed_count, 2)
+        self.assertEqual(summary.useful_count, 1)
+        self.assertEqual(summary.maybe_count, 0)
+        self.assertEqual(summary.noisy_count, 0)
+        self.assertEqual(summary.weak_count, 0)
+        self.assertEqual(summary.rejected_count, 0)
+
+    def test_review_filters_are_applied(self) -> None:
+        db = self.SessionLocal()
+        try:
+            useful_response = list_discovered_sources(review_status="useful", limit=50, offset=0, db=db)
+            notes_response = list_discovered_sources(has_review_notes=True, limit=50, offset=0, db=db)
+            no_notes_response = list_discovered_sources(has_review_notes=False, limit=50, offset=0, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(useful_response.total, 1)
+        self.assertEqual(useful_response.items[0].review_status, "useful")
+        self.assertEqual(notes_response.total, 1)
+        self.assertEqual(no_notes_response.total, 2)
 
     def test_single_record_endpoint_includes_raw_metadata(self) -> None:
         db = self.SessionLocal()
@@ -178,6 +210,104 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
 
         self.assertEqual(response.id, source_id)
         self.assertEqual(response.raw_metadata_json["source_url_quality"], "public_comment_form")
+
+    def test_patch_updates_only_triage_fields_and_preserves_provenance(self) -> None:
+        before_counts = self._counts()
+        db = self.SessionLocal()
+        try:
+            listed = list_discovered_sources(source_url_quality="public_comment_form", limit=50, offset=0, db=db)
+            source_id = listed.items[0].id
+            before = get_discovered_source(source_id, db=db)
+            response = update_discovered_source_review(
+                source_id,
+                DiscoveredSourceReviewUpdate(
+                    review_status="weak",
+                    review_notes="Weak source, keep only as fallback.",
+                    reviewed_by="Analyst",
+                ),
+                db=db,
+            )
+            after = get_discovered_source(source_id, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(response.review_status, "weak")
+        self.assertEqual(response.review_notes, "Weak source, keep only as fallback.")
+        self.assertEqual(response.reviewed_by, "Analyst")
+        self.assertIsNotNone(response.reviewed_at)
+        self.assertEqual(after.source_url, before.source_url)
+        self.assertEqual(after.source_title, before.source_title)
+        self.assertEqual(after.source_type, before.source_type)
+        self.assertEqual(after.geography, before.geography)
+        self.assertEqual(after.source_registry_id, before.source_registry_id)
+        self.assertEqual(after.adapter_id, before.adapter_id)
+        self.assertEqual(after.discovery_run_id, before.discovery_run_id)
+        self.assertEqual(after.status, before.status)
+        self.assertEqual(after.raw_metadata_json, before.raw_metadata_json)
+        self.assertEqual(after.source_url_quality, "public_comment_form")
+        self.assertEqual(after.review_status, "weak")
+        self.assertEqual(self._counts(), before_counts)
+
+    def test_patch_normalizes_blank_review_fields_and_clears_to_unreviewed(self) -> None:
+        db = self.SessionLocal()
+        try:
+            listed = list_discovered_sources(review_status="useful", limit=50, offset=0, db=db)
+            source_id = listed.items[0].id
+            response = update_discovered_source_review(
+                source_id,
+                DiscoveredSourceReviewUpdate(review_status=" ", review_notes=" ", reviewed_by=" "),
+                db=db,
+            )
+        finally:
+            db.close()
+
+        self.assertEqual(response.review_status, "unreviewed")
+        self.assertIsNone(response.review_notes)
+        self.assertIsNone(response.reviewed_by)
+        self.assertIsNotNone(response.reviewed_at)
+
+    def test_invalid_review_status_returns_clean_4xx(self) -> None:
+        db = self.SessionLocal()
+        try:
+            listed = list_discovered_sources(limit=50, offset=0, db=db)
+            request = DiscoveredSourceReviewUpdate.model_construct(
+                review_status="bad_status",
+                review_notes=None,
+                reviewed_by=None,
+            )
+            with self.assertRaisesRegex(Exception, "422"):
+                update_discovered_source_review(listed.items[0].id, request, db=db)
+        finally:
+            db.close()
+
+    def test_patch_missing_source_returns_404(self) -> None:
+        import uuid
+
+        db = self.SessionLocal()
+        try:
+            with self.assertRaisesRegex(Exception, "404"):
+                update_discovered_source_review(
+                    uuid.uuid4(),
+                    DiscoveredSourceReviewUpdate(review_status="maybe"),
+                    db=db,
+                )
+        finally:
+            db.close()
+
+    def test_weak_url_quality_is_independent_from_analyst_review_status(self) -> None:
+        db = self.SessionLocal()
+        try:
+            listed = list_discovered_sources(source_url_quality="public_comment_form", limit=50, offset=0, db=db)
+            response = update_discovered_source_review(
+                listed.items[0].id,
+                DiscoveredSourceReviewUpdate(review_status="useful"),
+                db=db,
+            )
+        finally:
+            db.close()
+
+        self.assertEqual(response.source_url_quality, "public_comment_form")
+        self.assertEqual(response.review_status, "useful")
 
     def test_review_endpoints_do_not_create_downstream_records(self) -> None:
         before = self._counts()

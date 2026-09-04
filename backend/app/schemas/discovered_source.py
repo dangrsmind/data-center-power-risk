@@ -4,8 +4,12 @@ import uuid
 from datetime import datetime
 
 from typing import Any
+from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+
+
+DiscoveredSourceReviewStatus = Literal["unreviewed", "useful", "maybe", "noisy", "weak", "rejected"]
 
 
 class DiscoveredSourceResponse(BaseModel):
@@ -55,6 +59,10 @@ class DiscoveredSourceReviewItem(BaseModel):
     source_url_quality: str | None = None
     url_quality_warning: str | None = None
     alternate_urls: list[str] = Field(default_factory=list)
+    review_status: DiscoveredSourceReviewStatus = "unreviewed"
+    review_notes: str | None = None
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
 
 
 class DiscoveredSourceReviewDetail(DiscoveredSourceReviewItem):
@@ -69,6 +77,28 @@ class DiscoveredSourceReviewListResponse(BaseModel):
     applied_filters: dict[str, Any]
 
 
+class DiscoveredSourceReviewUpdate(BaseModel):
+    review_status: DiscoveredSourceReviewStatus | None = None
+    review_notes: str | None = Field(default=None, max_length=2000)
+    reviewed_by: str | None = Field(default=None, max_length=255)
+
+    @field_validator("review_status", mode="before")
+    @classmethod
+    def normalize_review_status(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return value
+
+    @field_validator("review_notes", "reviewed_by", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return value
+
+
 class DiscoveredSourceReviewSummaryResponse(BaseModel):
     total: int
     counts_by_status: dict[str, int]
@@ -77,6 +107,14 @@ class DiscoveredSourceReviewSummaryResponse(BaseModel):
     counts_by_source_registry_id: dict[str, int]
     counts_by_adapter_id: dict[str, int]
     counts_by_discovery_run_id: dict[str, int]
+    counts_by_review_status: dict[str, int]
+    reviewed_count: int
+    unreviewed_count: int
+    noisy_count: int
+    weak_count: int
+    useful_count: int
+    maybe_count: int
+    rejected_count: int
     weak_url_quality_count: int
     weak_url_quality_examples: list[DiscoveredSourceReviewItem]
     applied_filters: dict[str, Any]

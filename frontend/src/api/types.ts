@@ -787,6 +787,18 @@ export interface DiscoveredSourceReviewItem {
   source_url_quality: string | null;
   url_quality_warning: string | null;
   alternate_urls: string[];
+  review_status: DiscoveredSourceReviewStatus;
+  review_notes: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+}
+
+export type DiscoveredSourceReviewStatus = "unreviewed" | "useful" | "maybe" | "noisy" | "weak" | "rejected";
+
+export interface DiscoveredSourceReviewUpdateRequest {
+  review_status: DiscoveredSourceReviewStatus | null;
+  review_notes?: string | null;
+  reviewed_by?: string | null;
 }
 
 export interface DiscoveredSourceReviewListResponse {
@@ -805,6 +817,14 @@ export interface DiscoveredSourceReviewSummaryResponse {
   counts_by_source_registry_id: Record<string, number>;
   counts_by_adapter_id: Record<string, number>;
   counts_by_discovery_run_id: Record<string, number>;
+  counts_by_review_status: Record<string, number>;
+  reviewed_count: number;
+  unreviewed_count: number;
+  noisy_count: number;
+  weak_count: number;
+  useful_count: number;
+  maybe_count: number;
+  rejected_count: number;
   weak_url_quality_count: number;
   weak_url_quality_examples: DiscoveredSourceReviewItem[];
   applied_filters: Record<string, unknown>;

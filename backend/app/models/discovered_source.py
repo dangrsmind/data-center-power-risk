@@ -21,6 +21,7 @@ class DiscoveredSourceRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_discovered_sources_source_type", "source_type"),
         Index("ix_discovered_sources_publisher", "publisher"),
         Index("ix_discovered_sources_status", "status"),
+        Index("ix_discovered_sources_review_status", "review_status"),
     )
 
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
@@ -40,6 +41,10 @@ class DiscoveredSourceRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     discovery_run_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     raw_metadata_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="discovered")
+    review_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class DiscoveredSourceClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
