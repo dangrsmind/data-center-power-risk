@@ -17,6 +17,7 @@ DiscoveredSourceReviewPriorityBucket = Literal[
     "likely_noise",
     "general_review",
 ]
+DiscoveredSourceReviewNoteMode = Literal["replace", "append"]
 
 
 class DiscoveredSourceResponse(BaseModel):
@@ -107,6 +108,32 @@ class DiscoveredSourceReviewUpdate(BaseModel):
             text = value.strip()
             return text or None
         return value
+
+
+class DiscoveredSourceReviewBulkUpdate(BaseModel):
+    source_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    review_status: DiscoveredSourceReviewStatus | None = None
+    review_notes: str | None = Field(default=None, max_length=2000)
+    reviewed_by: str | None = Field(default=None, max_length=255)
+    note_mode: DiscoveredSourceReviewNoteMode = "replace"
+
+    @field_validator("review_status", mode="before")
+    @classmethod
+    def normalize_review_status(cls, value: object) -> object:
+        return DiscoveredSourceReviewUpdate.normalize_review_status(value)
+
+    @field_validator("review_notes", "reviewed_by", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> object:
+        return DiscoveredSourceReviewUpdate.normalize_optional_text(value)
+
+
+class DiscoveredSourceReviewBulkUpdateResponse(BaseModel):
+    requested_count: int
+    updated_count: int
+    missing_ids: list[uuid.UUID]
+    items: list[DiscoveredSourceReviewItem]
+    warnings: list[str] = Field(default_factory=list)
 
 
 class DiscoveredSourceReviewSummaryResponse(BaseModel):

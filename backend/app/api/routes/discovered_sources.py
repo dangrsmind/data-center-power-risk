@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.schemas.discovered_source import (
+    DiscoveredSourceReviewBulkUpdate,
+    DiscoveredSourceReviewBulkUpdateResponse,
     DiscoveredSourceReviewDetail,
     DiscoveredSourceReviewListResponse,
     DiscoveredSourceReviewSummaryResponse,
@@ -160,6 +162,30 @@ def summarize_discovered_sources(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return DiscoveredSourceReviewSummaryResponse(**summary)
+
+
+@router.patch("/review/bulk", response_model=DiscoveredSourceReviewBulkUpdateResponse, response_model_exclude_none=True)
+def bulk_update_discovered_source_review(
+    request: DiscoveredSourceReviewBulkUpdate,
+    db: Session = Depends(get_db),
+) -> DiscoveredSourceReviewBulkUpdateResponse:
+    fields_set = request.model_fields_set
+    update_kwargs = {"note_mode": request.note_mode}
+    if "review_status" in fields_set:
+        update_kwargs["review_status"] = request.review_status
+    if "review_notes" in fields_set:
+        update_kwargs["review_notes"] = request.review_notes
+    if "reviewed_by" in fields_set:
+        update_kwargs["reviewed_by"] = request.reviewed_by
+    try:
+        response = DiscoveredSourceService(db).bulk_update_review(
+            request.source_ids,
+            **update_kwargs,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return DiscoveredSourceReviewBulkUpdateResponse(**response)
 
 
 @router.get("/{source_id}", response_model=DiscoveredSourceReviewDetail, response_model_exclude_none=True)

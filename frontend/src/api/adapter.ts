@@ -38,6 +38,8 @@ import type {
   ProjectCandidateReviewDecision,
   ProjectCandidateReviewDecisionRequest,
   DiscoveredSource,
+  DiscoveredSourceReviewBulkUpdateRequest,
+  DiscoveredSourceReviewBulkUpdateResponse,
   DiscoveredSourceReviewItem,
   DiscoveredSourceReviewListResponse,
   DiscoveredSourceReviewPriorityBucket,
@@ -940,6 +942,48 @@ export async function updateDiscoveredSourceReview(
     };
   }
   return patchJson<DiscoveredSourceReviewItem>(`/discovered-sources/${sourceId}/review`, request);
+}
+
+export async function bulkUpdateDiscoveredSourceReview(
+  request: DiscoveredSourceReviewBulkUpdateRequest,
+): Promise<DiscoveredSourceReviewBulkUpdateResponse> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      requested_count: request.source_ids.length,
+      updated_count: request.source_ids.length,
+      missing_ids: [],
+      items: request.source_ids.map((sourceId) => ({
+        id: sourceId,
+        source_title: "Mock discovered source",
+        source_url: "https://example.com/mock-source",
+        source_type: null,
+        geography: null,
+        publisher: null,
+        status: "discovered",
+        discovery_run_id: null,
+        source_registry_id: null,
+        adapter_id: null,
+        discovery_method: null,
+        source_query: null,
+        snippet: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        source_url_quality: null,
+        url_quality_warning: null,
+        alternate_urls: [],
+        review_status: request.review_status ?? "unreviewed",
+        review_notes: request.review_notes ?? null,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: request.reviewed_by ?? null,
+        review_priority_score: 0,
+        review_priority_bucket: "general_review",
+        review_priority_reasons: ["0 mock response"],
+      })),
+      warnings: [],
+    };
+  }
+  return patchJson<DiscoveredSourceReviewBulkUpdateResponse>("/discovered-sources/review/bulk", request);
 }
 
 export async function getDiscoverDecisions(): Promise<DiscoverDecisions> {
