@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.discovered_source_service import is_weak_scc_public_comment_form
+from app.models.discovered_source import DiscoveredSourceRecord
+from app.services.discovered_source_service import is_weak_scc_public_comment_form, review_priority
 
 
 class DiscoveredSourceServiceTest(unittest.TestCase):
@@ -30,6 +31,42 @@ class DiscoveredSourceServiceTest(unittest.TestCase):
                 }
             )
         )
+
+    def test_review_priority_scores_official_filings_above_generic_pages(self) -> None:
+        official = DiscoveredSourceRecord(
+            source_url="https://www.scc.virginia.gov/docketsearch#/caseDetails/144/345",
+            source_title="PUR-2026-00050 data center large load hearing",
+            source_type="state_regulatory_dockets",
+            publisher="Virginia SCC",
+            geography="Virginia",
+            discovery_method="searchstax_query",
+            search_term="data center large load docket",
+            snippet="State regulatory docket for a data center large load interconnection hearing.",
+            source_registry_id="virginia_scc_data_center_large_load_dockets",
+            adapter_id="virginia_scc",
+            discovery_run_id="20260828T193254Z",
+            raw_metadata_json={"source_url_quality": "docket_case_detail"},
+            status="discovered",
+        )
+        generic = DiscoveredSourceRecord(
+            source_url="https://example.com/",
+            source_title="Home",
+            source_type="press",
+            publisher="Example",
+            geography="unknown",
+            discovery_method="web_search_pattern",
+            search_term="homepage",
+            snippet="Short.",
+            source_registry_id="unknown",
+            adapter_id="unknown",
+            discovery_run_id="unknown",
+            raw_metadata_json={},
+            status="discovered",
+        )
+
+        self.assertGreater(review_priority(official).score, review_priority(generic).score)
+        self.assertEqual(review_priority(official).bucket, "high_signal_official")
+        self.assertEqual(review_priority(generic).bucket, "likely_noise")
 
 
 if __name__ == "__main__":

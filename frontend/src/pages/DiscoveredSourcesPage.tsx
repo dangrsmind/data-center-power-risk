@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
   DiscoveredSourceReviewItem,
+  DiscoveredSourceReviewPriorityBucket,
+  DiscoveredSourceReviewSort,
   DiscoveredSourceReviewStatus,
   DiscoveredSourceReviewSummaryResponse,
 } from "../api/types";
@@ -22,6 +24,9 @@ interface Filters {
   reviewed_by: string;
   has_review_notes: boolean;
   q: string;
+  priority_bucket: DiscoveredSourceReviewPriorityBucket | "";
+  min_priority_score: string;
+  sort: DiscoveredSourceReviewSort;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -36,10 +41,20 @@ const EMPTY_FILTERS: Filters = {
   reviewed_by: "",
   has_review_notes: false,
   q: "",
+  priority_bucket: "",
+  min_priority_score: "",
+  sort: "created_at_desc",
 };
 
 const PAGE_LIMIT = 100;
 const REVIEW_STATUSES: DiscoveredSourceReviewStatus[] = ["unreviewed", "useful", "maybe", "noisy", "weak", "rejected"];
+const PRIORITY_BUCKETS: DiscoveredSourceReviewPriorityBucket[] = [
+  "high_signal_official",
+  "high_signal_project_like",
+  "weak_url_review",
+  "likely_noise",
+  "general_review",
+];
 
 function formatCount(value: number | null | undefined): string {
   return value == null ? "0" : value.toLocaleString("en-US");
@@ -61,6 +76,10 @@ function reviewStatusLabel(value: string | null | undefined): string {
   return (value || "unreviewed").replace(/_/g, " ");
 }
 
+function priorityBucketLabel(value: string | null | undefined): string {
+  return (value || "general_review").replace(/_/g, " ");
+}
+
 function hostname(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -74,6 +93,7 @@ function isWeakQuality(source: DiscoveredSourceReviewItem): boolean {
 }
 
 function apiFilters(filters: Filters, offset = 0) {
+  const minScore = Number.parseInt(filters.min_priority_score, 10);
   return {
     discovery_run_id: filters.discovery_run_id || undefined,
     source_registry_id: filters.source_registry_id || undefined,
@@ -86,6 +106,9 @@ function apiFilters(filters: Filters, offset = 0) {
     reviewed_by: filters.reviewed_by || undefined,
     has_review_notes: filters.has_review_notes ? true : undefined,
     q: filters.q || undefined,
+    priority_bucket: filters.priority_bucket || undefined,
+    min_priority_score: Number.isFinite(minScore) ? minScore : undefined,
+    sort: filters.sort,
     limit: PAGE_LIMIT,
     offset,
   };
@@ -99,6 +122,7 @@ function shortId(value: string | null | undefined): string {
 function filterActive(filters: Filters): boolean {
   return Object.entries(filters).some(([key, value]) => {
     if (key === "has_weak_url_quality" || key === "has_review_notes") return value === true;
+    if (key === "sort") return value !== "created_at_desc";
     return value !== "";
   });
 }
@@ -196,6 +220,39 @@ function ReviewBadge({ status }: { status: DiscoveredSourceReviewStatus }) {
   );
 }
 
+function PriorityBadge({ source }: { source: DiscoveredSourceReviewItem }) {
+  const palette: Record<DiscoveredSourceReviewPriorityBucket, { bg: string; border: string; color: string }> = {
+    high_signal_official: { bg: "rgba(34,197,94,0.1)", border: "rgba(34,197,94,0.32)", color: "#4ade80" },
+    high_signal_project_like: { bg: "rgba(56,189,248,0.1)", border: "rgba(56,189,248,0.32)", color: "#7dd3fc" },
+    weak_url_review: { bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.35)", color: "#fbbf24" },
+    likely_noise: { bg: "rgba(248,113,113,0.09)", border: "rgba(248,113,113,0.3)", color: "#fca5a5" },
+    general_review: { bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.25)", color: "#cbd5e1" },
+  };
+  const colors = palette[source.review_priority_bucket] ?? palette.general_review;
+  return (
+    <div style={{ display: "grid", gap: 5, justifyItems: "start" }}>
+      <span style={{
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 3,
+        color: colors.color,
+        display: "inline-block",
+        fontSize: 10,
+        fontWeight: 750,
+        letterSpacing: "0.05em",
+        padding: "3px 7px",
+        textTransform: "uppercase",
+        whiteSpace: "nowrap",
+      }}>
+        {priorityBucketLabel(source.review_priority_bucket)}
+      </span>
+      <span style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 750 }}>
+        {source.review_priority_score}
+      </span>
+    </div>
+  );
+}
+
 function DetailLine({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div style={{ minWidth: 0 }}>
@@ -230,6 +287,16 @@ function SourceDetails({ source }: { source: DiscoveredSourceReviewItem }) {
           <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>
             {source.review_notes}
           </div>
+        </div>
+      )}
+      {source.review_priority_reasons.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={labelStyle}>Priority Reasons</div>
+          <ul style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.6, margin: "5px 0 0", paddingLeft: 17 }}>
+            {source.review_priority_reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
         </div>
       )}
       {source.snippet && (
@@ -337,6 +404,7 @@ function SourceRow({
         <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{source.geography || "-"}</td>
         <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{source.publisher || "-"}</td>
         <td style={{ padding: "11px 10px", color: "#cbd5e1", fontSize: 12 }}>{source.status}</td>
+        <td style={{ padding: "11px 10px" }}><PriorityBadge source={source} /></td>
         <td style={{ padding: "11px 10px" }}><QualityBadge source={source} /></td>
         <td style={{ padding: "11px 10px" }}><ReviewBadge status={source.review_status} /></td>
         <td style={{ padding: "8px 10px" }}>
@@ -389,7 +457,7 @@ function SourceRow({
       </tr>
       {expanded && (
         <tr style={{ borderBottom: "1px solid rgba(126,200,227,0.2)" }}>
-          <td colSpan={11} style={{ padding: 0 }}>
+          <td colSpan={12} style={{ padding: 0 }}>
             <SourceDetails source={source} />
           </td>
         </tr>
@@ -458,7 +526,6 @@ export function DiscoveredSourcesPage() {
     const entries = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 3);
     return entries.length > 0 ? entries.map(([key, value]) => `${sourceTypeLabel(key)} ${value}`).join(" · ") : "No source types";
   }, [summary]);
-
   const active = filterActive(filters);
 
   function updateFilter(key: keyof Filters, value: string | boolean) {
@@ -483,6 +550,7 @@ export function DiscoveredSourcesPage() {
           <Metric label="Total" value={formatCount(summary?.total ?? total)} />
           <Metric label="Reviewed" value={formatCount(summary?.reviewed_count)} sub={`${formatCount(summary?.unreviewed_count)} unreviewed`} />
           <Metric label="Useful / Maybe" value={`${formatCount(summary?.useful_count)} / ${formatCount(summary?.maybe_count)}`} />
+          <Metric label="High Queue" value={formatCount(summary?.high_priority_unreviewed_count)} sub="Unreviewed priority rows" />
           <Metric label="Weak URL Quality" value={formatCount(summary?.weak_url_quality_count)} sub="Provenance warning" />
           <Metric label="Source Types" value={formatCount(Object.keys(summary?.counts_by_source_type ?? {}).length)} sub={sourceTypeSummary} />
         </div>
@@ -504,6 +572,25 @@ export function DiscoveredSourcesPage() {
         <FilterInput label="Source Type" value={filters.source_type} onChange={(value) => updateFilter("source_type", value)} />
         <FilterInput label="Geography" value={filters.geography} onChange={(value) => updateFilter("geography", value)} />
         <FilterInput label="Reviewed By" value={filters.reviewed_by} onChange={(value) => updateFilter("reviewed_by", value)} />
+        <FilterInput label="Min Priority" value={filters.min_priority_score} onChange={(value) => updateFilter("min_priority_score", value)} placeholder="e.g. 50" />
+        <label style={{ display: "grid", gap: 4, minWidth: 160 }}>
+          <span style={labelStyle}>Sort</span>
+          <select value={filters.sort} onChange={(event) => updateFilter("sort", event.target.value as DiscoveredSourceReviewSort)} style={{ ...inputStyle, cursor: "pointer" }}>
+            <option value="created_at_desc">Newest</option>
+            <option value="priority_desc">Review queue</option>
+            <option value="priority_asc">Lowest priority</option>
+            <option value="title_asc">Title A-Z</option>
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 4, minWidth: 190 }}>
+          <span style={labelStyle}>Priority Bucket</span>
+          <select value={filters.priority_bucket} onChange={(event) => updateFilter("priority_bucket", event.target.value as DiscoveredSourceReviewPriorityBucket | "")} style={{ ...inputStyle, cursor: "pointer" }}>
+            <option value="">All buckets</option>
+            {PRIORITY_BUCKETS.map((bucket) => (
+              <option key={bucket} value={bucket}>{priorityBucketLabel(bucket)}</option>
+            ))}
+          </select>
+        </label>
         <label style={{ display: "grid", gap: 4, minWidth: 140 }}>
           <span style={labelStyle}>Status</span>
           <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
@@ -560,6 +647,40 @@ export function DiscoveredSourcesPage() {
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: "0 20px 24px" }}>
+        {!loading && !error && (summary?.top_review_queue_examples?.length ?? 0) > 0 && (
+          <div style={{
+            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            color: "#cbd5e1",
+            display: "flex",
+            flexWrap: "wrap",
+            fontSize: 12,
+            gap: 8,
+            padding: "10px 0",
+          }}>
+            {(summary?.top_review_queue_examples ?? []).slice(0, 5).map((source) => (
+              <button
+                key={source.id}
+                onClick={() => updateFilter("q", source.source_title ?? hostname(source.source_url))}
+                title={source.source_url}
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 4,
+                  color: "#dbeafe",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  maxWidth: 280,
+                  overflow: "hidden",
+                  padding: "5px 8px",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {source.review_priority_score} · {source.source_title || hostname(source.source_url)}
+              </button>
+            ))}
+          </div>
+        )}
         {loading && (
           <div style={{ color: "#94a3b8", fontSize: 13, padding: "42px 0", textAlign: "center" }}>
             Loading discovered sources...
@@ -607,7 +728,7 @@ export function DiscoveredSourcesPage() {
             <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>
               Showing {sources.length} of {total} sources
             </div>
-            <table style={{ borderCollapse: "collapse", minWidth: 1360, tableLayout: "fixed", width: "100%" }}>
+            <table style={{ borderCollapse: "collapse", minWidth: 1490, tableLayout: "fixed", width: "100%" }}>
               <colgroup>
                 <col style={{ width: 34 }} />
                 <col style={{ width: 300 }} />
@@ -615,6 +736,7 @@ export function DiscoveredSourcesPage() {
                 <col style={{ width: 120 }} />
                 <col style={{ width: 140 }} />
                 <col style={{ width: 95 }} />
+                <col style={{ width: 130 }} />
                 <col style={{ width: 150 }} />
                 <col style={{ width: 120 }} />
                 <col style={{ width: 260 }} />
@@ -623,7 +745,7 @@ export function DiscoveredSourcesPage() {
               </colgroup>
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
-                  {["", "Source", "Type", "Geography", "Publisher", "Status", "URL Quality", "Review", "Triage", "Run ID", "Created"].map((label) => (
+                  {["", "Source", "Type", "Geography", "Publisher", "Status", "Priority", "URL Quality", "Review", "Triage", "Run ID", "Created"].map((label) => (
                     <th key={label} style={{
                       background: "var(--bg)",
                       color: "#94a3b8",

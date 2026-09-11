@@ -10,6 +10,13 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 
 DiscoveredSourceReviewStatus = Literal["unreviewed", "useful", "maybe", "noisy", "weak", "rejected"]
+DiscoveredSourceReviewPriorityBucket = Literal[
+    "high_signal_official",
+    "high_signal_project_like",
+    "weak_url_review",
+    "likely_noise",
+    "general_review",
+]
 
 
 class DiscoveredSourceResponse(BaseModel):
@@ -63,6 +70,9 @@ class DiscoveredSourceReviewItem(BaseModel):
     review_notes: str | None = None
     reviewed_at: datetime | None = None
     reviewed_by: str | None = None
+    review_priority_score: int
+    review_priority_bucket: DiscoveredSourceReviewPriorityBucket
+    review_priority_reasons: list[str] = Field(default_factory=list)
 
 
 class DiscoveredSourceReviewDetail(DiscoveredSourceReviewItem):
@@ -108,6 +118,7 @@ class DiscoveredSourceReviewSummaryResponse(BaseModel):
     counts_by_adapter_id: dict[str, int]
     counts_by_discovery_run_id: dict[str, int]
     counts_by_review_status: dict[str, int]
+    counts_by_review_priority_bucket: dict[str, int]
     reviewed_count: int
     unreviewed_count: int
     noisy_count: int
@@ -116,7 +127,9 @@ class DiscoveredSourceReviewSummaryResponse(BaseModel):
     maybe_count: int
     rejected_count: int
     weak_url_quality_count: int
+    high_priority_unreviewed_count: int
     weak_url_quality_examples: list[DiscoveredSourceReviewItem]
+    top_review_queue_examples: list[DiscoveredSourceReviewItem]
     applied_filters: dict[str, Any]
 
 

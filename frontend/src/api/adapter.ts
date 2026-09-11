@@ -40,6 +40,8 @@ import type {
   DiscoveredSource,
   DiscoveredSourceReviewItem,
   DiscoveredSourceReviewListResponse,
+  DiscoveredSourceReviewPriorityBucket,
+  DiscoveredSourceReviewSort,
   DiscoveredSourceReviewSummaryResponse,
   DiscoveredSourceReviewStatus,
   DiscoveredSourceReviewUpdateRequest,
@@ -789,6 +791,9 @@ export async function getDiscoveredSourceReview(params?: {
   reviewed_by?: string;
   has_review_notes?: boolean;
   q?: string;
+  priority_bucket?: DiscoveredSourceReviewPriorityBucket | "";
+  min_priority_score?: number;
+  sort?: DiscoveredSourceReviewSort;
   limit?: number;
   offset?: number;
 }): Promise<DiscoveredSourceReviewListResponse> {
@@ -808,6 +813,11 @@ export async function getDiscoveredSourceReview(params?: {
   setNonEmptyParam(qs, "review_status", params?.review_status);
   setNonEmptyParam(qs, "reviewed_by", params?.reviewed_by);
   setNonEmptyParam(qs, "q", params?.q);
+  setNonEmptyParam(qs, "priority_bucket", params?.priority_bucket);
+  setNonEmptyParam(qs, "sort", params?.sort);
+  if (typeof params?.min_priority_score === "number" && Number.isFinite(params.min_priority_score)) {
+    qs.set("min_priority_score", String(Math.trunc(params.min_priority_score)));
+  }
   if (typeof params?.has_weak_url_quality === "boolean") {
     qs.set("has_weak_url_quality", params.has_weak_url_quality ? "true" : "false");
   }
@@ -838,6 +848,9 @@ export async function getDiscoveredSourceReviewSummary(params?: {
   reviewed_by?: string;
   has_review_notes?: boolean;
   q?: string;
+  priority_bucket?: DiscoveredSourceReviewPriorityBucket | "";
+  min_priority_score?: number;
+  sort?: DiscoveredSourceReviewSort;
 }): Promise<DiscoveredSourceReviewSummaryResponse> {
   if (USE_MOCK) {
     await delay();
@@ -850,6 +863,7 @@ export async function getDiscoveredSourceReviewSummary(params?: {
       counts_by_adapter_id: {},
       counts_by_discovery_run_id: {},
       counts_by_review_status: {},
+      counts_by_review_priority_bucket: {},
       reviewed_count: 0,
       unreviewed_count: 0,
       noisy_count: 0,
@@ -858,7 +872,9 @@ export async function getDiscoveredSourceReviewSummary(params?: {
       maybe_count: 0,
       rejected_count: 0,
       weak_url_quality_count: 0,
+      high_priority_unreviewed_count: 0,
       weak_url_quality_examples: [],
+      top_review_queue_examples: [],
       applied_filters: {},
     };
   }
@@ -874,6 +890,11 @@ export async function getDiscoveredSourceReviewSummary(params?: {
   setNonEmptyParam(qs, "review_status", params?.review_status);
   setNonEmptyParam(qs, "reviewed_by", params?.reviewed_by);
   setNonEmptyParam(qs, "q", params?.q);
+  setNonEmptyParam(qs, "priority_bucket", params?.priority_bucket);
+  setNonEmptyParam(qs, "sort", params?.sort);
+  if (typeof params?.min_priority_score === "number" && Number.isFinite(params.min_priority_score)) {
+    qs.set("min_priority_score", String(Math.trunc(params.min_priority_score)));
+  }
   if (typeof params?.has_weak_url_quality === "boolean") {
     qs.set("has_weak_url_quality", params.has_weak_url_quality ? "true" : "false");
   }
@@ -913,6 +934,9 @@ export async function updateDiscoveredSourceReview(
       review_notes: request.review_notes ?? null,
       reviewed_at: new Date().toISOString(),
       reviewed_by: request.reviewed_by ?? null,
+      review_priority_score: 0,
+      review_priority_bucket: "general_review",
+      review_priority_reasons: ["0 mock response"],
     };
   }
   return patchJson<DiscoveredSourceReviewItem>(`/discovered-sources/${sourceId}/review`, request);

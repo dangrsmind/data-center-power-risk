@@ -36,6 +36,9 @@ def _review_filters(
     reviewed_by: str | None = None,
     has_review_notes: bool | None = None,
     q: str | None = None,
+    priority_bucket: str | None = None,
+    min_priority_score: int | None = None,
+    sort: str | None = None,
 ) -> DiscoveredSourceReviewFilters:
     return DiscoveredSourceReviewFilters(
         discovery_run_id=discovery_run_id,
@@ -51,6 +54,9 @@ def _review_filters(
         reviewed_by=reviewed_by,
         has_review_notes=has_review_notes,
         q=q,
+        priority_bucket=priority_bucket,
+        min_priority_score=min_priority_score,
+        sort=sort,
     )
 
 
@@ -69,6 +75,9 @@ def list_discovered_sources(
     reviewed_by: str | None = None,
     has_review_notes: bool | None = None,
     q: str | None = None,
+    priority_bucket: str | None = None,
+    min_priority_score: int | None = None,
+    sort: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -87,6 +96,9 @@ def list_discovered_sources(
         reviewed_by=reviewed_by,
         has_review_notes=has_review_notes,
         q=q,
+        priority_bucket=priority_bucket,
+        min_priority_score=min_priority_score,
+        sort=sort,
     )
     try:
         sources, total, applied_filters = DiscoveredSourceService(db).list_review_sources(
@@ -120,6 +132,9 @@ def summarize_discovered_sources(
     reviewed_by: str | None = None,
     has_review_notes: bool | None = None,
     q: str | None = None,
+    priority_bucket: str | None = None,
+    min_priority_score: int | None = None,
+    sort: str | None = None,
     db: Session = Depends(get_db),
 ) -> DiscoveredSourceReviewSummaryResponse:
     filters = _review_filters(
@@ -136,6 +151,9 @@ def summarize_discovered_sources(
         reviewed_by=reviewed_by,
         has_review_notes=has_review_notes,
         q=q,
+        priority_bucket=priority_bucket,
+        min_priority_score=min_priority_score,
+        sort=sort,
     )
     try:
         summary = DiscoveredSourceService(db).summarize_review_sources(filters=filters)
