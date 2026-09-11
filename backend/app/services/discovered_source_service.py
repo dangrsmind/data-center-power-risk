@@ -36,6 +36,45 @@ KNOWN_DISCOVERED_SOURCE_FIELDS = {
 }
 
 WEAK_SOURCE_URL_QUALITIES = {"public_comment_form", "fallback_reference"}
+VALID_REVIEW_PRIORITY_BUCKETS = {
+    "high_signal_official",
+    "high_signal_project_like",
+    "weak_url_review",
+    "likely_noise",
+    "general_review",
+}
+VALID_REVIEW_SORTS = {"created_at_desc", "priority_desc", "priority_asc", "title_asc"}
+HIGH_SIGNAL_SOURCE_TYPES = {"utility_large_load_filings", "state_regulatory_dockets"}
+PROJECT_LIKE_SOURCE_TYPES = {"county_city_planning", "economic_development_announcements"}
+OFFICIAL_HOSTS = {
+    "azcc.gov",
+    "ercot.com",
+    "psc.ga.gov",
+    "puc.texas.gov",
+    "scc.virginia.gov",
+    "utc.wa.gov",
+}
+SIGNAL_TERMS = {
+    "campus",
+    "data center",
+    "docket",
+    "hearing",
+    "hyperscale",
+    "interconnection",
+    "large load",
+    "megawatt",
+    "mw",
+    "permit",
+    "transmission",
+    "utility",
+}
+GENERIC_TITLES = {
+    "home",
+    "index",
+    "media advisories",
+    "news",
+    "press releases",
+}
 
 
 @dataclass(frozen=True)
@@ -53,6 +92,9 @@ class DiscoveredSourceReviewFilters:
     reviewed_by: str | None = None
     has_review_notes: bool | None = None
     q: str | None = None
+    priority_bucket: str | None = None
+    min_priority_score: int | None = None
+    sort: str | None = None
 
     def applied(self) -> dict[str, Any]:
         values = asdict(self)
@@ -109,6 +151,13 @@ class DiscoveredSourceIngestSummary:
         payload["would_update_existing"] = self.sources_updated if self.dry_run and self.allow_existing else 0
         payload["structural_error_count"] = len(self.validation_errors)
         return payload
+
+
+@dataclass(frozen=True)
+class DiscoveredSourceReviewPriority:
+    score: int
+    bucket: str
+    reasons: list[str]
 
 
 def clean_string(value: Any) -> str | None:
@@ -288,11 +337,117 @@ def has_weak_url_quality(record: DiscoveredSourceRecord) -> bool:
     )
 
 
+def _hostname(value: str | None) -> str:
+    text = clean_string(value) or ""
+    parsed = urlsplit(text)
+    return parsed.netloc.casefold().removeprefix("www.")
+
+
+def _is_official_host(host: str) -> bool:
+    if not host:
+        return False
+    return (
+        host.endswith(".gov")
+        or host.endswith(".us")
+        or host in OFFICIAL_HOSTS
+        or any(host.endswith(f".{official}") for official in OFFICIAL_HOSTS)
+    )
+
+
+def _looks_generic_title(title: str | None) -> bool:
+    text = (clean_string(title) or "").casefold()
+    if not text:
+        return False
+    if text in GENERIC_TITLES:
+        return True
+    return text in {"latest news", "all news"} or text.endswith(" index")
+
+
+def _is_unknown(value: str | None) -> bool:
+    text = (clean_string(value) or "").casefold()
+    return text in {"", "unknown", "unknown_adapter", "unknown_source", "unknown_source_registry"}
+
+
+def review_priority(record: DiscoveredSourceRecord) -> DiscoveredSourceReviewPriority:
+    score = 0
+    reasons: list[str] = []
+    source_type = clean_string(record.source_type)
+    if source_type in HIGH_SIGNAL_SOURCE_TYPES:
+        score += 40
+        reasons.append(f"+40 high-signal source type: {source_type}")
+    elif source_type in PROJECT_LIKE_SOURCE_TYPES:
+        score += 30
+        reasons.append(f"+30 project-like source type: {source_type}")
+
+    host = _hostname(record.source_url)
+    if _is_official_host(host):
+        score += 25
+        reasons.append(f"+25 official or regulatory host: {host}")
+
+    haystack = " ".join(
+        item for item in [record.source_title, record.snippet, record.search_term, record.document_type] if item
+    ).casefold()
+    matched_terms = sorted(term for term in SIGNAL_TERMS if term in haystack)
+    if matched_terms:
+        score += 20
+        reasons.append(f"+20 signal terms: {', '.join(matched_terms[:5])}")
+
+    discovery_run_id = clean_string(record.discovery_run_id)
+    if discovery_run_id and discovery_run_id.casefold() != "unknown":
+        score += 15
+        if discovery_run_id == "20260828T193254Z":
+            reasons.append("+15 source is from reviewed discovery run 20260828T193254Z")
+        else:
+            reasons.append("+15 source has non-unknown discovery run id")
+
+    quality = source_url_quality(record)
+    if quality and quality.casefold() in WEAK_SOURCE_URL_QUALITIES:
+        score -= 30
+        reasons.append(f"-30 weak URL quality: {quality}")
+
+    if _looks_generic_title(record.source_title):
+        score -= 20
+        reasons.append("-20 generic or noisy title")
+
+    unknown_fields = [
+        field_name
+        for field_name, value in {
+            "source_registry_id": record.source_registry_id,
+            "adapter_id": record.adapter_id,
+        }.items()
+        if _is_unknown(value)
+    ]
+    if unknown_fields:
+        score -= 15
+        reasons.append(f"-15 unknown provenance: {', '.join(unknown_fields)}")
+
+    snippet = clean_string(record.snippet)
+    if snippet is None or len(snippet) < 40:
+        score -= 15
+        reasons.append("-15 missing or very short snippet")
+
+    if quality and quality.casefold() in WEAK_SOURCE_URL_QUALITIES:
+        bucket = "weak_url_review"
+    elif _is_official_host(host) and score >= 60:
+        bucket = "high_signal_official"
+    elif score >= 50:
+        bucket = "high_signal_project_like"
+    elif score <= 0:
+        bucket = "likely_noise"
+    else:
+        bucket = "general_review"
+
+    if not reasons:
+        reasons.append("0 no strong priority signals detected")
+    return DiscoveredSourceReviewPriority(score=score, bucket=bucket, reasons=reasons)
+
+
 def discovered_source_review_payload(
     record: DiscoveredSourceRecord,
     *,
     include_raw_metadata: bool = False,
 ) -> dict[str, Any]:
+    priority = review_priority(record)
     payload: dict[str, Any] = {
         "id": record.id,
         "source_title": record.source_title,
@@ -316,6 +471,9 @@ def discovered_source_review_payload(
         "review_notes": record.review_notes,
         "reviewed_at": record.reviewed_at,
         "reviewed_by": record.reviewed_by,
+        "review_priority_score": priority.score,
+        "review_priority_bucket": priority.bucket,
+        "review_priority_reasons": priority.reasons,
     }
     if include_raw_metadata:
         payload["raw_metadata_json"] = record.raw_metadata_json
@@ -441,6 +599,7 @@ class DiscoveredSourceService:
     ) -> tuple[list[DiscoveredSourceRecord], int, dict[str, Any]]:
         filters = filters or DiscoveredSourceReviewFilters()
         records = self._review_filtered_records(filters)
+        records = self._sort_review_records(records, filters.sort)
         total = len(records)
         bounded_limit = max(1, min(limit, 200))
         bounded_offset = max(0, offset)
@@ -455,6 +614,20 @@ class DiscoveredSourceService:
         records = self._review_filtered_records(filters)
         weak_records = [record for record in records if has_weak_url_quality(record)]
         counts_by_review_status = self._count_by_review_status(records)
+        unreviewed_records = [
+            record for record in records
+            if display_review_status(record) == "unreviewed"
+        ]
+        top_review_queue = sorted(
+            unreviewed_records,
+            key=lambda record: (review_priority(record).score, record.created_at, str(record.id)),
+            reverse=True,
+        )[:10]
+        high_priority_unreviewed_count = sum(
+            1
+            for record in unreviewed_records
+            if review_priority(record).bucket in {"high_signal_official", "high_signal_project_like"}
+        )
         return {
             "total": len(records),
             "counts_by_status": self._count_by(records, "status"),
@@ -464,6 +637,7 @@ class DiscoveredSourceService:
             "counts_by_adapter_id": self._count_by(records, "adapter_id"),
             "counts_by_discovery_run_id": self._count_by(records, "discovery_run_id"),
             "counts_by_review_status": counts_by_review_status,
+            "counts_by_review_priority_bucket": self._count_by_review_priority_bucket(records),
             "reviewed_count": len(records) - counts_by_review_status.get("unreviewed", 0),
             "unreviewed_count": counts_by_review_status.get("unreviewed", 0),
             "noisy_count": counts_by_review_status.get("noisy", 0),
@@ -472,8 +646,12 @@ class DiscoveredSourceService:
             "maybe_count": counts_by_review_status.get("maybe", 0),
             "rejected_count": counts_by_review_status.get("rejected", 0),
             "weak_url_quality_count": len(weak_records),
+            "high_priority_unreviewed_count": high_priority_unreviewed_count,
             "weak_url_quality_examples": [
                 discovered_source_review_payload(record) for record in weak_records[:10]
+            ],
+            "top_review_queue_examples": [
+                discovered_source_review_payload(record) for record in top_review_queue
             ],
             "applied_filters": filters.applied(),
         }
@@ -554,7 +732,37 @@ class DiscoveredSourceService:
                 record for record in records
                 if has_weak_url_quality(record) == filters.has_weak_url_quality
             ]
+        priority_bucket = clean_string(filters.priority_bucket)
+        if priority_bucket:
+            if priority_bucket not in VALID_REVIEW_PRIORITY_BUCKETS:
+                raise ValueError("invalid priority_bucket")
+            records = [
+                record for record in records
+                if review_priority(record).bucket == priority_bucket
+            ]
+        if filters.min_priority_score is not None:
+            records = [
+                record for record in records
+                if review_priority(record).score >= filters.min_priority_score
+            ]
         return records
+
+    @staticmethod
+    def _sort_review_records(records: list[DiscoveredSourceRecord], sort: str | None) -> list[DiscoveredSourceRecord]:
+        sort_value = clean_string(sort) or "created_at_desc"
+        if sort_value not in VALID_REVIEW_SORTS:
+            raise ValueError("invalid sort")
+        if sort_value == "created_at_desc":
+            return records
+        if sort_value == "priority_desc":
+            return sorted(
+                records,
+                key=lambda record: (review_priority(record).score, record.created_at, str(record.id)),
+                reverse=True,
+            )
+        if sort_value == "priority_asc":
+            return sorted(records, key=lambda record: (review_priority(record).score, record.created_at, str(record.id)))
+        return sorted(records, key=lambda record: ((record.source_title or "").casefold(), record.created_at, str(record.id)))
 
     @staticmethod
     def _count_by(records: list[DiscoveredSourceRecord], field_name: str) -> dict[str, int]:
@@ -569,6 +777,14 @@ class DiscoveredSourceService:
         counts: dict[str, int] = {}
         for record in records:
             key = display_review_status(record)
+            counts[key] = counts.get(key, 0) + 1
+        return dict(sorted(counts.items()))
+
+    @staticmethod
+    def _count_by_review_priority_bucket(records: list[DiscoveredSourceRecord]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for record in records:
+            key = review_priority(record).bucket
             counts[key] = counts.get(key, 0) + 1
         return dict(sorted(counts.items()))
 

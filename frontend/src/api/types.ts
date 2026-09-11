@@ -791,9 +791,19 @@ export interface DiscoveredSourceReviewItem {
   review_notes: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  review_priority_score: number;
+  review_priority_bucket: DiscoveredSourceReviewPriorityBucket;
+  review_priority_reasons: string[];
 }
 
 export type DiscoveredSourceReviewStatus = "unreviewed" | "useful" | "maybe" | "noisy" | "weak" | "rejected";
+export type DiscoveredSourceReviewPriorityBucket =
+  | "high_signal_official"
+  | "high_signal_project_like"
+  | "weak_url_review"
+  | "likely_noise"
+  | "general_review";
+export type DiscoveredSourceReviewSort = "created_at_desc" | "priority_desc" | "priority_asc" | "title_asc";
 
 export interface DiscoveredSourceReviewUpdateRequest {
   review_status: DiscoveredSourceReviewStatus | null;
@@ -818,6 +828,7 @@ export interface DiscoveredSourceReviewSummaryResponse {
   counts_by_adapter_id: Record<string, number>;
   counts_by_discovery_run_id: Record<string, number>;
   counts_by_review_status: Record<string, number>;
+  counts_by_review_priority_bucket: Record<string, number>;
   reviewed_count: number;
   unreviewed_count: number;
   noisy_count: number;
@@ -826,6 +837,8 @@ export interface DiscoveredSourceReviewSummaryResponse {
   maybe_count: number;
   rejected_count: number;
   weak_url_quality_count: number;
+  high_priority_unreviewed_count: number;
   weak_url_quality_examples: DiscoveredSourceReviewItem[];
+  top_review_queue_examples: DiscoveredSourceReviewItem[];
   applied_filters: Record<string, unknown>;
 }

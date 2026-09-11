@@ -99,6 +99,21 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
                         },
                         status="discovered",
                     ),
+                    DiscoveredSourceRecord(
+                        source_url="https://example.com/",
+                        source_title="Home",
+                        source_type="press",
+                        publisher="Example",
+                        geography="unknown",
+                        discovery_method="web_search_pattern",
+                        search_term="homepage",
+                        snippet="Short.",
+                        source_registry_id="unknown",
+                        adapter_id="unknown",
+                        discovery_run_id="unknown",
+                        raw_metadata_json={},
+                        status="discovered",
+                    ),
                 ]
             )
             db.commit()
@@ -126,7 +141,7 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         finally:
             db.close()
 
-        self.assertEqual(response.total, 3)
+        self.assertEqual(response.total, 4)
         self.assertEqual(response.limit, 50)
         self.assertEqual(response.offset, 0)
         self.assertFalse(hasattr(response.items[0], "raw_metadata_json"))
@@ -136,9 +151,14 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(weak.alternate_urls, ["https://www.scc.virginia.gov/docketsearch#/caseDetails/1"])
         self.assertEqual(weak.review_status, "unreviewed")
         self.assertIsNone(weak.review_notes)
+        self.assertIsInstance(weak.review_priority_score, int)
+        self.assertEqual(weak.review_priority_bucket, "weak_url_review")
+        self.assertTrue(any("weak URL quality" in reason for reason in weak.review_priority_reasons))
         useful = next(item for item in response.items if item.review_status == "useful")
         self.assertEqual(useful.review_notes, "Good planning source")
         self.assertEqual(useful.reviewed_by, "analyst@example.com")
+        noisy = next(item for item in response.items if item.source_title == "Home")
+        self.assertGreater(useful.review_priority_score, noisy.review_priority_score)
 
     def test_filters_search_limit_and_offset_are_applied(self) -> None:
         db = self.SessionLocal()
@@ -171,14 +191,22 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
 
         self.assertEqual(weak_response.total, 2)
         self.assertEqual(quality_response.total, 1)
-        self.assertEqual(summary.total, 3)
+        self.assertEqual(summary.total, 4)
         self.assertEqual(summary.weak_url_quality_count, 2)
         self.assertEqual(len(summary.weak_url_quality_examples), 2)
-        self.assertEqual(summary.counts_by_status, {"candidate": 1, "discovered": 2})
-        self.assertEqual(summary.counts_by_discovery_run_id, {"run-a": 1, "run-b": 1, "run-c": 1})
-        self.assertEqual(summary.counts_by_review_status, {"unreviewed": 2, "useful": 1})
+        self.assertEqual(summary.counts_by_status, {"candidate": 1, "discovered": 3})
+        self.assertEqual(summary.counts_by_discovery_run_id, {"run-a": 1, "run-b": 1, "run-c": 1, "unknown": 1})
+        self.assertEqual(summary.counts_by_review_status, {"unreviewed": 3, "useful": 1})
+        self.assertEqual(summary.counts_by_review_priority_bucket["weak_url_review"], 2)
+        self.assertEqual(summary.counts_by_review_priority_bucket["likely_noise"], 1)
+        self.assertEqual(len(summary.top_review_queue_examples), 3)
+        self.assertLessEqual(len(summary.top_review_queue_examples), 10)
+        self.assertEqual(
+            [item.review_priority_score for item in summary.top_review_queue_examples],
+            sorted([item.review_priority_score for item in summary.top_review_queue_examples], reverse=True),
+        )
         self.assertEqual(summary.reviewed_count, 1)
-        self.assertEqual(summary.unreviewed_count, 2)
+        self.assertEqual(summary.unreviewed_count, 3)
         self.assertEqual(summary.useful_count, 1)
         self.assertEqual(summary.maybe_count, 0)
         self.assertEqual(summary.noisy_count, 0)
@@ -197,7 +225,45 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(useful_response.total, 1)
         self.assertEqual(useful_response.items[0].review_status, "useful")
         self.assertEqual(notes_response.total, 1)
-        self.assertEqual(no_notes_response.total, 2)
+        self.assertEqual(no_notes_response.total, 3)
+
+    def test_priority_filters_and_sort_are_applied(self) -> None:
+        db = self.SessionLocal()
+        try:
+            high_response = list_discovered_sources(priority_bucket="high_signal_official", limit=50, offset=0, db=db)
+            min_score_response = list_discovered_sources(min_priority_score=60, limit=50, offset=0, db=db)
+            sorted_response = list_discovered_sources(sort="priority_desc", limit=50, offset=0, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(high_response.total, 1)
+        self.assertEqual(high_response.items[0].source_title, "Planning agenda for data center substation")
+        self.assertTrue(all(item.review_priority_score >= 60 for item in min_score_response.items))
+        self.assertEqual(
+            [item.review_priority_score for item in sorted_response.items],
+            sorted([item.review_priority_score for item in sorted_response.items], reverse=True),
+        )
+        self.assertLess(
+            next(item.review_priority_score for item in sorted_response.items if item.source_title == "Home"),
+            next(
+                item.review_priority_score
+                for item in sorted_response.items
+                if item.source_title == "Planning agenda for data center substation"
+            ),
+        )
+
+    def test_priority_reasons_include_unknown_provenance_penalty(self) -> None:
+        db = self.SessionLocal()
+        try:
+            response = list_discovered_sources(q="homepage", limit=50, offset=0, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(response.total, 1)
+        self.assertEqual(response.items[0].review_priority_bucket, "likely_noise")
+        self.assertTrue(
+            any("unknown provenance" in reason for reason in response.items[0].review_priority_reasons)
+        )
 
     def test_single_record_endpoint_includes_raw_metadata(self) -> None:
         db = self.SessionLocal()
@@ -247,6 +313,21 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(after.source_url_quality, "public_comment_form")
         self.assertEqual(after.review_status, "weak")
         self.assertEqual(self._counts(), before_counts)
+
+    def test_computed_priority_does_not_mutate_source_rows(self) -> None:
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(q="homepage", limit=50, offset=0, db=db).items[0].id
+            before = get_discovered_source(source_id, db=db)
+            summarize_discovered_sources(sort="priority_desc", db=db)
+            after = get_discovered_source(source_id, db=db)
+            self.assertFalse(db.dirty)
+        finally:
+            db.close()
+
+        self.assertEqual(after.raw_metadata_json, before.raw_metadata_json)
+        self.assertEqual(after.review_status, before.review_status)
+        self.assertEqual(after.status, before.status)
 
     def test_patch_normalizes_blank_review_fields_and_clears_to_unreviewed(self) -> None:
         db = self.SessionLocal()
@@ -320,7 +401,7 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
             db.close()
 
         self.assertEqual(self._counts(), before)
-        self.assertEqual(before["sources"], 3)
+        self.assertEqual(before["sources"], 4)
         self.assertEqual({key: value for key, value in before.items() if key != "sources"}, {
             "projects": 0,
             "evidence": 0,
