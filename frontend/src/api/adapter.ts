@@ -38,8 +38,11 @@ import type {
   ProjectCandidateReviewDecision,
   ProjectCandidateReviewDecisionRequest,
   DiscoveredSource,
+  DiscoveredSourceReviewItem,
   DiscoveredSourceReviewListResponse,
   DiscoveredSourceReviewSummaryResponse,
+  DiscoveredSourceReviewStatus,
+  DiscoveredSourceReviewUpdateRequest,
   DiscoveredSourceClaimListResponse,
   DiscoverDecisions,
   ManualCapture,
@@ -782,6 +785,9 @@ export async function getDiscoveredSourceReview(params?: {
   publisher?: string;
   source_url_quality?: string;
   has_weak_url_quality?: boolean;
+  review_status?: string;
+  reviewed_by?: string;
+  has_review_notes?: boolean;
   q?: string;
   limit?: number;
   offset?: number;
@@ -799,9 +805,14 @@ export async function getDiscoveredSourceReview(params?: {
   setNonEmptyParam(qs, "status", params?.status);
   setNonEmptyParam(qs, "publisher", params?.publisher);
   setNonEmptyParam(qs, "source_url_quality", params?.source_url_quality);
+  setNonEmptyParam(qs, "review_status", params?.review_status);
+  setNonEmptyParam(qs, "reviewed_by", params?.reviewed_by);
   setNonEmptyParam(qs, "q", params?.q);
   if (typeof params?.has_weak_url_quality === "boolean") {
     qs.set("has_weak_url_quality", params.has_weak_url_quality ? "true" : "false");
+  }
+  if (typeof params?.has_review_notes === "boolean") {
+    qs.set("has_review_notes", params.has_review_notes ? "true" : "false");
   }
   if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
     qs.set("limit", String(Math.max(1, Math.min(200, Math.trunc(params.limit)))));
@@ -823,6 +834,9 @@ export async function getDiscoveredSourceReviewSummary(params?: {
   publisher?: string;
   source_url_quality?: string;
   has_weak_url_quality?: boolean;
+  review_status?: string;
+  reviewed_by?: string;
+  has_review_notes?: boolean;
   q?: string;
 }): Promise<DiscoveredSourceReviewSummaryResponse> {
   if (USE_MOCK) {
@@ -835,6 +849,14 @@ export async function getDiscoveredSourceReviewSummary(params?: {
       counts_by_source_registry_id: {},
       counts_by_adapter_id: {},
       counts_by_discovery_run_id: {},
+      counts_by_review_status: {},
+      reviewed_count: 0,
+      unreviewed_count: 0,
+      noisy_count: 0,
+      weak_count: 0,
+      useful_count: 0,
+      maybe_count: 0,
+      rejected_count: 0,
       weak_url_quality_count: 0,
       weak_url_quality_examples: [],
       applied_filters: {},
@@ -849,12 +871,51 @@ export async function getDiscoveredSourceReviewSummary(params?: {
   setNonEmptyParam(qs, "status", params?.status);
   setNonEmptyParam(qs, "publisher", params?.publisher);
   setNonEmptyParam(qs, "source_url_quality", params?.source_url_quality);
+  setNonEmptyParam(qs, "review_status", params?.review_status);
+  setNonEmptyParam(qs, "reviewed_by", params?.reviewed_by);
   setNonEmptyParam(qs, "q", params?.q);
   if (typeof params?.has_weak_url_quality === "boolean") {
     qs.set("has_weak_url_quality", params.has_weak_url_quality ? "true" : "false");
   }
+  if (typeof params?.has_review_notes === "boolean") {
+    qs.set("has_review_notes", params.has_review_notes ? "true" : "false");
+  }
   const query = qs.toString() ? `?${qs.toString()}` : "";
   return fetchJson<DiscoveredSourceReviewSummaryResponse>(`/discovered-sources/summary${query}`);
+}
+
+export async function updateDiscoveredSourceReview(
+  sourceId: string,
+  request: DiscoveredSourceReviewUpdateRequest,
+): Promise<DiscoveredSourceReviewItem> {
+  if (USE_MOCK) {
+    await delay();
+    return {
+      id: sourceId,
+      source_title: "Mock discovered source",
+      source_url: "https://example.com/mock-source",
+      source_type: null,
+      geography: null,
+      publisher: null,
+      status: "discovered",
+      discovery_run_id: null,
+      source_registry_id: null,
+      adapter_id: null,
+      discovery_method: null,
+      source_query: null,
+      snippet: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      source_url_quality: null,
+      url_quality_warning: null,
+      alternate_urls: [],
+      review_status: request.review_status ?? "unreviewed",
+      review_notes: request.review_notes ?? null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: request.reviewed_by ?? null,
+    };
+  }
+  return patchJson<DiscoveredSourceReviewItem>(`/discovered-sources/${sourceId}/review`, request);
 }
 
 export async function getDiscoverDecisions(): Promise<DiscoverDecisions> {

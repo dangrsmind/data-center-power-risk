@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -13,6 +13,7 @@ from app.models.discovered_source import DiscoveredSourceRecord
 
 
 VALID_DISCOVERED_SOURCE_STATUSES = {"discovered", "candidate", "rejected", "promoted"}
+VALID_DISCOVERED_SOURCE_REVIEW_STATUSES = {"unreviewed", "useful", "maybe", "noisy", "weak", "rejected"}
 KNOWN_DISCOVERED_SOURCE_FIELDS = {
     "source_url",
     "source_title",
@@ -48,6 +49,9 @@ class DiscoveredSourceReviewFilters:
     publisher: str | None = None
     source_url_quality: str | None = None
     has_weak_url_quality: bool | None = None
+    review_status: str | None = None
+    reviewed_by: str | None = None
+    has_review_notes: bool | None = None
     q: str | None = None
 
     def applied(self) -> dict[str, Any]:
@@ -163,6 +167,20 @@ def validate_status(value: Any) -> str:
         allowed = ", ".join(sorted(VALID_DISCOVERED_SOURCE_STATUSES))
         raise ValueError(f"status must be one of: {allowed}")
     return status
+
+
+def validate_review_status(value: Any) -> str | None:
+    review_status = clean_string(value)
+    if review_status is None or review_status == "unreviewed":
+        return None
+    if review_status not in VALID_DISCOVERED_SOURCE_REVIEW_STATUSES:
+        allowed = ", ".join(sorted(VALID_DISCOVERED_SOURCE_REVIEW_STATUSES))
+        raise ValueError(f"review_status must be one of: {allowed}")
+    return review_status
+
+
+def display_review_status(record: DiscoveredSourceRecord) -> str:
+    return clean_string(record.review_status) or "unreviewed"
 
 
 def validate_discovered_source_row(
@@ -294,6 +312,10 @@ def discovered_source_review_payload(
         "source_url_quality": source_url_quality(record),
         "url_quality_warning": url_quality_warning(record),
         "alternate_urls": alternate_urls(record),
+        "review_status": display_review_status(record),
+        "review_notes": record.review_notes,
+        "reviewed_at": record.reviewed_at,
+        "reviewed_by": record.reviewed_by,
     }
     if include_raw_metadata:
         payload["raw_metadata_json"] = record.raw_metadata_json
@@ -432,6 +454,7 @@ class DiscoveredSourceService:
         filters = filters or DiscoveredSourceReviewFilters()
         records = self._review_filtered_records(filters)
         weak_records = [record for record in records if has_weak_url_quality(record)]
+        counts_by_review_status = self._count_by_review_status(records)
         return {
             "total": len(records),
             "counts_by_status": self._count_by(records, "status"),
@@ -440,6 +463,14 @@ class DiscoveredSourceService:
             "counts_by_source_registry_id": self._count_by(records, "source_registry_id"),
             "counts_by_adapter_id": self._count_by(records, "adapter_id"),
             "counts_by_discovery_run_id": self._count_by(records, "discovery_run_id"),
+            "counts_by_review_status": counts_by_review_status,
+            "reviewed_count": len(records) - counts_by_review_status.get("unreviewed", 0),
+            "unreviewed_count": counts_by_review_status.get("unreviewed", 0),
+            "noisy_count": counts_by_review_status.get("noisy", 0),
+            "weak_count": counts_by_review_status.get("weak", 0),
+            "useful_count": counts_by_review_status.get("useful", 0),
+            "maybe_count": counts_by_review_status.get("maybe", 0),
+            "rejected_count": counts_by_review_status.get("rejected", 0),
             "weak_url_quality_count": len(weak_records),
             "weak_url_quality_examples": [
                 discovered_source_review_payload(record) for record in weak_records[:10]
@@ -449,6 +480,24 @@ class DiscoveredSourceService:
 
     def get_review_source(self, source_id: Any) -> DiscoveredSourceRecord | None:
         return self.db.get(DiscoveredSourceRecord, source_id)
+
+    def update_review(
+        self,
+        source_id: Any,
+        *,
+        review_status: Any,
+        review_notes: Any = None,
+        reviewed_by: Any = None,
+    ) -> DiscoveredSourceRecord | None:
+        record = self.get_review_source(source_id)
+        if record is None:
+            return None
+        record.review_status = validate_review_status(review_status)
+        record.review_notes = clean_string(review_notes)
+        record.reviewed_by = clean_string(reviewed_by)
+        record.reviewed_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return record
 
     def _review_filtered_records(self, filters: DiscoveredSourceReviewFilters) -> list[DiscoveredSourceRecord]:
         query = select(DiscoveredSourceRecord).order_by(
@@ -463,6 +512,7 @@ class DiscoveredSourceService:
             "geography": filters.geography,
             "status": filters.status,
             "publisher": filters.publisher,
+            "reviewed_by": filters.reviewed_by,
         }
         for field_name, value in exact_filters.items():
             text = clean_string(value)
@@ -480,6 +530,19 @@ class DiscoveredSourceService:
                 )
             )
         records = list(self.db.scalars(query))
+        review_status = clean_string(filters.review_status)
+        if review_status:
+            if review_status not in VALID_DISCOVERED_SOURCE_REVIEW_STATUSES:
+                raise ValueError("invalid review_status")
+            records = [
+                record for record in records
+                if display_review_status(record) == review_status
+            ]
+        if filters.has_review_notes is not None:
+            records = [
+                record for record in records
+                if (clean_string(record.review_notes) is not None) == filters.has_review_notes
+            ]
         quality = clean_string(filters.source_url_quality)
         if quality:
             records = [
@@ -498,6 +561,14 @@ class DiscoveredSourceService:
         counts: dict[str, int] = {}
         for record in records:
             key = clean_string(getattr(record, field_name)) or "unknown"
+            counts[key] = counts.get(key, 0) + 1
+        return dict(sorted(counts.items()))
+
+    @staticmethod
+    def _count_by_review_status(records: list[DiscoveredSourceRecord]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for record in records:
+            key = display_review_status(record)
             counts[key] = counts.get(key, 0) + 1
         return dict(sorted(counts.items()))
 

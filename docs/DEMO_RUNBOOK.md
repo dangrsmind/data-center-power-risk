@@ -379,6 +379,8 @@ VITE_API_BASE_URL=http://localhost:8000 npm run dev -- --host 0.0.0.0 --port 800
 
 Open `http://localhost:8001/discovered-sources`.
 
+Use the discovered sources page as the analyst triage gate before extraction or candidate generation. Review statuses are `unreviewed`, `useful`, `maybe`, `noisy`, `weak`, and `rejected`; notes and reviewer fields are triage metadata only. Weak URL-quality badges, including SCC public-comment form warnings, are separate provenance warnings and do not mean analyst rejection. Saving triage does not create Projects, Evidence, ProjectCandidates, claims, verification results, auto-admit decisions, or promotions. Later downstream extraction should normally be scoped to `useful` and `maybe` sources unless deliberately overridden.
+
 ## 8. Verify Projects
 
 ```bash
