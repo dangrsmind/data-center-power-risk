@@ -811,6 +811,24 @@ export interface DiscoveredSourceReviewUpdateRequest {
   reviewed_by?: string | null;
 }
 
+export type DiscoveredSourceReviewNoteMode = "replace" | "append";
+
+export interface DiscoveredSourceReviewBulkUpdateRequest {
+  source_ids: string[];
+  review_status?: DiscoveredSourceReviewStatus | null;
+  review_notes?: string | null;
+  reviewed_by?: string | null;
+  note_mode?: DiscoveredSourceReviewNoteMode;
+}
+
+export interface DiscoveredSourceReviewBulkUpdateResponse {
+  requested_count: number;
+  updated_count: number;
+  missing_ids: string[];
+  items: DiscoveredSourceReviewItem[];
+  warnings: string[];
+}
+
 export interface DiscoveredSourceReviewListResponse {
   items: DiscoveredSourceReviewItem[];
   total: number;

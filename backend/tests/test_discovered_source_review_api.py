@@ -3,17 +3,19 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+import uuid
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.api.routes.discovered_sources import (
+    bulk_update_discovered_source_review,
     get_discovered_source,
     list_discovered_sources,
     summarize_discovered_sources,
     update_discovered_source_review,
 )
-from app.schemas.discovered_source import DiscoveredSourceReviewUpdate
+from app.schemas.discovered_source import DiscoveredSourceReviewBulkUpdate, DiscoveredSourceReviewUpdate
 from app.models import Base
 from app.models.discovered_source import DiscoveredSourceClaim, DiscoveredSourceRecord
 from app.models.evidence import Claim, Evidence
@@ -314,6 +316,196 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(after.review_status, "weak")
         self.assertEqual(self._counts(), before_counts)
 
+    def test_bulk_patch_updates_multiple_sources_and_reports_items(self) -> None:
+        before_counts = self._counts()
+        db = self.SessionLocal()
+        try:
+            listed = list_discovered_sources(review_status="unreviewed", sort="priority_desc", limit=50, offset=0, db=db)
+            source_ids = [item.id for item in listed.items[:2]]
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(
+                    source_ids=source_ids,
+                    review_status="maybe",
+                    review_notes="Bulk triage note",
+                    reviewed_by="bulk analyst",
+                ),
+                db=db,
+            )
+            refreshed = list_discovered_sources(review_status="maybe", limit=50, offset=0, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(response.requested_count, 2)
+        self.assertEqual(response.updated_count, 2)
+        self.assertEqual(response.missing_ids, [])
+        self.assertEqual({item.id for item in response.items}, set(source_ids))
+        self.assertTrue(all(item.review_status == "maybe" for item in response.items))
+        self.assertTrue(all(item.review_notes == "Bulk triage note" for item in response.items))
+        self.assertTrue(all(item.reviewed_by == "bulk analyst" for item in response.items))
+        self.assertTrue(all(item.reviewed_at is not None for item in response.items))
+        self.assertTrue(all(isinstance(item.review_priority_score, int) for item in response.items))
+        self.assertGreaterEqual(refreshed.total, 2)
+        self.assertEqual(self._counts(), before_counts)
+
+    def test_bulk_patch_validates_review_status(self) -> None:
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(limit=1, offset=0, db=db).items[0].id
+            request = DiscoveredSourceReviewBulkUpdate.model_construct(
+                source_ids=[source_id],
+                review_status="bad_status",
+                review_notes=None,
+                reviewed_by=None,
+                note_mode="replace",
+            )
+            with self.assertRaisesRegex(Exception, "422"):
+                bulk_update_discovered_source_review(request, db=db)
+        finally:
+            db.close()
+
+    def test_bulk_patch_enforces_max_source_ids_limit(self) -> None:
+        with self.assertRaises(Exception):
+            DiscoveredSourceReviewBulkUpdate(
+                source_ids=[uuid.uuid4() for _ in range(201)],
+                review_status="useful",
+            )
+
+    def test_bulk_patch_reports_missing_ids(self) -> None:
+        missing_id = uuid.uuid4()
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(limit=1, offset=0, db=db).items[0].id
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(
+                    source_ids=[source_id, missing_id],
+                    review_status="weak",
+                    reviewed_by="bulk analyst",
+                ),
+                db=db,
+            )
+        finally:
+            db.close()
+
+        self.assertEqual(response.requested_count, 2)
+        self.assertEqual(response.updated_count, 1)
+        self.assertEqual(response.missing_ids, [missing_id])
+        self.assertEqual(response.items[0].review_status, "weak")
+
+    def test_bulk_patch_modifies_only_triage_fields_and_preserves_quality_metadata(self) -> None:
+        before_counts = self._counts()
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(source_url_quality="public_comment_form", limit=50, offset=0, db=db).items[0].id
+            before = get_discovered_source(source_id, db=db)
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(
+                    source_ids=[source_id],
+                    review_status="useful",
+                    review_notes="Keep as fallback context.",
+                    reviewed_by="bulk analyst",
+                ),
+                db=db,
+            )
+            after = get_discovered_source(source_id, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(response.updated_count, 1)
+        self.assertEqual(after.review_status, "useful")
+        self.assertEqual(after.source_url, before.source_url)
+        self.assertEqual(after.source_title, before.source_title)
+        self.assertEqual(after.source_type, before.source_type)
+        self.assertEqual(after.geography, before.geography)
+        self.assertEqual(after.publisher, before.publisher)
+        self.assertEqual(after.source_registry_id, before.source_registry_id)
+        self.assertEqual(after.adapter_id, before.adapter_id)
+        self.assertEqual(after.discovery_run_id, before.discovery_run_id)
+        self.assertEqual(after.discovery_method, before.discovery_method)
+        self.assertEqual(after.source_query, before.source_query)
+        self.assertEqual(after.snippet, before.snippet)
+        self.assertEqual(after.status, before.status)
+        self.assertEqual(after.raw_metadata_json, before.raw_metadata_json)
+        self.assertEqual(after.source_url_quality, "public_comment_form")
+        self.assertEqual(self._counts(), before_counts)
+
+    def test_bulk_patch_note_replace_and_append_modes(self) -> None:
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(review_status="useful", limit=50, offset=0, db=db).items[0].id
+            replaced = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(
+                    source_ids=[source_id],
+                    review_notes="Replacement note",
+                    note_mode="replace",
+                ),
+                db=db,
+            )
+            appended = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(
+                    source_ids=[source_id],
+                    review_notes="Appended note",
+                    note_mode="append",
+                ),
+                db=db,
+            )
+        finally:
+            db.close()
+
+        self.assertEqual(replaced.items[0].review_notes, "Replacement note")
+        self.assertEqual(appended.items[0].review_notes, "Replacement note\n\nAppended note")
+
+    def test_bulk_patch_blank_notes_and_reviewer_normalize_to_null(self) -> None:
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(review_status="useful", limit=50, offset=0, db=db).items[0].id
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(
+                    source_ids=[source_id],
+                    review_notes=" ",
+                    reviewed_by=" ",
+                ),
+                db=db,
+            )
+        finally:
+            db.close()
+
+        self.assertIsNone(response.items[0].review_notes)
+        self.assertIsNone(response.items[0].reviewed_by)
+        self.assertIsNotNone(response.items[0].reviewed_at)
+
+    def test_bulk_patch_unreviewed_matches_single_row_behavior(self) -> None:
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(review_status="useful", limit=50, offset=0, db=db).items[0].id
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(source_ids=[source_id], review_status="unreviewed"),
+                db=db,
+            )
+            stored = db.get(DiscoveredSourceRecord, source_id)
+        finally:
+            db.close()
+
+        self.assertEqual(response.items[0].review_status, "unreviewed")
+        self.assertIsNone(stored.review_status)
+        self.assertIsNotNone(response.items[0].reviewed_at)
+
+    def test_bulk_patch_keeps_computed_priority_read_only(self) -> None:
+        db = self.SessionLocal()
+        try:
+            source_id = list_discovered_sources(q="homepage", limit=50, offset=0, db=db).items[0].id
+            before = get_discovered_source(source_id, db=db)
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(source_ids=[source_id], review_status="noisy"),
+                db=db,
+            )
+            after = get_discovered_source(source_id, db=db)
+        finally:
+            db.close()
+
+        self.assertEqual(response.items[0].review_priority_score, before.review_priority_score)
+        self.assertEqual(after.review_priority_bucket, before.review_priority_bucket)
+        self.assertNotIn("review_priority_score", after.raw_metadata_json)
+
     def test_computed_priority_does_not_mutate_source_rows(self) -> None:
         db = self.SessionLocal()
         try:
@@ -390,6 +582,20 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(response.source_url_quality, "public_comment_form")
         self.assertEqual(response.review_status, "useful")
 
+    def test_bulk_weak_url_quality_is_independent_from_analyst_review_status(self) -> None:
+        db = self.SessionLocal()
+        try:
+            listed = list_discovered_sources(source_url_quality="public_comment_form", limit=50, offset=0, db=db)
+            response = bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(source_ids=[listed.items[0].id], review_status="rejected"),
+                db=db,
+            )
+        finally:
+            db.close()
+
+        self.assertEqual(response.items[0].source_url_quality, "public_comment_form")
+        self.assertEqual(response.items[0].review_status, "rejected")
+
     def test_review_endpoints_do_not_create_downstream_records(self) -> None:
         before = self._counts()
 
@@ -397,6 +603,11 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         try:
             list_discovered_sources(limit=50, offset=0, db=db)
             summarize_discovered_sources(db=db)
+            source_ids = [item.id for item in list_discovered_sources(limit=2, offset=0, db=db).items]
+            bulk_update_discovered_source_review(
+                DiscoveredSourceReviewBulkUpdate(source_ids=source_ids, review_status="maybe"),
+                db=db,
+            )
         finally:
             db.close()
 

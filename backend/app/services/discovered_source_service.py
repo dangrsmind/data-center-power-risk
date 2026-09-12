@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.discovered_source import DiscoveredSourceRecord
 
 
+_UNSET = object()
 VALID_DISCOVERED_SOURCE_STATUSES = {"discovered", "candidate", "rejected", "promoted"}
 VALID_DISCOVERED_SOURCE_REVIEW_STATUSES = {"unreviewed", "useful", "maybe", "noisy", "weak", "rejected"}
 KNOWN_DISCOVERED_SOURCE_FIELDS = {
@@ -670,12 +671,85 @@ class DiscoveredSourceService:
         record = self.get_review_source(source_id)
         if record is None:
             return None
-        record.review_status = validate_review_status(review_status)
-        record.review_notes = clean_string(review_notes)
-        record.reviewed_by = clean_string(reviewed_by)
-        record.reviewed_at = datetime.now(timezone.utc)
+        self._apply_review_update(
+            record,
+            review_status=review_status,
+            review_notes=review_notes,
+            reviewed_by=reviewed_by,
+            note_mode="replace",
+        )
         self.db.flush()
         return record
+
+    def bulk_update_review(
+        self,
+        source_ids: list[Any],
+        *,
+        review_status: Any = _UNSET,
+        review_notes: Any = _UNSET,
+        reviewed_by: Any = _UNSET,
+        note_mode: str = "replace",
+    ) -> dict[str, Any]:
+        if len(source_ids) > 200:
+            raise ValueError("source_ids must contain at most 200 ids")
+        if note_mode not in {"replace", "append"}:
+            raise ValueError("note_mode must be one of: replace, append")
+        unique_ids = list(dict.fromkeys(source_ids))
+        records = list(self.db.scalars(select(DiscoveredSourceRecord).where(DiscoveredSourceRecord.id.in_(unique_ids))))
+        records_by_id = {record.id: record for record in records}
+        missing_ids = [source_id for source_id in unique_ids if source_id not in records_by_id]
+        warnings: list[str] = []
+        if len(unique_ids) < len(source_ids):
+            warnings.append("duplicate_source_ids_ignored")
+
+        updated_records: list[DiscoveredSourceRecord] = []
+        for source_id in unique_ids:
+            record = records_by_id.get(source_id)
+            if record is None:
+                continue
+            self._apply_review_update(
+                record,
+                review_status=review_status,
+                review_notes=review_notes,
+                reviewed_by=reviewed_by,
+                note_mode=note_mode,
+            )
+            updated_records.append(record)
+        self.db.flush()
+        return {
+            "requested_count": len(source_ids),
+            "updated_count": len(updated_records),
+            "missing_ids": missing_ids,
+            "items": [discovered_source_review_payload(record) for record in updated_records],
+            "warnings": warnings,
+        }
+
+    @staticmethod
+    def _apply_review_update(
+        record: DiscoveredSourceRecord,
+        *,
+        review_status: Any = _UNSET,
+        review_notes: Any = _UNSET,
+        reviewed_by: Any = _UNSET,
+        note_mode: str = "replace",
+    ) -> None:
+        changed = False
+        if review_status is not _UNSET:
+            record.review_status = validate_review_status(review_status)
+            changed = True
+        if review_notes is not _UNSET:
+            next_notes = clean_string(review_notes)
+            if note_mode == "append" and next_notes:
+                existing_notes = clean_string(record.review_notes)
+                record.review_notes = f"{existing_notes}\n\n{next_notes}" if existing_notes else next_notes
+            else:
+                record.review_notes = next_notes
+            changed = True
+        if reviewed_by is not _UNSET:
+            record.reviewed_by = clean_string(reviewed_by)
+            changed = True
+        if changed:
+            record.reviewed_at = datetime.now(timezone.utc)
 
     def _review_filtered_records(self, filters: DiscoveredSourceReviewFilters) -> list[DiscoveredSourceRecord]:
         query = select(DiscoveredSourceRecord).order_by(

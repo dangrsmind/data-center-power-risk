@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
   DiscoveredSourceReviewItem,
+  DiscoveredSourceReviewNoteMode,
   DiscoveredSourceReviewPriorityBucket,
   DiscoveredSourceReviewSort,
   DiscoveredSourceReviewStatus,
   DiscoveredSourceReviewSummaryResponse,
 } from "../api/types";
 import {
+  bulkUpdateDiscoveredSourceReview,
   getDiscoveredSourceReview,
   getDiscoveredSourceReviewSummary,
   updateDiscoveredSourceReview,
@@ -325,10 +327,14 @@ function SourceDetails({ source }: { source: DiscoveredSourceReviewItem }) {
 
 function SourceRow({
   source,
+  selected,
+  onSelectedChange,
   onSaved,
   onError,
 }: {
   source: DiscoveredSourceReviewItem;
+  selected: boolean;
+  onSelectedChange: (sourceId: string, selected: boolean) => void;
   onSaved: (source: DiscoveredSourceReviewItem) => void;
   onError: (message: string) => void;
 }) {
@@ -368,6 +374,14 @@ function SourceRow({
   return (
     <>
       <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", verticalAlign: "top" }}>
+        <td style={{ padding: "11px 10px", minWidth: 0 }}>
+          <input
+            aria-label={`Select ${source.source_title || source.source_url}`}
+            checked={selected}
+            onChange={(event) => onSelectedChange(source.id, event.target.checked)}
+            type="checkbox"
+          />
+        </td>
         <td style={{ padding: "11px 10px", minWidth: 0 }}>
           <button
             onClick={() => setExpanded((value) => !value)}
@@ -457,7 +471,7 @@ function SourceRow({
       </tr>
       {expanded && (
         <tr style={{ borderBottom: "1px solid rgba(126,200,227,0.2)" }}>
-          <td colSpan={12} style={{ padding: 0 }}>
+          <td colSpan={13} style={{ padding: 0 }}>
             <SourceDetails source={source} />
           </td>
         </tr>
@@ -489,6 +503,13 @@ export function DiscoveredSourcesPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sources, setSources] = useState<DiscoveredSourceReviewItem[]>([]);
   const [summary, setSummary] = useState<DiscoveredSourceReviewSummaryResponse | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<DiscoveredSourceReviewStatus>("maybe");
+  const [bulkNotes, setBulkNotes] = useState("");
+  const [bulkReviewedBy, setBulkReviewedBy] = useState("");
+  const [bulkNoteMode, setBulkNoteMode] = useState<DiscoveredSourceReviewNoteMode>("replace");
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -510,6 +531,10 @@ export function DiscoveredSourcesPage() {
           setSources(listResponse.items);
           setTotal(listResponse.total);
           setSummary(summaryResponse);
+          setSelectedIds((current) => {
+            const visibleIds = new Set(listResponse.items.map((source) => source.id));
+            return new Set(Array.from(current).filter((sourceId) => visibleIds.has(sourceId)));
+          });
         }
       } catch (err) {
         if (!cancelled) setError(String(err));
@@ -527,15 +552,76 @@ export function DiscoveredSourcesPage() {
     return entries.length > 0 ? entries.map(([key, value]) => `${sourceTypeLabel(key)} ${value}`).join(" · ") : "No source types";
   }, [summary]);
   const active = filterActive(filters);
+  const selectedSources = useMemo(
+    () => sources.filter((source) => selectedIds.has(source.id)),
+    [sources, selectedIds],
+  );
+  const selectedWeakCount = useMemo(
+    () => selectedSources.filter((source) => isWeakQuality(source)).length,
+    [selectedSources],
+  );
+  const visibleSelected = sources.length > 0 && sources.every((source) => selectedIds.has(source.id));
 
   function updateFilter(key: keyof Filters, value: string | boolean) {
     setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateSelected(sourceId: string, selected: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(sourceId);
+      else next.delete(sourceId);
+      return next;
+    });
+  }
+
+  function toggleVisibleSelection(selected: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const source of sources) {
+        if (selected) next.add(source.id);
+        else next.delete(source.id);
+      }
+      return next;
+    });
   }
 
   function updateSavedSource(updated: DiscoveredSourceReviewItem) {
     setSources((current) => current.map((source) => source.id === updated.id ? updated : source));
     setSaveError(null);
     setRefreshToken((value) => value + 1);
+  }
+
+  async function applyBulkTriage() {
+    if (selectedIds.size === 0) return;
+    setBulkApplying(true);
+    setSaveError(null);
+    setBulkMessage(null);
+    try {
+      const request = {
+        source_ids: Array.from(selectedIds),
+        review_status: bulkStatus === "unreviewed" ? null : bulkStatus,
+        ...(bulkNotes.trim() ? { review_notes: bulkNotes } : {}),
+        ...(bulkReviewedBy.trim() ? { reviewed_by: bulkReviewedBy } : {}),
+        note_mode: bulkNoteMode,
+      };
+      const response = await bulkUpdateDiscoveredSourceReview(request);
+      setSources((current) => {
+        const updatedById = new Map(response.items.map((source) => [source.id, source]));
+        return current.map((source) => updatedById.get(source.id) ?? source);
+      });
+      setSelectedIds(new Set());
+      setBulkMessage(
+        `Updated ${response.updated_count} of ${response.requested_count} selected sources` +
+        (response.missing_ids.length > 0 ? `; ${response.missing_ids.length} missing` : "") +
+        (response.warnings.length > 0 ? `; ${response.warnings.join(", ")}` : ""),
+      );
+      setRefreshToken((value) => value + 1);
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setBulkApplying(false);
+    }
   }
 
   return (
@@ -647,6 +733,89 @@ export function DiscoveredSourcesPage() {
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: "0 20px 24px" }}>
+        <div style={{
+          alignItems: "end",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+          padding: "10px 0",
+        }}>
+          <div style={{ color: "#cbd5e1", fontSize: 12, minWidth: 120 }}>
+            <div style={labelStyle}>Selected</div>
+            <div style={{ color: "#f1f5f9", fontSize: 16, fontWeight: 750, marginTop: 5 }}>
+              {selectedIds.size}
+            </div>
+          </div>
+          <label style={{ display: "grid", gap: 4, minWidth: 150 }}>
+            <span style={labelStyle}>Bulk Status</span>
+            <select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as DiscoveredSourceReviewStatus)} style={{ ...inputStyle, cursor: "pointer" }}>
+              {REVIEW_STATUSES.map((status) => (
+                <option key={status} value={status}>{reviewStatusLabel(status)}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 4, minWidth: 130 }}>
+            <span style={labelStyle}>Note Mode</span>
+            <select value={bulkNoteMode} onChange={(event) => setBulkNoteMode(event.target.value as DiscoveredSourceReviewNoteMode)} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option value="replace">Replace</option>
+              <option value="append">Append</option>
+            </select>
+          </label>
+          <label style={{ display: "grid", flex: "1 1 260px", gap: 4, minWidth: 220 }}>
+            <span style={labelStyle}>Bulk Notes</span>
+            <input value={bulkNotes} onChange={(event) => setBulkNotes(event.target.value)} placeholder="Optional note" style={inputStyle} />
+          </label>
+          <label style={{ display: "grid", flex: "1 1 180px", gap: 4, minWidth: 160 }}>
+            <span style={labelStyle}>Reviewer</span>
+            <input value={bulkReviewedBy} onChange={(event) => setBulkReviewedBy(event.target.value)} placeholder="Optional reviewer" style={inputStyle} />
+          </label>
+          <button
+            disabled={selectedIds.size === 0 || bulkApplying}
+            onClick={applyBulkTriage}
+            style={{
+              background: selectedIds.size > 0 ? "rgba(126,200,227,0.16)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${selectedIds.size > 0 ? "rgba(126,200,227,0.4)" : "rgba(255,255,255,0.12)"}`,
+              borderRadius: 4,
+              color: selectedIds.size > 0 ? "#bae6fd" : "#64748b",
+              cursor: selectedIds.size === 0 || bulkApplying ? "default" : "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "7px 10px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {bulkApplying ? "Applying" : `Apply to ${selectedIds.size}`}
+          </button>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                borderRadius: 4,
+                color: "#e2e8f0",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 650,
+                padding: "7px 10px",
+              }}
+            >
+              Clear Selection
+            </button>
+          )}
+          <div style={{ color: selectedWeakCount > 0 ? "#fbbf24" : "#94a3b8", flexBasis: "100%", fontSize: 12 }}>
+            {selectedIds.size === 0
+              ? "Select visible rows to bulk triage."
+              : `Ready to mark ${selectedIds.size} selected sources as ${reviewStatusLabel(bulkStatus)}.`}
+            {selectedWeakCount > 0 ? ` ${selectedWeakCount} selected source${selectedWeakCount === 1 ? "" : "s"} have weak URL-quality warnings.` : ""}
+          </div>
+          {bulkMessage && (
+            <div style={{ color: "#86efac", flexBasis: "100%", fontSize: 12 }}>
+              {bulkMessage}
+            </div>
+          )}
+        </div>
         {!loading && !error && (summary?.top_review_queue_examples?.length ?? 0) > 0 && (
           <div style={{
             borderBottom: "1px solid rgba(255,255,255,0.07)",
@@ -728,8 +897,9 @@ export function DiscoveredSourcesPage() {
             <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>
               Showing {sources.length} of {total} sources
             </div>
-            <table style={{ borderCollapse: "collapse", minWidth: 1490, tableLayout: "fixed", width: "100%" }}>
+            <table style={{ borderCollapse: "collapse", minWidth: 1530, tableLayout: "fixed", width: "100%" }}>
               <colgroup>
+                <col style={{ width: 40 }} />
                 <col style={{ width: 34 }} />
                 <col style={{ width: 300 }} />
                 <col style={{ width: 150 }} />
@@ -745,7 +915,7 @@ export function DiscoveredSourcesPage() {
               </colgroup>
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
-                  {["", "Source", "Type", "Geography", "Publisher", "Status", "Priority", "URL Quality", "Review", "Triage", "Run ID", "Created"].map((label) => (
+                  {["Select", "", "Source", "Type", "Geography", "Publisher", "Status", "Priority", "URL Quality", "Review", "Triage", "Run ID", "Created"].map((label, index) => (
                     <th key={label} style={{
                       background: "var(--bg)",
                       color: "#94a3b8",
@@ -760,7 +930,14 @@ export function DiscoveredSourcesPage() {
                       whiteSpace: "nowrap",
                       zIndex: 1,
                     }}>
-                      {label}
+                      {index === 0 ? (
+                        <input
+                          aria-label="Select all visible sources"
+                          checked={visibleSelected}
+                          onChange={(event) => toggleVisibleSelection(event.target.checked)}
+                          type="checkbox"
+                        />
+                      ) : label}
                     </th>
                   ))}
                 </tr>
@@ -770,6 +947,8 @@ export function DiscoveredSourcesPage() {
                   <SourceRow
                     key={source.id}
                     source={source}
+                    selected={selectedIds.has(source.id)}
+                    onSelectedChange={updateSelected}
                     onSaved={updateSavedSource}
                     onError={(message) => setSaveError(message || null)}
                   />
