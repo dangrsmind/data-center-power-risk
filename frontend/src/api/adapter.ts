@@ -801,7 +801,7 @@ export async function getDiscoveredSourceReview(params?: {
 }): Promise<DiscoveredSourceReviewListResponse> {
   if (USE_MOCK) {
     await delay();
-    return { items: [], total: 0, limit: params?.limit ?? 50, offset: params?.offset ?? 0, applied_filters: {} };
+    return { items: [], total: 0, limit: params?.limit ?? 50, offset: params?.offset ?? 0, next_offset: null, previous_offset: (params?.offset ?? 0) > 0 ? Math.max(0, (params?.offset ?? 0) - (params?.limit ?? 50)) : null, has_next: false, has_previous: (params?.offset ?? 0) > 0, applied_filters: {} };
   }
   const qs = new URLSearchParams();
   setNonEmptyParam(qs, "discovery_run_id", params?.discovery_run_id);

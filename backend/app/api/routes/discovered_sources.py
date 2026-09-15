@@ -62,7 +62,7 @@ def _review_filters(
     )
 
 
-@router.get("", response_model=DiscoveredSourceReviewListResponse, response_model_exclude_none=True)
+@router.get("", response_model=DiscoveredSourceReviewListResponse)
 def list_discovered_sources(
     discovery_run_id: str | None = None,
     source_registry_id: str | None = None,
@@ -115,6 +115,10 @@ def list_discovered_sources(
         total=total,
         limit=limit,
         offset=offset,
+        next_offset=offset + limit if offset + limit < total else None,
+        previous_offset=max(0, offset - limit) if offset > 0 else None,
+        has_next=offset + limit < total,
+        has_previous=offset > 0,
         applied_filters=applied_filters,
     )
 
@@ -208,9 +212,7 @@ def update_discovered_source_review(
     try:
         source = DiscoveredSourceService(db).update_review(
             source_id,
-            review_status=request.review_status,
-            review_notes=request.review_notes,
-            reviewed_by=request.reviewed_by,
+            **request.model_dump(exclude_unset=True),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

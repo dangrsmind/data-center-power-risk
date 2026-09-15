@@ -48,7 +48,6 @@ const EMPTY_FILTERS: Filters = {
   sort: "created_at_desc",
 };
 
-const PAGE_LIMIT = 100;
 const REVIEW_STATUSES: DiscoveredSourceReviewStatus[] = ["unreviewed", "useful", "maybe", "noisy", "weak", "rejected"];
 const PRIORITY_BUCKETS: DiscoveredSourceReviewPriorityBucket[] = [
   "high_signal_official",
@@ -94,7 +93,7 @@ function isWeakQuality(source: DiscoveredSourceReviewItem): boolean {
   return source.source_url_quality === "public_comment_form" || source.source_url_quality === "fallback_reference";
 }
 
-function apiFilters(filters: Filters, offset = 0) {
+function apiFilters(filters: Filters, offset = 0, limit = 50) {
   const minScore = Number.parseInt(filters.min_priority_score, 10);
   return {
     discovery_run_id: filters.discovery_run_id || undefined,
@@ -111,7 +110,7 @@ function apiFilters(filters: Filters, offset = 0) {
     priority_bucket: filters.priority_bucket || undefined,
     min_priority_score: Number.isFinite(minScore) ? minScore : undefined,
     sort: filters.sort,
-    limit: PAGE_LIMIT,
+    limit,
     offset,
   };
 }
@@ -356,9 +355,9 @@ function SourceRow({
     onError("");
     try {
       const updated = await updateDiscoveredSourceReview(source.id, {
-        review_status: reviewStatus === "unreviewed" ? null : reviewStatus,
-        review_notes: reviewNotes,
-        reviewed_by: reviewedBy,
+        ...(reviewStatus !== source.review_status ? { review_status: reviewStatus } : {}),
+        ...(reviewNotes !== (source.review_notes ?? "") ? { review_notes: reviewNotes } : {}),
+        ...(reviewedBy !== (source.reviewed_by ?? "") ? { reviewed_by: reviewedBy } : {}),
       });
       setReviewStatus(updated.review_status);
       setReviewNotes(updated.review_notes ?? "");
@@ -501,10 +500,15 @@ function FilterInput({
 
 export function DiscoveredSourcesPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(50);
+  const [pagination, setPagination] = useState<{ next_offset: number | null; previous_offset: number | null }>({ next_offset: null, previous_offset: null });
+  const [applyNotes, setApplyNotes] = useState(false);
+  const [applyReviewer, setApplyReviewer] = useState(false);
   const [sources, setSources] = useState<DiscoveredSourceReviewItem[]>([]);
   const [summary, setSummary] = useState<DiscoveredSourceReviewSummaryResponse | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkStatus, setBulkStatus] = useState<DiscoveredSourceReviewStatus>("maybe");
+  const [bulkStatus, setBulkStatus] = useState<DiscoveredSourceReviewStatus | "">("");
   const [bulkNotes, setBulkNotes] = useState("");
   const [bulkReviewedBy, setBulkReviewedBy] = useState("");
   const [bulkNoteMode, setBulkNoteMode] = useState<DiscoveredSourceReviewNoteMode>("replace");
@@ -524,10 +528,16 @@ export function DiscoveredSourcesPage() {
       setSaveError(null);
       try {
         const [listResponse, summaryResponse] = await Promise.all([
-          getDiscoveredSourceReview(apiFilters(filters)),
+          getDiscoveredSourceReview(apiFilters(filters, offset, limit)),
           getDiscoveredSourceReviewSummary(apiFilters(filters)),
         ]);
         if (!cancelled) {
+          if (offset > 0 && offset >= listResponse.total) {
+            setOffset(Math.max(0, Math.ceil(listResponse.total / limit) - 1) * limit);
+            setSelectedIds(new Set());
+            return;
+          }
+          setPagination(listResponse);
           setSources(listResponse.items);
           setTotal(listResponse.total);
           setSummary(summaryResponse);
@@ -544,7 +554,7 @@ export function DiscoveredSourcesPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, [filters, refreshToken]);
+  }, [filters, offset, limit, refreshToken]);
 
   const sourceTypeSummary = useMemo(() => {
     const counts = summary?.counts_by_source_type ?? {};
@@ -563,7 +573,13 @@ export function DiscoveredSourcesPage() {
   const visibleSelected = sources.length > 0 && sources.every((source) => selectedIds.has(source.id));
 
   function updateFilter(key: keyof Filters, value: string | boolean) {
+    changePage(0);
     setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function changePage(nextOffset: number) {
+    setOffset(nextOffset);
+    setSelectedIds(new Set());
   }
 
   function updateSelected(sourceId: string, selected: boolean) {
@@ -589,6 +605,7 @@ export function DiscoveredSourcesPage() {
   function updateSavedSource(updated: DiscoveredSourceReviewItem) {
     setSources((current) => current.map((source) => source.id === updated.id ? updated : source));
     setSaveError(null);
+    setBulkMessage("Review saved.");
     setRefreshToken((value) => value + 1);
   }
 
@@ -600,10 +617,9 @@ export function DiscoveredSourcesPage() {
     try {
       const request = {
         source_ids: Array.from(selectedIds),
-        review_status: bulkStatus === "unreviewed" ? null : bulkStatus,
-        ...(bulkNotes.trim() ? { review_notes: bulkNotes } : {}),
-        ...(bulkReviewedBy.trim() ? { reviewed_by: bulkReviewedBy } : {}),
-        note_mode: bulkNoteMode,
+        ...(bulkStatus ? { review_status: bulkStatus } : {}),
+        ...(applyNotes ? { review_notes: bulkNotes, note_mode: bulkNoteMode } : {}),
+        ...(applyReviewer ? { reviewed_by: bulkReviewedBy } : {}),
       };
       const response = await bulkUpdateDiscoveredSourceReview(request);
       setSources((current) => {
@@ -613,7 +629,7 @@ export function DiscoveredSourcesPage() {
       setSelectedIds(new Set());
       setBulkMessage(
         `Updated ${response.updated_count} of ${response.requested_count} selected sources` +
-        (response.missing_ids.length > 0 ? `; ${response.missing_ids.length} missing` : "") +
+        (response.missing_ids.length > 0 ? `; missing IDs: ${response.missing_ids.join(", ")}` : "") +
         (response.warnings.length > 0 ? `; ${response.warnings.join(", ")}` : ""),
       );
       setRefreshToken((value) => value + 1);
@@ -714,7 +730,7 @@ export function DiscoveredSourcesPage() {
         </label>
         {active && (
           <button
-            onClick={() => setFilters(EMPTY_FILTERS)}
+            onClick={() => { changePage(0); setFilters(EMPTY_FILTERS); }}
             style={{
               alignSelf: "end",
               background: "rgba(255,255,255,0.05)",
@@ -749,7 +765,8 @@ export function DiscoveredSourcesPage() {
           </div>
           <label style={{ display: "grid", gap: 4, minWidth: 150 }}>
             <span style={labelStyle}>Bulk Status</span>
-            <select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as DiscoveredSourceReviewStatus)} style={{ ...inputStyle, cursor: "pointer" }}>
+            <select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as DiscoveredSourceReviewStatus | "")} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option value="">Keep status</option>
               {REVIEW_STATUSES.map((status) => (
                 <option key={status} value={status}>{reviewStatusLabel(status)}</option>
               ))}
@@ -763,15 +780,15 @@ export function DiscoveredSourcesPage() {
             </select>
           </label>
           <label style={{ display: "grid", flex: "1 1 260px", gap: 4, minWidth: 220 }}>
-            <span style={labelStyle}>Bulk Notes</span>
+            <span style={labelStyle}><input type="checkbox" checked={applyNotes} onChange={(event) => setApplyNotes(event.target.checked)} /> Apply notes (blank clears in replace mode)</span>
             <input value={bulkNotes} onChange={(event) => setBulkNotes(event.target.value)} placeholder="Optional note" style={inputStyle} />
           </label>
           <label style={{ display: "grid", flex: "1 1 180px", gap: 4, minWidth: 160 }}>
-            <span style={labelStyle}>Reviewer</span>
+            <span style={labelStyle}><input type="checkbox" checked={applyReviewer} onChange={(event) => setApplyReviewer(event.target.checked)} /> Apply reviewer (blank clears)</span>
             <input value={bulkReviewedBy} onChange={(event) => setBulkReviewedBy(event.target.value)} placeholder="Optional reviewer" style={inputStyle} />
           </label>
           <button
-            disabled={selectedIds.size === 0 || bulkApplying}
+            disabled={selectedIds.size === 0 || bulkApplying || loading || (!bulkStatus && !applyNotes && !applyReviewer)}
             onClick={applyBulkTriage}
             style={{
               background: selectedIds.size > 0 ? "rgba(126,200,227,0.16)" : "rgba(255,255,255,0.04)",
@@ -807,7 +824,7 @@ export function DiscoveredSourcesPage() {
           <div style={{ color: selectedWeakCount > 0 ? "#fbbf24" : "#94a3b8", flexBasis: "100%", fontSize: 12 }}>
             {selectedIds.size === 0
               ? "Select visible rows to bulk triage."
-              : `Ready to mark ${selectedIds.size} selected sources as ${reviewStatusLabel(bulkStatus)}.`}
+              : `Ready to update review metadata for ${selectedIds.size} selected sources.`}
             {selectedWeakCount > 0 ? ` ${selectedWeakCount} selected source${selectedWeakCount === 1 ? "" : "s"} have weak URL-quality warnings.` : ""}
           </div>
           {bulkMessage && (
@@ -886,6 +903,17 @@ export function DiscoveredSourcesPage() {
           </div>
         )}
 
+        {!error && (
+          <nav aria-label="Source pagination" style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 0", color: "#cbd5e1" }}>
+            <span>{loading ? "Loading…" : `Showing ${sources.length ? offset + 1 : 0}–${sources.length ? offset + sources.length : 0} of ${total}`}</span>
+            <label>Page size <select aria-label="Page size" value={limit} disabled={loading || bulkApplying} onChange={(event) => { setLimit(Number(event.target.value)); changePage(0); }} style={inputStyle}>
+              {[25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select></label>
+            <button disabled={loading || bulkApplying || pagination.previous_offset === null} onClick={() => changePage(pagination.previous_offset ?? 0)}>Previous</button>
+            <button disabled={loading || bulkApplying || pagination.next_offset === null} onClick={() => changePage(pagination.next_offset ?? 0)}>Next</button>
+          </nav>
+        )}
+
         {!loading && !error && sources.length === 0 && (
           <div style={{ color: "#94a3b8", fontSize: 13, padding: "42px 0", textAlign: "center" }}>
             No discovered sources match the current filters.
@@ -895,7 +923,7 @@ export function DiscoveredSourcesPage() {
         {!loading && !error && sources.length > 0 && (
           <div style={{ marginTop: 12, overflowX: "auto" }}>
             <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>
-              Showing {sources.length} of {total} sources
+              Selection applies only to visible rows.
             </div>
             <table style={{ borderCollapse: "collapse", minWidth: 1530, tableLayout: "fixed", width: "100%" }}>
               <colgroup>

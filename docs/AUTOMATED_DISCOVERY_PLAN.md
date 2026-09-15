@@ -440,3 +440,15 @@ Generated discovery output is runtime data and is not committed:
 - geocoding caches
 
 Curated demo data under `data/demo/` is committed because it is manually reviewed and presentation reproducible. Automated discovered data must include a `source_url` or source document before it can become a project candidate, and it must pass analyst review before publication.
+
+### Review pagination and PATCH semantics
+
+The source-review page shows `Showing X–Y of total`, Previous/Next controls, and page sizes of 25, 50, or 100. Filters and sort are preserved between pages; changing search, filters, sort, or page size returns to page 1. Selection is visible-page scoped: select-all selects only visible rows, and changing pages clears selection. After triage removes the last row on a page from the current filter, the UI returns to the last available page.
+
+`GET /discovered-sources` applies filters and deterministic sorting before pagination, accepts `limit` (1–200) and nonnegative `offset`, and returns `total`, `next_offset`, `previous_offset`, `has_next`, and `has_previous`. Unavailable offsets are null.
+
+Single and bulk PATCH preserve omitted fields. Explicit null or blank clears `review_notes` and `reviewed_by`; notes replace only when supplied. Append requires explicitly supplied, nonblank notes; null/blank append is a no-op. Omitted status is preserved; explicit `unreviewed` (or null) returns to unreviewed. The UI sends only changed row fields; bulk controls explicitly choose status, notes, and reviewer, with blank notes/reviewer clearing only when their Apply checkbox is selected (notes must use Replace).
+
+`reviewed_count` counts surfaced statuses other than `unreviewed`; `unreviewed_count` includes null and explicit unreviewed statuses. Counts never depend on `reviewed_at`. That field is the last effective review metadata update timestamp, stays unchanged on no-ops, and can remain populated after returning to unreviewed. Bulk `updated_count` reports matched rows processed, including unchanged rows; missing IDs are reported separately.
+
+Bulk triage changes source-review metadata only. It preserves provenance and creates no Projects, Evidence, ProjectCandidates, or claims. No search, URL fetch/validation, ingest, extraction, candidate generation, verification, auto-admission, or promotion occurs during review triage.
