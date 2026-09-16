@@ -664,9 +664,9 @@ class DiscoveredSourceService:
         self,
         source_id: Any,
         *,
-        review_status: Any,
-        review_notes: Any = None,
-        reviewed_by: Any = None,
+        review_status: Any = _UNSET,
+        review_notes: Any = _UNSET,
+        reviewed_by: Any = _UNSET,
     ) -> DiscoveredSourceRecord | None:
         record = self.get_review_source(source_id)
         if record is None:
@@ -733,22 +733,24 @@ class DiscoveredSourceService:
         reviewed_by: Any = _UNSET,
         note_mode: str = "replace",
     ) -> None:
-        changed = False
+        changes = {}
         if review_status is not _UNSET:
-            record.review_status = validate_review_status(review_status)
-            changed = True
+            next_status = validate_review_status(review_status)
+            if (next_status or "unreviewed") != display_review_status(record):
+                changes["review_status"] = next_status
         if review_notes is not _UNSET:
             next_notes = clean_string(review_notes)
-            if note_mode == "append" and next_notes:
+            if note_mode == "replace":
+                changes["review_notes"] = next_notes
+            elif next_notes:
                 existing_notes = clean_string(record.review_notes)
-                record.review_notes = f"{existing_notes}\n\n{next_notes}" if existing_notes else next_notes
-            else:
-                record.review_notes = next_notes
-            changed = True
+                changes["review_notes"] = f"{existing_notes}\n\n{next_notes}" if existing_notes else next_notes
         if reviewed_by is not _UNSET:
-            record.reviewed_by = clean_string(reviewed_by)
-            changed = True
-        if changed:
+            changes["reviewed_by"] = clean_string(reviewed_by)
+        changes = {key: value for key, value in changes.items() if getattr(record, key) != value}
+        if changes:
+            for key, value in changes.items():
+                setattr(record, key, value)
             record.reviewed_at = datetime.now(timezone.utc)
 
     def _review_filtered_records(self, filters: DiscoveredSourceReviewFilters) -> list[DiscoveredSourceRecord]:

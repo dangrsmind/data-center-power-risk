@@ -69,7 +69,7 @@ class DiscoveredSourceReviewItem(BaseModel):
     alternate_urls: list[str] = Field(default_factory=list)
     review_status: DiscoveredSourceReviewStatus = "unreviewed"
     review_notes: str | None = None
-    reviewed_at: datetime | None = None
+    reviewed_at: datetime | None = Field(default=None, description="Last effective review metadata update; may remain populated for unreviewed sources.")
     reviewed_by: str | None = None
     review_priority_score: int
     review_priority_bucket: DiscoveredSourceReviewPriorityBucket
@@ -85,6 +85,10 @@ class DiscoveredSourceReviewListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    next_offset: int | None
+    previous_offset: int | None
+    has_next: bool
+    has_previous: bool
     applied_filters: dict[str, Any]
 
 

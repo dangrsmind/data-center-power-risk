@@ -806,7 +806,7 @@ export type DiscoveredSourceReviewPriorityBucket =
 export type DiscoveredSourceReviewSort = "created_at_desc" | "priority_desc" | "priority_asc" | "title_asc";
 
 export interface DiscoveredSourceReviewUpdateRequest {
-  review_status: DiscoveredSourceReviewStatus | null;
+  review_status?: DiscoveredSourceReviewStatus | null;
   review_notes?: string | null;
   reviewed_by?: string | null;
 }
@@ -834,6 +834,10 @@ export interface DiscoveredSourceReviewListResponse {
   total: number;
   limit: number;
   offset: number;
+  next_offset: number | null;
+  previous_offset: number | null;
+  has_next: boolean;
+  has_previous: boolean;
   applied_filters: Record<string, unknown>;
 }
 

@@ -3,10 +3,25 @@ from __future__ import annotations
 import unittest
 
 from app.models.discovered_source import DiscoveredSourceRecord
-from app.services.discovered_source_service import is_weak_scc_public_comment_form, review_priority
+from app.services.discovered_source_service import DiscoveredSourceService, is_weak_scc_public_comment_form, review_priority
 
 
 class DiscoveredSourceServiceTest(unittest.TestCase):
+    def test_review_noops_preserve_audit_timestamp(self) -> None:
+        from datetime import datetime, timezone
+        stamp = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        record = DiscoveredSourceRecord(review_status="unreviewed", review_notes="Notes", reviewed_by="Analyst", reviewed_at=stamp)
+        for fields in ({}, {"review_status": None}, {"review_status": "unreviewed"},
+                       {"review_notes": " Notes "}, {"reviewed_by": " Analyst "},
+                       {"note_mode": "append", "review_notes": " "}):
+            DiscoveredSourceService._apply_review_update(record, **fields)
+            self.assertEqual(record.reviewed_at, stamp)
+            self.assertEqual(record.review_notes, "Notes")
+            self.assertEqual(record.reviewed_by, "Analyst")
+        DiscoveredSourceService._apply_review_update(record, review_notes=None)
+        self.assertIsNone(record.review_notes)
+        self.assertGreater(record.reviewed_at, stamp)
+
     def test_weak_scc_public_comment_form_detection(self) -> None:
         self.assertTrue(
             is_weak_scc_public_comment_form(

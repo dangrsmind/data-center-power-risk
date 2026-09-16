@@ -316,6 +316,86 @@ class DiscoveredSourceReviewApiTest(unittest.TestCase):
         self.assertEqual(after.review_status, "weak")
         self.assertEqual(self._counts(), before_counts)
 
+    def test_patch_presence_and_effective_timestamps(self) -> None:
+        from datetime import datetime
+        for bulk in (False, True):
+            with self.subTest(bulk=bulk), self.SessionLocal() as db:
+                record = db.scalar(select(DiscoveredSourceRecord).where(DiscoveredSourceRecord.source_title.like("Planning%")))
+                record.review_status = "useful"
+                record.review_notes = "Existing notes"
+                record.reviewed_by = "Existing reviewer"
+                record.reviewed_at = datetime(2020, 1, 1)
+                db.commit()
+
+                def patch(**fields):
+                    if bulk:
+                        return bulk_update_discovered_source_review(
+                            DiscoveredSourceReviewBulkUpdate(source_ids=[record.id], **fields), db=db
+                        ).items[0]
+                    return update_discovered_source_review(record.id, DiscoveredSourceReviewUpdate(**fields), db=db)
+
+                before = patch()
+                same = patch(review_status="useful", review_notes=" Existing notes ")
+                self.assertEqual(same.reviewed_at, before.reviewed_at)
+                changed = patch(review_status="maybe")
+                self.assertGreater(changed.reviewed_at.replace(tzinfo=None), before.reviewed_at.replace(tzinfo=None))
+                self.assertEqual(changed.review_notes, "Existing notes")
+                self.assertEqual(changed.reviewed_by, "Existing reviewer")
+                for value in (None, " "):
+                    patch(review_notes="Notes", reviewed_by="Analyst")
+                    cleared = patch(review_notes=value)
+                    self.assertIsNone(cleared.review_notes)
+                    self.assertEqual(cleared.reviewed_by, "Analyst")
+                    self.assertEqual(cleared.review_status, "maybe")
+                    cleared = patch(reviewed_by=value)
+                    self.assertIsNone(cleared.reviewed_by)
+                reset = patch(review_status="unreviewed")
+                self.assertEqual(reset.review_status, "unreviewed")
+                self.assertIsNotNone(reset.reviewed_at)
+                self.assertEqual(patch(review_status="unreviewed").reviewed_at, reset.reviewed_at)
+
+    def test_bulk_append_omitted_null_and_blank_are_noops(self) -> None:
+        with self.SessionLocal() as db:
+            record = db.scalar(select(DiscoveredSourceRecord).where(DiscoveredSourceRecord.review_status == "useful"))
+            for fields in ({}, {"review_notes": None}, {"review_notes": " "}):
+                before = get_discovered_source(record.id, db=db)
+                result = bulk_update_discovered_source_review(
+                    DiscoveredSourceReviewBulkUpdate(source_ids=[record.id], note_mode="append", **fields), db=db
+                ).items[0]
+                self.assertEqual(result.review_notes, before.review_notes)
+                self.assertEqual(result.reviewed_at, before.reviewed_at)
+
+    def test_counts_use_status_even_with_conflicting_audit_timestamps(self) -> None:
+        from datetime import datetime
+        with self.SessionLocal() as db:
+            records = list(db.scalars(select(DiscoveredSourceRecord)))
+            for index, record in enumerate(records):
+                record.review_status = [None, "unreviewed", "useful"][index % 3]
+                record.reviewed_at = None if record.review_status == "useful" else datetime(2020, 1, 1)
+            db.commit()
+            summary = summarize_discovered_sources(db=db)
+            reviewed = sum(record.review_status == "useful" for record in records)
+            self.assertEqual(summary.reviewed_count, reviewed)
+            self.assertEqual(summary.unreviewed_count, len(records) - reviewed)
+            page = list_discovered_sources(review_status="unreviewed", limit=200, offset=0, db=db)
+            self.assertTrue(all(item.review_status == "unreviewed" for item in page.items))
+
+    def test_pagination_metadata_and_filtered_priority_slices(self) -> None:
+        with self.SessionLocal() as db:
+            for filters in ({}, {"geography": "Virginia"}, {"min_priority_score": 20}, {"q": "data center"}):
+                whole = list_discovered_sources(**filters, sort="priority_desc", limit=200, offset=0, db=db)
+                ids = []
+                for offset in range(whole.total + 1):
+                    page = list_discovered_sources(**filters, sort="priority_desc", limit=1, offset=offset, db=db)
+                    self.assertEqual(page.total, whole.total)
+                    self.assertEqual(page.has_next, offset + 1 < whole.total)
+                    self.assertEqual(page.has_previous, offset > 0)
+                    self.assertEqual(page.next_offset, offset + 1 if page.has_next else None)
+                    self.assertEqual(page.previous_offset, offset - 1 if offset else None)
+                    self.assertEqual([item.id for item in page.items], [item.id for item in whole.items[offset:offset + 1]])
+                    ids.extend(item.id for item in page.items)
+                self.assertEqual(ids, [item.id for item in whole.items])
+
     def test_bulk_patch_updates_multiple_sources_and_reports_items(self) -> None:
         before_counts = self._counts()
         db = self.SessionLocal()
