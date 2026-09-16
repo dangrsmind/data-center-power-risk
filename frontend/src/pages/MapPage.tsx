@@ -4,6 +4,7 @@ import { useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import { getBasemapConfig } from "../config/basemap";
 import type { ProjectDetail, ProjectListItem } from "../api/types";
 import { getProjects, getProjectRiskSignal, getProjectEnrichment } from "../api/adapter";
 import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
@@ -26,6 +27,8 @@ type ColorMode = "evidence" | "model";
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+const basemap = getBasemapConfig(import.meta.env.VITE_CARTO_BASEMAP_API_KEY);
 
 const US_STATES_GJ_URL =
   "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json";
@@ -692,6 +695,17 @@ export function MapPage() {
           </div>
         )}
 
+        {basemap.fallback && (
+          <div role="status" style={{
+            position: "absolute", bottom: 28, left: 12, right: 12, zIndex: 800,
+            width: "fit-content", maxWidth: "calc(100% - 24px)",
+            background: "rgba(15,23,42,0.9)", borderRadius: 4,
+            padding: "6px 10px", fontSize: 11, color: "#cbd5e1", pointerEvents: "none",
+          }}>
+            Fallback basemap active. Configure VITE_CARTO_BASEMAP_API_KEY to use CARTO.
+          </div>
+        )}
+
         <MapContainer
           center={[38.5, -96.5]}
           zoom={4}
@@ -699,9 +713,9 @@ export function MapPage() {
           zoomControl
         >
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            maxZoom={19}
+            url={basemap.url}
+            attribution={basemap.attribution}
+            maxZoom={basemap.maxZoom}
           />
 
           {/* State boundaries */}

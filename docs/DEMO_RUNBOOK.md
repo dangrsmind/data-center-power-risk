@@ -383,6 +383,18 @@ Open `http://localhost:8001/discovered-sources`.
 
 Use the discovered sources page as the analyst triage gate before extraction or candidate generation. Review statuses are `unreviewed`, `useful`, `maybe`, `noisy`, `weak`, and `rejected`; notes and reviewer fields are triage metadata only. Weak URL-quality badges, including SCC public-comment form warnings, are separate provenance warnings and do not mean analyst rejection. Saving triage does not create Projects, Evidence, ProjectCandidates, claims, verification results, auto-admit decisions, or promotions. Later downstream extraction should normally be scoped to `useful` and `maybe` sources unless deliberately overridden.
 
+### Map basemap setup
+
+Open `http://localhost:8001/map`. CARTO basemaps require a key; the console reads the optional `VITE_CARTO_BASEMAP_API_KEY`. When absent or blank, it uses no-key OpenStreetMap standard tiles instead of calling CARTO, and displays a small “Fallback basemap active” notice. Project markers, popups, layers, and map controls remain available. Both providers retain their required attribution. The fallback requires internet access for tiles and is intended for interactive local demos, not bulk downloads or offline use.
+
+To use CARTO, set this in the ignored `frontend/.env.local` file and restart Vite (or rebuild for production):
+
+```dotenv
+VITE_CARTO_BASEMAP_API_KEY=your-carto-basemap-key
+```
+
+Do not commit API keys or local env files. Vite exposes this browser-side key in the client and tile requests; use a key intended for public basemap access, not a private service credential. Remove the key to return to the fallback. A configured but invalid key is still sent to CARTO; this fallback handles missing/blank configuration, not provider outages or invalid credentials.
+
 ## 8. Verify Projects
 
 ```bash
