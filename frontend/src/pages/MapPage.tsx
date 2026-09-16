@@ -1,912 +1,219 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
-import { MapContainer, TileLayer, Marker, CircleMarker, Popup, GeoJSON, useMap } from "react-leaflet";
-import { useMapEvents } from "react-leaflet";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, CircleMarker, useMap, useMapEvents } from "react-leaflet";
 import { Link } from "react-router-dom";
-import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import "../styles/map-console.css";
 import { getBasemapConfig } from "../config/basemap";
-import type { ProjectDetail, ProjectListItem } from "../api/types";
-import { getProjects, getProjectRiskSignal, getProjectEnrichment } from "../api/adapter";
+import { formatLoad, humanize, isMappable, markerRadius, tierColor } from "../config/mapPresentation";
+import type { ProjectDetail, ProjectListItem, ProjectRiskSignalData } from "../api/types";
+import { getProjects, getProjectRiskSignal, getProject } from "../api/adapter";
 import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
-import { PredictionSummary } from "../components/shared/PredictionSummary";
+import { MapPrediction } from "../components/map/MapPrediction";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
+type ColorMode = "evidence" | "model";
 interface MapProject {
   project: ProjectListItem;
-  signalTier: string | null;
-  evidenceCount: number | null;
+  signal: ProjectRiskSignalData | null;
   utility: string | null;
   enriched: boolean;
 }
-
-type ColorMode = "evidence" | "model";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const basemap = getBasemapConfig(import.meta.env.VITE_CARTO_BASEMAP_API_KEY);
+const STATES_URL = "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json";
+const tone = (item: MapProject, mode: ColorMode) => tierColor(mode === "evidence" ? item.signal?.risk_signal_tier ?? null : item.project.risk_tier);
+const tier = (item: MapProject, mode: ColorMode) => mode === "evidence" ? item.signal?.risk_signal_tier ?? (item.enriched ? "unavailable" : "loading") : item.project.risk_tier;
 
-const US_STATES_GJ_URL =
-  "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json";
-
-const MODEL_COLOR: Record<string, string> = {
-  high:     "#ef4444",
-  elevated: "#f59e0b",
-  medium:   "#f59e0b",
-  low:      "#22c55e",
-  unknown:  "#475569",
-};
-
-const SIGNAL_COLOR: Record<string, string> = {
-  high:     "#ef4444",
-  moderate: "#f59e0b",
-  low:      "#22c55e",
-};
-
-const MODEL_LABEL: Record<string, string> = {
-  high: "High", elevated: "Elevated", medium: "Elevated", low: "Low", unknown: "Unknown",
-};
-
-const SIGNAL_LABEL: Record<string, string> = {
-  high: "High", moderate: "Moderate", low: "Low",
-};
-
-const SIZE_EXAMPLES = [
-  { mw: 300,  label: "300 MW" },
-  { mw: 600,  label: "600 MW" },
-  { mw: 1200, label: "1,200 MW" },
-];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function markerRadius(mw: number): number {
-  return Math.max(7, Math.min(28, Math.sqrt(mw / 60) * 4.2));
-}
-
-function markerColor(mode: ColorMode, mp: MapProject): string {
-  if (mode === "evidence") {
-    if (!mp.signalTier) return "#475569"; // loading / unknown
-    return SIGNAL_COLOR[mp.signalTier] ?? "#475569";
-  }
-  return MODEL_COLOR[mp.project.risk_tier] ?? MODEL_COLOR.unknown;
-}
-
-function createProjectIcon(color: string, mw: number): L.DivIcon {
-  const r    = markerRadius(mw);
-  const size = r * 2;
+function projectIcon(item: MapProject, mode: ColorMode, selected: boolean) {
+  const radius = markerRadius(item.project.modeled_primary_load_mw);
   return L.divIcon({
-    className:   "project-marker-icon",
-    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid rgba(255,255,255,0.85);box-shadow:0 1px 6px rgba(0,0,0,0.45);"></div>`,
-    iconSize:    [size, size],
-    iconAnchor:  [r, r],
-    popupAnchor: [0, -r - 2],
+    className: `project-marker-icon ${selected ? "is-selected" : ""}`,
+    // Color is a fixed CSS token; no API strings are inserted into HTML.
+    html: `<span class="map-project-dot" style="--marker-color:${tone(item, mode)};width:${radius * 2}px;height:${radius * 2}px"></span>`,
+    iconSize: [radius * 2, radius * 2], iconAnchor: [radius, radius], popupAnchor: [0, -radius - 4],
   });
 }
-
-function stateBoundaryStyle() {
-  return { color: "#334155", weight: 0.9, fillOpacity: 0, opacity: 0.65 };
+function Field({ label, children, color }: { label: string; children: React.ReactNode; color?: string }) {
+  return <div className="map-field"><dt>{label}</dt><dd style={{ color }}>{children}</dd></div>;
 }
-
-function shouldRenderCoordinate(p: ProjectListItem, showApproximate: boolean): boolean {
-  if (p.latitude == null || p.longitude == null) return false;
-  const lat = Number(p.latitude);
-  const lng = Number(p.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-  const status = p.coordinate_status ?? "unverified";
-  if (status === "missing") return false;
-  const precision = p.coordinate_precision ?? null;
-  if (precision === "state_centroid" || precision === "approximate") return showApproximate;
-  return true;
-}
-
-function precisionNote(precision: string | null | undefined): string | null {
-  if (precision === "city_centroid") return "city-level coordinate";
-  if (precision === "county_centroid") return "county-level coordinate";
-  if (precision === "state_centroid") return "state-level approximate coordinate";
-  if (precision === "approximate") return "approximate coordinate";
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// Tiny sub-components
-// ---------------------------------------------------------------------------
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const,
-      letterSpacing: "0.09em", color: "var(--text-dim)", marginBottom: 8,
-    }}>
-      {children}
-    </div>
-  );
-}
-
-function Divider() {
-  return <div style={{ borderTop: "1px solid var(--border)", margin: "0" }} />;
-}
-
-function LayerRow({
-  label, checked, onChange, disabled, note,
-}: {
-  label: string; checked: boolean; onChange?: (v: boolean) => void;
-  disabled?: boolean; note?: string;
+function MapBehavior({ selected, focusToken, points, fitToken, onReady, pickMode, onPick }: {
+  selected: ProjectListItem | null; focusToken: number; points: ProjectListItem[]; fitToken: number;
+  onReady: () => void; pickMode: boolean; onPick: (lat: number, lng: number) => void;
 }) {
-  return (
-    <label style={{
-      display: "flex", alignItems: "flex-start", gap: 8, cursor: disabled ? "default" : "pointer",
-      marginBottom: 7, opacity: disabled ? 0.45 : 1,
-    }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={e => onChange?.(e.target.checked)}
-        style={{ marginTop: 1, flexShrink: 0, accentColor: "var(--accent)" }}
-      />
-      <div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.3 }}>{label}</div>
-        {note && (
-          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2, fontStyle: "italic" }}>
-            {note}
-          </div>
-        )}
-      </div>
-    </label>
-  );
-}
-
-function ColorDot({ color, size = 10 }: { color: string; size?: number }) {
-  const r = size / 2;
-  return (
-    <svg width={size} height={size} style={{ flexShrink: 0 }}>
-      <circle cx={r} cy={r} r={r - 1} fill={color} fillOpacity={0.88} stroke={color} strokeWidth={0.8} />
-    </svg>
-  );
-}
-
-function PopupField({
-  label, value, color, mono,
-}: { label: string; value: string; color?: string; mono?: boolean }) {
-  return (
-    <div>
-      <div style={{ fontSize: 9, textTransform: "uppercase" as const, letterSpacing: "0.07em", color: "#64748b", marginBottom: 1 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: color ?? "#e2e8f0", fontFamily: mono ? "monospace" : undefined }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function MapClickCapture({ enabled, onPick }: { enabled: boolean; onPick: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click: (event) => {
-      if (!enabled) return;
-      onPick(event.latlng.lat, event.latlng.lng);
-    },
-  });
-  return null;
-}
-
-function MapReadySignal({ onReady }: { onReady: () => void }) {
   const map = useMap();
+  useMapEvents({ click: e => { if (pickMode) onPick(e.latlng.lat, e.latlng.lng); } });
+  useEffect(() => { map.whenReady(onReady); }, [map]);
   useEffect(() => {
-    map.whenReady(onReady);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
+  useEffect(() => {
+    if (selected && isMappable(selected)) map.setView([Number(selected.latitude), Number(selected.longitude)], Math.max(map.getZoom(), 7), { animate: false });
+  }, [map, focusToken]);
+  useEffect(() => {
+    if (!fitToken) return;
+    if (points.length) map.fitBounds(L.latLngBounds(points.map(p => [Number(p.latitude), Number(p.longitude)])), { padding: [55, 55], maxZoom: 9, animate: false });
+    else map.setView([38.5, -96.5], 4);
+  }, [map, fitToken]);
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export function MapPage() {
-  // Data
-  const [mapProjects, setMapProjects] = useState<MapProject[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [stateGeoJSON, setStateGeoJSON] = useState<any | null>(null);
-  const [geoError, setGeoError]       = useState(false);
-
-  // Map initialization gate — markers must not mount until Leaflet is ready
+  const [items, setItems] = useState<MapProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [mapReady, setMapReady] = useState(false);
-
-  // Layer toggles
-  const [showStates, setShowStates] = useState(true);
-  const [showApproximate, setShowApproximate] = useState(true);
-
-  // Color mode
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusToken, setFocusToken] = useState(0);
+  const [fitToken, setFitToken] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>("evidence");
-
-  // Filters
-  const [filterState,      setFilterState]      = useState("all");
-  const [filterModelTier,  setFilterModelTier]  = useState("all");
-  const [filterSignalTier, setFilterSignalTier] = useState("all");
-  const [filterLoadMin,    setFilterLoadMin]    = useState("");
-  const [filterLoadMax,    setFilterLoadMax]    = useState("");
-  const [editingProject, setEditingProject] = useState<ProjectListItem | null>(null);
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState("all");
+  const [risk, setRisk] = useState("all");
+  const [signal, setSignal] = useState("all");
+  const [minLoad, setMinLoad] = useState("");
+  const [maxLoad, setMaxLoad] = useState("");
+  const [showApproximate, setShowApproximate] = useState(true);
+  const [showStates, setShowStates] = useState(false);
+  const [boundaries, setBoundaries] = useState<GeoJSON.GeoJsonObject | null>(null);
+  const [geoError, setGeoError] = useState(false);
+  const [editing, setEditing] = useState<ProjectListItem | null>(null);
   const [pickMode, setPickMode] = useState(false);
-  const [pickedCoordinates, setPickedCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [picked, setPicked] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  // Fetch US state boundaries
   useEffect(() => {
-    fetch(US_STATES_GJ_URL)
-      .then(r => { if (!r.ok) throw new Error("fetch failed"); return r.json(); })
-      .then(setStateGeoJSON)
-      .catch(() => setGeoError(true));
-  }, []);
-
-  // Fetch projects + enrich each in parallel
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    getProjects()
-      .then(async (projects) => {
-        setMapProjects(projects.map(p => ({
-          project: p, signalTier: null, evidenceCount: null, utility: null, enriched: false,
-        })));
-        setLoading(false);
-        await Promise.allSettled(projects.map(async (p) => {
-          const [sig, enr] = await Promise.allSettled([
-            getProjectRiskSignal(p.project_id),
-            getProjectEnrichment(p.project_id),
-          ]);
-          setMapProjects(prev => prev.map(item =>
-            item.project.project_id !== p.project_id ? item : {
-              ...item,
-              signalTier:    sig.status === "fulfilled" ? sig.value.risk_signal_tier : item.signalTier,
-              evidenceCount: sig.status === "fulfilled" ? sig.value.evidence_summary.evidence_count : item.evidenceCount,
-              utility:       enr.status === "fulfilled" ? (enr.value.utility ?? item.utility) : item.utility,
-              enriched:      true,
-            }
-          ));
+    let cancelled = false;
+    setLoading(true); setError(null); setItems([]); setSelectedId(null);
+    getProjects().then(async projects => {
+      if (cancelled) return;
+      setItems(projects.map(project => ({ project, signal: null, utility: null, enriched: false })));
+      setLoading(false);
+      await Promise.allSettled(projects.map(async project => {
+        const [signalResult, enrichment] = await Promise.allSettled([getProjectRiskSignal(project.project_id), getProject(project.project_id)]);
+        if (cancelled) return;
+        setItems(current => current.map(item => item.project.project_id !== project.project_id ? item : {
+          ...item, enriched: true,
+          signal: signalResult.status === "fulfilled" ? signalResult.value : null,
+          utility: enrichment.status === "fulfilled" ? (enrichment.value.utility ?? enrichment.value.phases.find(phase => phase.utility)?.utility ?? null) : null,
         }));
-      })
-      .catch(e => { setError(String(e)); setLoading(false); });
-  }, []);
+      }));
+    }).catch(() => { if (!cancelled) { setError("Project data could not be loaded. Check the local API and try again."); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [reload]);
 
-  // Unique state list
-  const allStates = useMemo(
-    () => [...new Set(mapProjects.map(d => d.project.state).filter(Boolean))].sort() as string[],
-    [mapProjects],
-  );
+  // Optional layer: no remote boundary request until the analyst enables it.
+  useEffect(() => {
+    if (!showStates || boundaries) return;
+    const controller = new AbortController();
+    setGeoError(false);
+    fetch(STATES_URL, { signal: controller.signal }).then(response => {
+      if (!response.ok) throw new Error("Boundary layer unavailable");
+      return response.json();
+    }).then(setBoundaries).catch(() => { if (!controller.signal.aborted) setGeoError(true); });
+    return () => controller.abort();
+  }, [showStates, boundaries]);
 
-  const hasActiveFilter = filterState !== "all" || filterModelTier !== "all" ||
-    filterSignalTier !== "all" || filterLoadMin !== "" || filterLoadMax !== "";
+  const states = useMemo(() => [...new Set(items.map(item => item.project.state).filter(Boolean))].sort(), [items]);
+  const filtered = useMemo(() => items.filter(item => {
+    const p = item.project;
+    const text = `${p.project_name} ${p.developer ?? ""} ${p.county ?? ""} ${p.state}`.toLowerCase();
+    return text.includes(query.trim().toLowerCase()) && (state === "all" || p.state === state)
+      && (risk === "all" || p.risk_tier === risk) && (signal === "all" || item.signal?.risk_signal_tier === signal)
+      && (minLoad === "" || (Number.isFinite(p.modeled_primary_load_mw) && p.modeled_primary_load_mw >= Number(minLoad)))
+      && (maxLoad === "" || (Number.isFinite(p.modeled_primary_load_mw) && p.modeled_primary_load_mw <= Number(maxLoad)));
+  }), [items, query, state, risk, signal, minLoad, maxLoad]);
+  const onMap = filtered.filter(item => isMappable(item.project, showApproximate));
+  const selected = filtered.find(item => item.project.project_id === selectedId) ?? null;
+  // Filtering away a selection clears it rather than silently restoring it later.
+  useEffect(() => { if (selectedId && !selected) setSelectedId(null); }, [selectedId, selected]);
+  const totalLoad = filtered.reduce((sum, item) => sum + (Number.isFinite(item.project.modeled_primary_load_mw) ? Math.max(0, item.project.modeled_primary_load_mw) : 0), 0);
+  const highRisk = filtered.filter(item => item.project.risk_tier === "high").length;
+  const loadedSignals = filtered.filter(item => item.signal !== null).length;
+  const activeFilters = !!query || state !== "all" || risk !== "all" || signal !== "all" || !!minLoad || !!maxLoad;
+  function clearFilters() { setQuery(""); setState("all"); setRisk("all"); setSignal("all"); setMinLoad(""); setMaxLoad(""); }
+  function selectItem(item: MapProject, pan = false) { setSelectedId(item.project.project_id); if (pan && isMappable(item.project, showApproximate)) setFocusToken(value => value + 1); }
+  function closeEditor() { setEditing(null); setPickMode(false); setPicked(null); }
+  function applyUpdatedProject(updated: ProjectDetail) {
+    setItems(current => current.map(item => item.project.project_id === updated.project_id ? { ...item, project: { ...item.project, ...updated } } : item));
+    closeEditor();
+  }
 
-  const clearFilters = useCallback(() => {
-    setFilterState("all"); setFilterModelTier("all");
-    setFilterSignalTier("all"); setFilterLoadMin(""); setFilterLoadMax("");
-  }, []);
-
-  const filtered = useMemo(() => mapProjects.filter(d => {
-    const p = d.project;
-    if (filterState !== "all" && p.state !== filterState) return false;
-    if (filterModelTier !== "all" && p.risk_tier !== filterModelTier) return false;
-    if (filterSignalTier !== "all" && d.signalTier !== filterSignalTier) return false;
-    const mw = p.modeled_primary_load_mw;
-    if (filterLoadMin !== "" && mw < Number(filterLoadMin)) return false;
-    if (filterLoadMax !== "" && mw > Number(filterLoadMax)) return false;
-    return true;
-  }), [mapProjects, filterState, filterModelTier, filterSignalTier, filterLoadMin, filterLoadMax]);
-
-  const onMap  = filtered.filter(d => shouldRenderCoordinate(d.project, showApproximate));
-  const offMap = mapProjects.filter(d => d.project.latitude == null || d.project.longitude == null);
-  const hiddenApproximateCount = filtered.filter(
-    d => d.project.latitude != null && d.project.longitude != null && !shouldRenderCoordinate(d.project, showApproximate),
-  ).length;
-
-  const applyUpdatedProject = useCallback((updated: ProjectDetail) => {
-    setMapProjects(prev => prev.map(item => item.project.project_id !== updated.project_id ? item : {
-      ...item,
-      project: {
-        ...item.project,
-        latitude: updated.latitude,
-        longitude: updated.longitude,
-        coordinate_status: updated.coordinate_status,
-        coordinate_precision: updated.coordinate_precision,
-        coordinate_source: updated.coordinate_source,
-        coordinate_source_url: updated.coordinate_source_url,
-        coordinate_notes: updated.coordinate_notes,
-        coordinate_confidence: updated.coordinate_confidence,
-        coordinate_updated_at: updated.coordinate_updated_at,
-        coordinate_verified_at: updated.coordinate_verified_at,
-      },
-    }));
-  }, []);
-
-  // Stats (always from full filtered set, not just onMap)
-  const stateCounts = useMemo(() => {
-    const m: Record<string, number> = {};
-    filtered.forEach(d => { const s = d.project.state; if (s) m[s] = (m[s] ?? 0) + 1; });
-    return Object.entries(m).sort(([, a], [, b]) => b - a);
-  }, [filtered]);
-
-  const modelTierCounts = useMemo(() => {
-    const m: Record<string, number> = { high: 0, elevated: 0, low: 0 };
-    filtered.forEach(d => { const t = d.project.risk_tier; if (t in m) m[t]++; });
-    return m;
-  }, [filtered]);
-
-  const signalTierCounts = useMemo(() => {
-    const m: Record<string, number> = { high: 0, moderate: 0, low: 0 };
-    const enrichedCount = filtered.filter(d => d.enriched).length;
-    filtered.forEach(d => { const t = d.signalTier; if (t && t in m) m[t]++; });
-    return { counts: m, enrichedCount, total: filtered.length };
-  }, [filtered]);
-
-  const sel: React.CSSProperties = {
-    width: "100%", padding: "5px 8px", fontSize: 11,
-    background: "var(--bg)", border: "1px solid var(--border)",
-    borderRadius: 4, color: "var(--text)", cursor: "pointer",
-  };
-  const inp: React.CSSProperties = {
-    padding: "5px 8px", fontSize: 11, background: "var(--bg)",
-    border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)",
-    boxSizing: "border-box" as const, width: "100%",
-  };
-  const lbl: React.CSSProperties = {
-    fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const,
-    letterSpacing: "0.07em", color: "var(--text-dim)", marginBottom: 4, display: "block",
-  };
-
-  return (
-    <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
-
-      {/* ─────────────── Sidebar ─────────────── */}
-      <aside style={{
-        width: 272, flexShrink: 0, background: "var(--bg-surface)",
-        borderRight: "1px solid var(--border)", display: "flex",
-        flexDirection: "column", overflow: "hidden",
-      }}>
-
-        {/* Header */}
-        <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>
-            Project Map
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {loading
-              ? "Loading projects…"
-              : `${onMap.length} of ${filtered.length} project${filtered.length !== 1 ? "s" : ""} on map`}
-            {hasActiveFilter && (
-              <span style={{ color: "var(--accent)", marginLeft: 6 }}>· filtered</span>
-            )}
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-
-          {/* ── Layers ── */}
-          <div style={{ padding: "12px 16px 10px" }}>
-            <SectionTitle>Layers</SectionTitle>
-            <LayerRow
-              label="State boundaries"
-              checked={showStates}
-              onChange={setShowStates}
-              note={geoError ? "Failed to load — check network" : !stateGeoJSON && showStates ? "Loading…" : undefined}
-            />
-            <LayerRow
-              label="Show approximate coordinates"
-              checked={showApproximate}
-              onChange={setShowApproximate}
-              note={hiddenApproximateCount ? `${hiddenApproximateCount} approximate or unknown marker${hiddenApproximateCount !== 1 ? "s" : ""} hidden` : undefined}
-            />
-            <LayerRow
-              label="Utility territory polygons"
-              checked={false}
-              disabled
-              note="Territory polygons not available from backend"
-            />
-            <LayerRow
-              label="Region / ISO overlay"
-              checked={false}
-              disabled
-              note="Region name not in current API response"
-            />
-          </div>
-
-          <Divider />
-
-          {/* ── Color Mode ── */}
-          <div style={{ padding: "12px 16px 10px" }}>
-            <SectionTitle>Color markers by</SectionTitle>
-            <div style={{ display: "flex", gap: 6 }}>
-              {(["evidence", "model"] as ColorMode[]).map(mode => {
-                const active = colorMode === mode;
-                return (
-                  <button
-                    key={mode}
-                    onClick={() => setColorMode(mode)}
-                    style={{
-                      flex: 1, padding: "5px 4px", fontSize: 10, fontWeight: 600,
-                      border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                      borderRadius: 4, cursor: "pointer",
-                      background: active ? "rgba(96,165,250,0.12)" : "transparent",
-                      color: active ? "var(--accent)" : "var(--text-muted)",
-                      textAlign: "center",
-                    }}
-                  >
-                    {mode === "evidence" ? "Evidence Signal" : "Model Risk"}
-                  </button>
-                );
-              })}
-            </div>
-            {colorMode === "evidence" && signalTierCounts.enrichedCount < signalTierCounts.total && (
-              <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 6, fontStyle: "italic" }}>
-                {signalTierCounts.total - signalTierCounts.enrichedCount} project
-                {signalTierCounts.total - signalTierCounts.enrichedCount !== 1 ? "s" : ""} still loading signal data
-              </div>
-            )}
-          </div>
-
-          <Divider />
-
-          {/* ── Filters ── */}
-          <div style={{ padding: "12px 16px 10px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <SectionTitle>Filters</SectionTitle>
-
-            <div>
-              <span style={lbl}>State</span>
-              <select value={filterState} onChange={e => setFilterState(e.target.value)} style={sel}>
-                <option value="all">All states ({mapProjects.length})</option>
-                {allStates.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <span style={lbl}>Evidence Signal Tier</span>
-              <select value={filterSignalTier} onChange={e => setFilterSignalTier(e.target.value)} style={sel}>
-                <option value="all">All</option>
-                <option value="high">High</option>
-                <option value="moderate">Moderate</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-
-            <div>
-              <span style={lbl}>Model Risk Tier</span>
-              <select value={filterModelTier} onChange={e => setFilterModelTier(e.target.value)} style={sel}>
-                <option value="all">All</option>
-                <option value="high">High</option>
-                <option value="elevated">Elevated</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-
-            <div>
-              <span style={lbl}>Load Range (MW)</span>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input type="number" placeholder="Min" value={filterLoadMin}
-                  onChange={e => setFilterLoadMin(e.target.value)}
-                  style={{ ...inp, width: "calc(50% - 10px)" }} />
-                <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>–</span>
-                <input type="number" placeholder="Max" value={filterLoadMax}
-                  onChange={e => setFilterLoadMax(e.target.value)}
-                  style={{ ...inp, width: "calc(50% - 10px)" }} />
-              </div>
-            </div>
-
-            {hasActiveFilter && (
-              <button onClick={clearFilters} style={{
-                fontSize: 10, color: "var(--accent)", background: "none",
-                border: "1px solid var(--border)", borderRadius: 4,
-                cursor: "pointer", padding: "4px 8px", alignSelf: "flex-start",
-              }}>
-                ✕ Clear all filters
-              </button>
-            )}
-          </div>
-
-          <Divider />
-
-          {/* ── Legend ── */}
-          <div style={{ padding: "12px 16px 10px" }}>
-            <SectionTitle>
-              Legend — {colorMode === "evidence" ? "Evidence Signal Tier" : "Model Risk Tier"}
-            </SectionTitle>
-
-            {/* Color scale */}
-            <div style={{ marginBottom: 10 }}>
-              {colorMode === "evidence" ? (
-                <>
-                  {([
-                    ["high",     SIGNAL_COLOR.high,     "High signal strength"],
-                    ["moderate", SIGNAL_COLOR.moderate, "Moderate signal"],
-                    ["low",      SIGNAL_COLOR.low,      "Low signal"],
-                    ["loading",  "#475569",              "Loading / unknown"],
-                  ] as [string, string, string][]).map(([, color, desc]) => (
-                    <div key={desc} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                      <ColorDot color={color} size={11} />
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</span>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <>
-                  {([
-                    [MODEL_COLOR.high,     "High model risk"],
-                    [MODEL_COLOR.elevated, "Elevated model risk"],
-                    [MODEL_COLOR.low,      "Low model risk"],
-                  ] as [string, string][]).map(([color, desc]) => (
-                    <div key={desc} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                      <ColorDot color={color} size={11} />
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-
-            {/* Size scale */}
-            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
-              <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 6 }}>
-                Marker size = modeled load (MW)
-              </div>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
-                {SIZE_EXAMPLES.map(({ mw, label }) => {
-                  const r = markerRadius(mw);
-                  return (
-                    <div key={mw} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                      <svg width={r * 2 + 2} height={r * 2 + 2}>
-                        <circle
-                          cx={r + 1} cy={r + 1} r={r}
-                          fill="#475569" fillOpacity={0.7}
-                          stroke="#94a3b8" strokeWidth={1}
-                        />
-                      </svg>
-                      <span style={{ fontSize: 9, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
-                        {label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <Divider />
-
-          {/* ── Stats ── */}
-          <div style={{ padding: "12px 16px 10px" }}>
-            <SectionTitle>
-              Stats{hasActiveFilter ? " (filtered)" : ""}
-            </SectionTitle>
-
-            {/* By State */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 5, fontWeight: 600 }}>
-                By State
-              </div>
-              {stateCounts.length === 0 ? (
-                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>No data</div>
-              ) : (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px" }}>
-                  {stateCounts.map(([state, count]) => (
-                    <div key={state} style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      <span style={{ fontWeight: 700, color: "var(--text)" }}>{state}</span>
-                      <span style={{ color: "var(--text-dim)", marginLeft: 3 }}>{count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* By Model Risk */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 5, fontWeight: 600 }}>
-                Model Risk Tier
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {(["high", "elevated", "low"] as const).map(tier => (
-                  <div key={tier} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <ColorDot color={MODEL_COLOR[tier]} size={9} />
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {MODEL_LABEL[tier]}
-                    </span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
-                      {modelTierCounts[tier]}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* By Evidence Signal */}
-            <div>
-              <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 5, fontWeight: 600 }}>
-                Evidence Signal Tier
-                {signalTierCounts.enrichedCount < signalTierCounts.total && (
-                  <span style={{ fontStyle: "italic", fontWeight: 400, marginLeft: 4 }}>
-                    ({signalTierCounts.enrichedCount}/{signalTierCounts.total} loaded)
-                  </span>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {(["high", "moderate", "low"] as const).map(tier => (
-                  <div key={tier} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <ColorDot color={SIGNAL_COLOR[tier]} size={9} />
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {SIGNAL_LABEL[tier]}
-                    </span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
-                      {signalTierCounts.counts[tier]}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <Divider />
-
-          {/* ── Missing Coordinates ── */}
-          <div style={{ padding: "12px 16px 14px" }}>
-            <SectionTitle>
-              No Coordinates ({offMap.length})
-            </SectionTitle>
-            {offMap.length === 0 ? (
-              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>All projects are mapped.</div>
-            ) : (
-              <>
-                <div style={{ fontSize: 10, color: "var(--text-dim)", fontStyle: "italic", marginBottom: 8, lineHeight: 1.4 }}>
-                  Add coordinates in Discover (manual capture) or on the Project Detail overview.
-                </div>
-                {offMap.map(d => (
-                  <Link
-                    key={d.project.project_id}
-                    to={`/projects/${d.project.project_id}`}
-                    style={{ display: "block", textDecoration: "none", marginBottom: 8 }}
-                  >
-                    <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, lineHeight: 1.3 }}>
-                      {d.project.project_name}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                      {d.project.county ? `${d.project.county} Co., ` : ""}{d.project.state}
-                    </div>
-                  </Link>
-                ))}
-              </>
-            )}
-          </div>
-
-        </div>
-      </aside>
-
-      {/* ─────────────── Map ─────────────── */}
-      <div style={{ flex: 1, position: "relative" }}>
-        {error && (
-          <div style={{
-            position: "absolute", top: 12, left: 12, zIndex: 1000,
-            background: "#7f1d1d", border: "1px solid #ef4444", borderRadius: 6,
-            padding: "8px 12px", fontSize: 12, color: "#fca5a5",
-          }}>
-            {error}
-          </div>
-        )}
-
-        {basemap.fallback && (
-          <div role="status" style={{
-            position: "absolute", bottom: 28, left: 12, right: 12, zIndex: 800,
-            width: "fit-content", maxWidth: "calc(100% - 24px)",
-            background: "rgba(15,23,42,0.9)", borderRadius: 4,
-            padding: "6px 10px", fontSize: 11, color: "#cbd5e1", pointerEvents: "none",
-          }}>
-            Fallback basemap active. Configure VITE_CARTO_BASEMAP_API_KEY to use CARTO.
-          </div>
-        )}
-
-        <MapContainer
-          center={[38.5, -96.5]}
-          zoom={4}
-          style={{ width: "100%", height: "100%" }}
-          zoomControl
-        >
-          <TileLayer
-            url={basemap.url}
-            attribution={basemap.attribution}
-            maxZoom={basemap.maxZoom}
-          />
-
-          {/* State boundaries */}
-          {showStates && stateGeoJSON && (
-            <GeoJSON
-              key="us-states"
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              data={stateGeoJSON as any}
-              style={stateBoundaryStyle}
-            />
-          )}
-          <MapReadySignal onReady={() => setMapReady(true)} />
-          <MapClickCapture
-            enabled={pickMode}
-            onPick={(latitude, longitude) => setPickedCoordinates({ latitude, longitude })}
-          />
-          {pickedCoordinates && (
-            <CircleMarker
-              center={[pickedCoordinates.latitude, pickedCoordinates.longitude]}
-              radius={8}
-              pathOptions={{ fillColor: "#60a5fa", fillOpacity: 0.45, color: "#bfdbfe", weight: 2 }}
-            />
-          )}
-
-          {/* Project markers — rendered only after Leaflet map is fully ready.
-              Using Marker + DivIcon instead of CircleMarker for reliable
-              popup binding on first click after fresh page load. */}
-          {mapReady && onMap.map((mp) => {
-            const { project: p } = mp;
-            const lat   = Number(p.latitude);
-            const lng   = Number(p.longitude);
-            const color = markerColor(colorMode, mp);
-            const icon  = createProjectIcon(color, p.modeled_primary_load_mw);
-
-            return (
-              <Marker
-                key={`project-${p.project_id}-${p.latitude}-${p.longitude}-${p.coordinate_precision ?? "unknown"}`}
-                position={[lat, lng]}
-                icon={icon}
-              >
-                <Popup minWidth={280} maxWidth={340} className="power-risk-popup">
-                  <div style={{
-                    fontFamily: "system-ui, -apple-system, sans-serif",
-                    color: "#e2e8f0", padding: "2px 0", minWidth: 240,
-                  }}>
-                    {/* Name */}
-                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, lineHeight: 1.3, color: "#f1f5f9" }}>
-                      {p.project_name}
-                    </div>
-
-                    {/* Location */}
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
-                      {p.county ? `${p.county} County, ` : ""}{p.state}
-                    </div>
-
-                    {/* Stats grid */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px 14px", marginBottom: 10 }}>
-                      <PopupField label="Modeled Load" value={`${p.modeled_primary_load_mw.toLocaleString()} MW`} mono />
-                      <PopupField label="Phases" value={String(p.phase_count)} mono />
-                      <PopupField
-                        label="Evidence Signal"
-                        value={mp.signalTier ? (SIGNAL_LABEL[mp.signalTier] ?? mp.signalTier) : (mp.enriched ? "—" : "loading…")}
-                        color={mp.signalTier ? SIGNAL_COLOR[mp.signalTier] : "#64748b"}
-                      />
-                      <PopupField
-                        label="Model Risk"
-                        value={MODEL_LABEL[p.risk_tier] ?? p.risk_tier}
-                        color={MODEL_COLOR[p.risk_tier]}
-                      />
-                      <PopupField
-                        label="Evidence Count"
-                        value={mp.evidenceCount != null ? String(mp.evidenceCount) : (mp.enriched ? "—" : "loading…")}
-                        mono
-                      />
-                      <PopupField
-                        label="Lifecycle"
-                        value={p.lifecycle_state.replace(/_/g, " ")}
-                      />
-                    </div>
-
-                    {/* Utility if available */}
-                    {mp.utility && (
-                      <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8, lineHeight: 1.4 }}>
-                        <span style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          Utility{" "}
-                        </span>
-                        {mp.utility}
-                      </div>
-                    )}
-
-                    <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8, marginBottom: 8 }}>
-                      {precisionNote(p.coordinate_precision) && (
-                        <div style={{ color: "#fbbf24", fontSize: 11, marginBottom: 6 }}>
-                          {precisionNote(p.coordinate_precision)}
-                        </div>
-                      )}
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 10px" }}>
-                        <PopupField label="Coord status" value={(p.coordinate_status ?? "unverified").replace(/_/g, " ")} />
-                        <PopupField label="Precision" value={(p.coordinate_precision ?? "unknown").replace(/_/g, " ")} />
-                        <PopupField label="Confidence" value={p.coordinate_confidence != null ? p.coordinate_confidence.toFixed(2) : "—"} mono />
-                        <PopupField label="Source" value={(p.coordinate_source ?? "—").replace(/_/g, " ")} />
-                        <PopupField label="Updated" value={p.coordinate_updated_at ? new Date(p.coordinate_updated_at).toLocaleDateString() : "—"} />
-                      </div>
-                    </div>
-
-                    {/* Prediction section */}
-                    <PredictionSummary projectId={p.project_id} />
-
-                    {/* Which tier is coloring this marker */}
-                    <div style={{
-                      fontSize: 10, color: "#64748b", margin: "8px 0", fontStyle: "italic",
-                    }}>
-                      Marker color: {colorMode === "evidence" ? "evidence signal tier" : "model risk tier"}
-                    </div>
-
-                    {/* Detail link */}
-                    <div style={{ borderTop: "1px solid #2d3748", paddingTop: 8, display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <Link
-                        to={`/projects/${p.project_id}`}
-                        style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}
-                      >
-                        View project details →
-                      </Link>
-                      <button
-                        onClick={() => {
-                          setEditingProject(p);
-                          setPickMode(false);
-                          setPickedCoordinates(null);
-                        }}
-                        style={{ fontSize: 11, color: "#60a5fa", background: "transparent", border: 0, padding: 0, cursor: "pointer", fontWeight: 600 }}
-                      >
-                        Edit coordinates
-                      </button>
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
-        </MapContainer>
-        {editingProject && (
-          <div style={{
-            position: "absolute",
-            right: 16,
-            top: 16,
-            zIndex: 1000,
-            width: 420,
-            maxWidth: "calc(100% - 32px)",
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
-            padding: 16,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{editingProject.project_name}</div>
-                <div style={{ fontSize: 11, color: pickMode ? "var(--accent)" : "var(--text-dim)", marginTop: 2 }}>
-                  {pickMode ? "Click the map to fill latitude and longitude." : "Coordinate editor"}
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingProject(null);
-                  setPickMode(false);
-                  setPickedCoordinates(null);
-                }}
-                style={{ background: "transparent", border: 0, color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
-              >
-                x
-              </button>
-            </div>
-            <ProjectCoordinateEditor
-              project={editingProject}
-              pickedCoordinates={pickedCoordinates}
-              onStartPick={() => setPickMode(true)}
-              onCancel={() => {
-                setEditingProject(null);
-                setPickMode(false);
-                setPickedCoordinates(null);
-              }}
-              onSaved={(updated) => {
-                applyUpdatedProject(updated);
-                setEditingProject(null);
-                setPickMode(false);
-                setPickedCoordinates(null);
-              }}
-            />
-          </div>
-        )}
-      </div>
+  return <section className="map-console" aria-label="Build constraint intelligence">
+    <header className="map-intelligence-header">
+      <div><p className="map-eyebrow">POWER RISK / SPATIAL INTELLIGENCE</p><h1>Build-constraint intelligence<span className="map-heading-dot">.</span></h1><p className="map-subtitle">Locate exposure. Inspect the evidence. Resolve the unknowns.</p></div>
+      <div className="map-header-links"><span className="map-readonly">PROJECT INTELLIGENCE</span><Link to="/constraint-dashboard">Constraint dashboard ↗</Link></div>
+    </header>
+    <div className="map-stat-strip" aria-label="Filtered project statistics">
+      <div><span>Mapped / filtered</span><strong>{loading ? "—" : `${onMap.length} / ${filtered.length}`}</strong><small>Projects in this view</small></div>
+      <div><span>Modeled load</span><strong>{loading ? "—" : totalLoad > 0 ? formatLoad(totalLoad) : "—"} <em>MW</em></strong><small>Reported modeled load · filtered projects</small></div>
+      <div className="map-stat-hot"><span>High model risk</span><strong>{loading ? "—" : highRisk.toString().padStart(2, "0")}</strong><small>Model tier · not verified constraints</small></div>
+      <div><span>Signal coverage</span><strong>{loading ? "—" : `${loadedSignals} / ${filtered.length}`}</strong><small>Projects with signal data available</small></div>
     </div>
-  );
+    <div className={`map-workspace ${selected ? "has-selection" : ""}`}>
+      <aside className="map-browser" aria-label="Project filters and list">
+        <div className="map-panel-heading"><h2>Explore projects</h2><span>{filtered.length.toString().padStart(2, "0")}</span></div>
+        <div className="map-filter-panel">
+          <label className="map-search"><span>Search projects</span><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Project, developer, location…" /></label>
+          <div className="map-filter-grid">
+            <label>Geography<select value={state} onChange={e => setState(e.target.value)}><option value="all">All states</option>{states.map(s => <option key={s}>{s}</option>)}</select></label>
+            <label>Model risk<select value={risk} onChange={e => setRisk(e.target.value)}><option value="all">All tiers</option>{["high", "elevated", "medium", "moderate", "low", "unknown"].map(t => <option key={t} value={t}>{humanize(t)}</option>)}</select></label>
+            <label>Evidence signal<select value={signal} onChange={e => setSignal(e.target.value)}><option value="all">All signals</option>{["high", "moderate", "low"].map(t => <option key={t} value={t}>{humanize(t)}</option>)}</select></label>
+            <div className="map-load-range"><span>Modeled MW</span><div><input aria-label="Minimum modeled load" type="number" min="0" value={minLoad} onChange={e => setMinLoad(e.target.value)} placeholder="Min"/><input aria-label="Maximum modeled load" type="number" min="0" value={maxLoad} onChange={e => setMaxLoad(e.target.value)} placeholder="Max"/></div></div>
+          </div>
+          {activeFilters && <button className="map-text-button" onClick={clearFilters}>Reset filters</button>}
+        </div>
+        <div className="map-list-heading"><span>PROJECT REGISTER</span><span>{onMap.length} mapped</span></div>
+        <div className="map-project-list">
+          {loading && <div className="map-list-state" role="status">Loading project register…</div>}
+          {!loading && !error && !filtered.length && <div className="map-list-state">No projects match these filters.<button className="map-text-button" onClick={clearFilters}>Reset filters</button></div>}
+          {filtered.map(item => <button key={item.project.project_id} className={`map-project-row ${selectedId === item.project.project_id ? "selected" : ""}`} aria-pressed={selectedId === item.project.project_id} onClick={() => selectItem(item, true)} style={{ "--row-signal": tone(item, colorMode) } as CSSProperties}>
+            <span className="map-row-top"><span className="map-tier-label">{humanize(tier(item, colorMode))} {colorMode === "model" ? "risk" : "signal"}</span><span>{formatLoad(item.project.modeled_primary_load_mw)} MW</span></span>
+            <strong>{item.project.project_name}</strong><span className="map-row-location">{[item.project.county, item.project.state].filter(Boolean).join(", ") || "Location unknown"}</span>
+            <span className="map-row-bottom"><span>{humanize(item.project.lifecycle_state)}</span><span>{isMappable(item.project, showApproximate) ? "Locate ↗" : isMappable(item.project) ? "Approx. hidden" : "Unmapped"}</span></span>
+          </button>)}
+        </div>
+        <div className="map-register-foot">{filtered.length - onMap.length} not mapped in this view · coordinates may be missing or hidden.</div>
+      </aside>
+      <div className="map-stage">
+        <div className="map-canvas-toolbar">
+          <div className="map-segmented" role="group" aria-label="Marker color mode"><button aria-pressed={colorMode === "evidence"} onClick={() => setColorMode("evidence")}>Evidence signal</button><button aria-pressed={colorMode === "model"} onClick={() => setColorMode("model")}>Model risk</button></div>
+          <button className="map-fit-button" onClick={() => setFitToken(value => value + 1)}>Fit view</button>
+        </div>
+        <MapContainer center={[38.5, -96.5]} zoom={4} className={`map-canvas ${basemap.fallback ? "map-fallback" : ""}`} zoomControl>
+          <TileLayer url={basemap.url} attribution={basemap.attribution} maxZoom={basemap.maxZoom} />
+          {showStates && boundaries && <GeoJSON data={boundaries} style={{ color: "#7d90a5", weight: 1, fillOpacity: 0, opacity: 0.6 }} />}
+          <MapBehavior selected={selected && isMappable(selected.project, showApproximate) ? selected.project : null} focusToken={focusToken} points={onMap.map(item => item.project)} fitToken={fitToken} onReady={() => setMapReady(true)} pickMode={pickMode} onPick={(latitude, longitude) => setPicked({ latitude, longitude })} />
+          {picked && <CircleMarker center={[picked.latitude, picked.longitude]} radius={8} pathOptions={{ color: "var(--map-cyan)" }} />}
+          {mapReady && onMap.map(item => <Marker key={item.project.project_id} position={[Number(item.project.latitude), Number(item.project.longitude)]} icon={projectIcon(item, colorMode, item.project.project_id === selectedId)} title={item.project.project_name} alt={item.project.project_name} zIndexOffset={selectedId === item.project.project_id ? 1000 : 0} eventHandlers={{ click: () => selectItem(item), keydown: event => { if (event.originalEvent.key === "Enter") selectItem(item); } }}>
+            <Popup className="map-console-popup" minWidth={220} maxWidth={280}><div className="map-popup-content"><span className="map-eyebrow">{humanize(tier(item, colorMode))} {colorMode === "model" ? "model risk" : "evidence signal"}</span><strong>{item.project.project_name}</strong><p>{[item.project.county, item.project.state].filter(Boolean).join(", ")} · {formatLoad(item.project.modeled_primary_load_mw)} MW modeled</p><Link to={`/projects/${item.project.project_id}`}>Open project details ↗</Link></div></Popup>
+          </Marker>)}
+        </MapContainer>
+        {(loading || error || !onMap.length) && <div className={`map-state-card ${error ? "has-error" : ""}`} role={error ? "alert" : "status"}>
+          <span className="map-eyebrow">{error ? "DATA CONNECTION" : loading ? "LOADING INTELLIGENCE" : "NO MAPPABLE RECORDS"}</span>
+          <h2>{error ? "Map available. Project data unavailable." : loading ? "Building your spatial view…" : "No projects to plot in this view."}</h2>
+          <p>{error ?? (loading ? "Loading projects and their existing evidence signals." : "Adjust filters or include approximate coordinates. Unmapped records remain in the project register.")}</p>
+          {error ? <button onClick={() => setReload(value => value + 1)}>Retry project data</button> : !loading && activeFilters ? <button onClick={clearFilters}>Reset filters</button> : null}
+        </div>}
+        <details className="map-layer-control"><summary>Map layers</summary><label><input type="checkbox" checked={showApproximate} onChange={e => setShowApproximate(e.target.checked)}/>Include approximate locations</label><label><input type="checkbox" checked={showStates} onChange={e => setShowStates(e.target.checked)}/>State boundaries</label>{showStates && <p>{geoError ? "Boundary layer unavailable. Project markers remain usable." : !boundaries ? "Loading boundaries…" : "State boundaries visible"}</p>}</details>
+        <div className="map-legend" aria-label="Map legend"><span>{colorMode === "evidence" ? "SIGNAL" : "RISK"}</span><i style={{ background: "var(--map-hot)" }}/>High<i style={{ background: "var(--map-amber)" }}/>{colorMode === "evidence" ? "Moderate" : "Elevated / medium"}<i style={{ background: "var(--map-slate)" }}/>Low / unknown <span className="map-legend-size">Size = modeled MW</span></div>
+      </div>
+      {selected && <aside className="map-inspector" aria-label="Selected project details">
+        <div className="map-panel-heading"><h2>Project intelligence</h2><button onClick={() => setSelectedId(null)} aria-label="Close project details">×</button></div>
+        <div className="map-inspector-body">
+          <span className="map-tier-badge" style={{ color: tone(selected, colorMode) }}>{humanize(tier(selected, colorMode))} {colorMode === "evidence" ? "evidence signal" : "model risk"}</span>
+          <h2>{selected.project.project_name}</h2><p className="map-inspector-location">{[selected.project.county, selected.project.state].filter(Boolean).join(", ") || "Location unknown"}</p>
+          <p className="map-lifecycle">{humanize(selected.project.lifecycle_state)}</p>
+          <dl className="map-detail-grid"><Field label="Modeled load">{formatLoad(selected.project.modeled_primary_load_mw)} MW</Field><Field label="Evidence records">{selected.signal?.evidence_summary.evidence_count ?? (selected.enriched ? "Unavailable" : "Loading…")}</Field><Field label="Model risk" color={tierColor(selected.project.risk_tier)}>{humanize(selected.project.risk_tier)}</Field><Field label="Utility">{selected.utility ?? "Unknown"}</Field></dl>
+          <section className="map-detail-section"><h3>Evidence-backed signal</h3><p>{selected.signal ? humanize(selected.signal.risk_signal) : selected.enriched ? "Signal data unavailable. No constraint inferred." : "Loading signal data…"}</p>{!!selected.signal?.drivers.length && <ul>{selected.signal.drivers.map((driver, index) => <li key={index}>{humanize(driver)}</li>)}</ul>}<p className="map-caveat">Signal strength and model risk are separate from analyst review status.</p></section>
+          <section className="map-detail-section"><h3>Location confidence</h3><dl className="map-detail-grid"><Field label="Coordinate status" color={selected.project.coordinate_status === "verified" ? "var(--map-green)" : undefined}>{humanize(selected.project.coordinate_status ?? "unverified")}</Field><Field label="Precision">{humanize(selected.project.coordinate_precision)}</Field><Field label="Coordinate confidence">{selected.project.coordinate_confidence != null ? selected.project.coordinate_confidence.toFixed(2) : "Unknown"}</Field><Field label="Source">{humanize(selected.project.coordinate_source)}</Field></dl>{["city_centroid", "county_centroid", "state_centroid", "approximate"].includes(selected.project.coordinate_precision ?? "") && <p className="map-location-warning">Approximate location; not an exact site boundary.</p>}</section>
+          <details className="map-prediction"><summary>Model prediction</summary><MapPrediction key={selected.project.project_id} projectId={selected.project.project_id}/></details>
+          <Link className="map-primary-link" to={`/projects/${selected.project.project_id}`}>Open project details ↗</Link>
+          <button className="map-text-button" onClick={() => { setEditing(selected.project); setPicked(null); setPickMode(false); }}>Edit coordinates</button>
+        </div>
+      </aside>}
+    </div>
+    <footer className="map-console-footer"><span role="status">{basemap.fallback ? "Fallback basemap active · OpenStreetMap" : "CARTO dark basemap"}</span><span>{basemap.fallback ? "Optional CARTO key available in local setup" : "Provider attribution on map"}</span><span>Existing project data · no downstream actions</span></footer>
+    {editing && <div className="map-coordinate-editor" role="dialog" aria-label="Edit project coordinates"><div className="map-panel-heading"><h2>{editing.project_name}</h2><button aria-label="Close coordinate editor" onClick={closeEditor}>×</button></div>{pickMode && <p className="map-location-warning">Click the map to fill coordinates. Changes are not saved until you submit.</p>}<ProjectCoordinateEditor project={editing} pickedCoordinates={picked} onStartPick={() => setPickMode(true)} onCancel={closeEditor} onSaved={applyUpdatedProject}/></div>}
+  </section>;
 }

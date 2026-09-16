@@ -395,6 +395,20 @@ VITE_CARTO_BASEMAP_API_KEY=your-carto-basemap-key
 
 Do not commit API keys or local env files. Vite exposes this browser-side key in the client and tile requests; use a key intended for public basemap access, not a private service credential. Remove the key to return to the fallback. A configured but invalid key is still sent to CARTO; this fallback handles missing/blank configuration, not provider outages or invalid credentials.
 
+### Dark build-constraint intelligence console
+
+The map uses a graphite, map-first Leaflet console with filtered summary metrics, compact controls, a project register, and a selected-project inspector. Search, state, model-risk, evidence-signal, and modeled-load filters apply to both the register and map. Clicking a list item selects and focuses its marker when coordinates are visible; clicking a marker selects it and opens a concise popup. Fit view frames the currently mapped records. Records without valid coordinates remain in the register. Approximate coordinates can be hidden, and location confidence is labeled separately from project risk.
+
+Color semantics are explicit: red-orange means high evidence signal or high model risk in the selected mode; amber means moderate signal or elevated/medium/moderate model risk; slate means low, unknown, or unavailable signal/risk. Green marks explicitly verified coordinate status, not inferred analyst approval. Cyan marks navigation and coordinate tools. Magenta (permitting/legal/community) and cyan (water/infrastructure) category tokens are reserved; no category is assigned without structured supporting data. Marker area follows modeled MW, not confidence, review priority, or committed power. The selected marker gets a white ring and glow. Signal strength, model risk, and analyst review status are distinct.
+
+The no-key OpenStreetMap fallback is darkened with a CSS filter on the tile pane only; markers, controls, and attribution keep their colors. The footer identifies the active fallback without an error. Optional CARTO key setup remains as above. State boundaries are opt-in and fetch only when enabled. Loading, empty, and API-error states preserve map controls, and failed project loads offer Retry. All new styling is scoped to the map route.
+
+The map reads existing project, phase, score, signal, and prediction data. It no longer calls the enrichment GET endpoint, which writes an enrichment snapshot; available utility names come from existing project/phase records. The existing coordinate editor remains an explicit save action—do not submit it during read-only smoke tests.
+
+Local smoke: start the backend and frontend using sections 6–7 (set `VITE_USE_MOCK=false` for real local data). Open `/map`, `/discovered-sources`, and `/constraint-dashboard`. Confirm fallback attribution, dark tiles, markers, popup/drawer selection, list-to-map focus, Fit view, filters, approximate-location toggle, and empty states. Confirm the review and constraint pages still load. Block non-tile external requests during restricted smoke; leave state boundaries disabled. Do not submit review or coordinate changes, run downstream pipelines, or commit secrets, env files, local databases, screenshots, or build output.
+
+Follow-up: `map-vector-layers-v0` can evaluate MapLibre/deck.gl for vector styling, dense-point clustering, and evidence-backed constraint overlays. This branch keeps Leaflet and adds no dependencies.
+
 ## 8. Verify Projects
 
 ```bash
