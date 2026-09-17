@@ -20,6 +20,7 @@ class BackfillSummary:
     dataset: str
     dry_run: bool
     import_run_id: str | None = None
+    offset: int = 0
     rows_checked: int = 0
     rows_eligible: int = 0
     rows_skipped_already_linked: int = 0
@@ -52,14 +53,16 @@ def coordinate(value, bound):
 
 
 def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
-                        limit: int | None = None, import_run_id: str | None = None,
+                        limit: int | None = None, offset: int = 0, import_run_id: str | None = None,
                         only_mappable: bool = False, include_possible_duplicates: bool = False):
     if dataset not in PROFILES:
         raise ValueError('unsupported baseline dataset')
     if limit is not None and limit < 0:
         raise ValueError('limit must be non-negative')
+    if offset < 0:
+        raise ValueError('offset must be non-negative')
     run_id = uuid.UUID(import_run_id) if import_run_id else None
-    summary = BackfillSummary(dataset, not confirm, str(run_id) if run_id else None)
+    summary = BackfillSummary(dataset, not confirm, str(run_id) if run_id else None, offset=offset)
     query = select(ImportedDatasetRow).where(ImportedDatasetRow.dataset_name == dataset)
     if run_id:
         query = query.where(ImportedDatasetRow.run_id == run_id)
@@ -68,6 +71,7 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
                            ImportedDatasetRow.source_file, ImportedDatasetRow.row_number, ImportedDatasetRow.id)
     if limit is not None:
         query = query.limit(limit)
+    query = query.offset(offset)
     audits = list(db.scalars(query))
     linked = set(db.scalars(select(ImportedCandidateLink.imported_row_id)))
     keys = set(db.scalars(select(ProjectCandidate.candidate_key)))
@@ -76,10 +80,15 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
     prior = []
     for audit in audits:
         summary.rows_checked += 1
+        n = dict(audit.normalized_row_json) if isinstance(audit.normalized_row_json, dict) else {}
+        n.update(latitude=coordinate(n.get('latitude'), 90), longitude=coordinate(n.get('longitude'), 180))
         if audit.id in linked or audit.linked_project_candidate_id:
             summary.rows_skipped_already_linked += 1
+            # Preserve the full audit comparison context after a planned row is
+            # linked. Candidate dedupe's projection omits coordinates, country,
+            # external IDs and secondary URLs; it cannot replace this context.
+            prior.append(n)
             continue
-        n = dict(audit.normalized_row_json) if isinstance(audit.normalized_row_json, dict) else {}
         run = db.get(ImportedDatasetRun, audit.run_id)
         if not run or run.dry_run or run.dataset_name != dataset or audit.errors_json or n.get('dataset_row_type') != 'data_center':
             summary.rows_skipped_invalid_or_supporting += 1

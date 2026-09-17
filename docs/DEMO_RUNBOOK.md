@@ -578,8 +578,8 @@ Candidates remain `needs_review`, unverified, and not eligible for auto-admissio
 
 `--import-run-id UUID` filters an existing run. `--limit` counts examined rows including
 skips, in stable audit order; rerunning the same limited batch reports already-linked
-rows instead of silently advancing. Increase the limit or select another run to examine
-more rows. `--only-mappable` requires finite, in-range latitude and longitude. Epoch
+rows instead of silently advancing. Use an explicit `--offset` or select another run
+to examine the next window. `--only-mappable` requires finite, in-range latitude and longitude. Epoch
 rows without coordinates remain suitable for review lists without that flag. Candidate
 coordinates are stored in metadata; this workflow does not add candidates to the final
 Project map layer or imply that a candidate has been promoted.
@@ -605,3 +605,43 @@ Project/Evidence counts. Skip reasons are mutually exclusive, in validation orde
 Git. Existing dedupe searches consider the latest 1,000 candidates/projects. Run backfill
 serially; concurrent jobs are not an entity-resolution mechanism. A duplicate key error
 rolls back the transaction. No confirmed local backfill is needed to test this feature.
+
+### Stable backfill windows and repeat checks
+
+Backfill now retains already-linked audit rows in the batch's duplicate comparison
+context. Linking a candidate must not erase coordinate, country, external-ID, or
+secondary-source signals from its original audit row. Linked rows still count as
+already linked; related ambiguous rows remain gated. No Projects or Evidence are
+created, and verification/admission/promotion rules are unchanged.
+
+For a fixed dataset and run filter, `--offset` (default 0) and `--limit` select audit
+rows in stable order **before** eligibility checks. They count linked and skipped
+rows too. With unchanged audit data and flags, repeating a confirmed window should
+report zero would-create candidates. Skips may be classified as exact duplicates
+when stronger evidence becomes available, but linking alone must not make them eligible.
+
+From `backend`, preview the first window:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset fractracker_us_data_centers --dry-run --only-mappable --offset 0 --limit 25
+```
+
+After reviewing that report, use the same command with `--confirm` instead of
+`--dry-run` for a limited first confirmation. Repeat the original dry-run command
+to check idempotency. Confirmations during hardening tests use temporary databases
+only; do not run this confirmation against local.db during hardening development.
+
+To intentionally preview the next window:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset fractracker_us_data_centers --dry-run --only-mappable --offset 25 --limit 25
+```
+
+Use a fixed `--import-run-id` when concurrent imports could alter the dataset ordering.
+Offset is an audit-row offset, not an eligible-candidate count or an automatic cursor.
+`--include-possible-duplicates` is an explicit override that can create ambiguous
+review candidates; it never bypasses exact duplicate protection. Changing this flag
+changes eligibility intentionally. Missing-coordinate rows remain excluded with
+`--only-mappable`. Dry-runs remain write-free.
