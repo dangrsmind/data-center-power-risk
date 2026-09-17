@@ -475,9 +475,30 @@ plus `import_kind=baseline_dataset_import`. They remain needs_review/unverified 
 auto-admission disabled. Existing candidates are never updated by this baseline path.
 Exact audited rows are skipped; changed IDs, shared URLs and matching names with
 state/country or nearby coordinates trigger review without merging. Repeating an
-audit-only import does not backfill candidates. Existing candidate/project duplicate
+audit-only import does not backfill candidates; use the explicit backfill workflow below. Existing candidate/project duplicate
 search limits apply; this is not complete entity resolution. Dataset landing URLs
 are provenance, not project evidence. Analyst review remains required.
 
 See [the demo runbook](DEMO_RUNBOOK.md#baseline-open-database-imports) for commands,
 confirmation/optional candidate flags, metadata precedence, reports and known gaps.
+
+### Explicit baseline candidate backfill
+
+Audit-only import can now be followed by `backfill_baseline_candidates.py`: preview
+first, review the report, then confirm a small batch. The recommended demo starts with
+`--dataset fractracker_us_data_centers --only-mappable --limit 25 --dry-run`.
+Replace the mode with `--confirm` only after review. Epoch rows lacking coordinates can
+seed review lists without `--only-mappable`. Optional run filtering scopes the audit input.
+
+Backfill reuses the existing safe candidate builder and dedupe logic. It inserts only
+ProjectCandidates and ImportedCandidateLinks; no audit records or existing candidates
+are updated. Links plus deterministic candidate keys guard reruns. Exact duplicates are
+blocked; possible duplicates require explicit opt-in and retain warnings. Invalid or
+supporting rows are excluded. Name/location and usable dataset or geographic identity
+are required. Missing public source URLs remain warnings for review candidates only.
+
+Candidates preserve original audit provenance, import/run IDs, citation/license, parsed
+coordinates in metadata, and baseline_dataset_import labeling alongside the existing
+verifier provenance guard. They remain needs_review, unverified and ineligible for
+public admission. No fetching, extraction, discovery, final Projects/Evidence, verification
+or promotion occurs. See the runbook for limit semantics, counts and dedupe limitations.
