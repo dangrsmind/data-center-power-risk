@@ -154,3 +154,67 @@ class BackfillTest(unittest.TestCase):
         audit.errors_json = ['invalid_input']
         self.db.flush()
         self.assertEqual(self.backfill().rows_skipped_invalid_or_supporting, 1)
+
+    def test_25_row_window_preserves_linked_duplicate_context(self):
+        import hashlib
+        rows = [{'facility_name': hashlib.sha256(str(i).encode()).hexdigest()[:16],
+                 'lat': str(10 + i), 'long': '40', 'info_source_1': f'https://example.org/site/{i}'}
+                for i in range(25)]
+        # Fifteen distinct rows, two shared-URL exact duplicates, three nearby
+        # rows detected only against full audit coordinates, five flagged rows.
+        for i in range(2):
+            rows[15 + i]['info_source_1'] = rows[i]['info_source_1']
+        for i in range(3):
+            rows[17 + i]['lat'] = str(10 + i + .001)
+        path = self.csv(rows, 'fractracker.csv')
+        CsvDatasetImporter(self.db).import_file(dataset='fractracker_us_data_centers', input_path=path, confirm=True)
+        audits = list(self.db.scalars(select(ImportedDatasetRow).order_by(ImportedDatasetRow.row_number)))
+        for index, audit in enumerate(audits):
+            audit.duplicate_status = 'possible_duplicate' if index >= 20 else 'distinct'
+        self.db.commit()
+        flags = dict(dataset='fractracker_us_data_centers', only_mappable=True, limit=25)
+        before = self.snapshot()
+        preview = backfill_candidates(self.db, **flags)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(preview.rows_checked, 25)
+        self.assertEqual(preview.would_create_candidates, 15)
+        self.assertEqual(preview.rows_skipped_existing_candidate_duplicate, 2)
+        self.assertEqual(preview.rows_skipped_possible_duplicate, 8)
+        result = backfill_candidates(self.db, confirm=True, **flags)
+        self.db.commit()
+        self.assertEqual(result.created_candidates, 15)
+        self.assertEqual(result.created_candidate_links, 15)
+        after = self.snapshot()
+        for confirm in (False, True):
+            repeat = backfill_candidates(self.db, confirm=confirm, **flags)
+            self.db.commit()
+            self.assertEqual(repeat.rows_checked, 25)
+            self.assertEqual(repeat.rows_skipped_already_linked, 15)
+            self.assertEqual(repeat.rows_skipped_existing_candidate_duplicate, 2)
+            self.assertEqual(repeat.rows_skipped_possible_duplicate, 8)
+            self.assertEqual(repeat.would_create_candidates, 0)
+            self.assertEqual(repeat.created_candidates, 0)
+            self.assertEqual(repeat.created_projects, 0)
+            self.assertEqual(repeat.created_evidence, 0)
+            self.assertEqual(self.snapshot(), after)
+        self.assert_only_import_tables(candidates=True)
+        override = backfill_candidates(self.db, include_possible_duplicates=True, **flags)
+        self.assertEqual(override.would_create_candidates, 8)
+        self.assertEqual(override.rows_skipped_existing_candidate_duplicate, 2)
+
+    def test_explicit_offset_advances_audit_window(self):
+        self.run_import([self.sample(Name='First'), self.sample(Name='Next', **{'Selected Sources': 'https://another.org/site'})], confirm=True)
+        # Distinct input location to avoid intentional ambiguity from sample names.
+        audits = list(self.db.scalars(select(ImportedDatasetRow).order_by(ImportedDatasetRow.row_number)))
+        audits[1].duplicate_status = 'distinct'
+        self.db.commit()
+        first = self.backfill(limit=1, confirm=True)
+        self.assertEqual(first.created_candidates, 1)
+        self.assertEqual(self.backfill(limit=1).rows_skipped_already_linked, 1)
+        next_batch = self.backfill(limit=1, offset=1)
+        self.assertEqual(next_batch.offset, 1)
+        self.assertEqual(next_batch.rows_checked, 1)
+        self.assertEqual(next_batch.would_create_candidates, 1)
+        self.assertEqual(self.backfill(limit=1, offset=2).rows_checked, 0)
+        with self.assertRaises(ValueError):
+            self.backfill(offset=-1)

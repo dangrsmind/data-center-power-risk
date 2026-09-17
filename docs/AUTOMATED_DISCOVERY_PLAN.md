@@ -502,3 +502,19 @@ coordinates in metadata, and baseline_dataset_import labeling alongside the exis
 verifier provenance guard. They remain needs_review, unverified and ineligible for
 public admission. No fetching, extraction, discovery, final Projects/Evidence, verification
 or promotion occurs. See the runbook for limit semantics, counts and dedupe limitations.
+
+### Backfill idempotency hardening
+
+Previously, linking a planned row removed its full audit data from subsequent batch
+comparisons. Candidate duplicate checks project only a subset of fields and cannot
+replace audit coordinate/country/ID/secondary-URL context. Related possible duplicates
+could consequently become newly eligible in the same window. Linked audit rows now
+remain in the ordered comparison context while being counted as already linked.
+
+Preview, confirm a reviewed first batch, then repeat the identical preview to verify
+zero would-create candidates. `--offset 0 --limit 25` selects the first stable audit
+window; `--offset 25 --limit 25` intentionally previews the next. Eligibility filters
+do not shift these windows. Use a fixed run filter for a stable import snapshot.
+Possible duplicate overrides remain explicit; exact duplicates remain blocked.
+No new schema or audit mutation is needed, and no Projects, Evidence, verification,
+auto-admission, or promotion are introduced. See the runbook for commands and caveats.

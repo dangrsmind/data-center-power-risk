@@ -26,13 +26,16 @@ def parse_args(argv=None):
     mode.add_argument("--dry-run", action="store_true", help="Read-only preview; writes nothing. Start here.")
     mode.add_argument("--confirm", action="store_true", help="Create review candidates and links only in an already migrated database.")
     parser.add_argument("--only-mappable", action="store_true")
-    parser.add_argument("--include-possible-duplicates", action="store_true")
+    parser.add_argument("--include-possible-duplicates", action="store_true", help="CAUTION: allow ambiguous duplicate candidates for analyst review; exact duplicates stay blocked.")
     parser.add_argument("--import-run-id", help="Filter to an existing import run UUID.")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--offset", type=int, default=0, help="Skip this many audit rows in stable order, including linked/ineligible rows.")
     parser.add_argument("--report-output", type=Path, help="New JSON output file, confirmed imports only; never overwrites an existing file.")
     args = parser.parse_args(argv)
     if args.limit is not None and args.limit < 0:
         parser.error("--limit must be non-negative")
+    if args.offset < 0:
+        parser.error("--offset must be non-negative")
     if args.dry_run and args.report_output:
         parser.error("--dry-run writes nothing; --report-output requires --confirm")
     if args.report_output and args.report_output.exists():
@@ -55,7 +58,7 @@ def main(argv=None):
     try:
         with Session(engine, autoflush=False) as db:
             result = backfill_candidates(db, dataset=args.dataset, confirm=args.confirm,
-                import_run_id=args.import_run_id, limit=args.limit, only_mappable=args.only_mappable,
+                import_run_id=args.import_run_id, limit=args.limit, offset=args.offset, only_mappable=args.only_mappable,
                 include_possible_duplicates=args.include_possible_duplicates).to_dict()
             if args.confirm:
                 db.commit()
