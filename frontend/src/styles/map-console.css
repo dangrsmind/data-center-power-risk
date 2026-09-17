@@ -157,3 +157,21 @@
 .map-probabilities { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
 .map-probabilities dt { font-size: 10px; color: var(--map-muted); }
 .map-probabilities dd { font-size: 17px; font-variant-numeric: tabular-nums; }
+
+/* Concentric screen-space overlays use Leaflet's existing marker transforms. */
+.map-project-dot { position: relative; }
+.map-vector-overlay { position: absolute; pointer-events: none; border-radius: 50%; }
+.map-overlay-verified { inset: -5px; border: 2px solid var(--map-green); }
+.map-overlay-incomplete { inset: -9px; border: 1px dashed var(--map-slate); }
+.map-overlay-risk { inset: -13px; border: 3px solid var(--overlay-risk); opacity: .45; }
+.map-overlay-high_signal { inset: -18px; border: 1px solid var(--map-hot); opacity: .55; animation: map-signal-ring 3s ease-in-out infinite; }
+@keyframes map-signal-ring { 50% { opacity: .2; transform: scale(1.12); } }
+.map-layer-control { max-width: min(300px, calc(100% - 28px)); max-height: calc(100% - 130px); overflow-y: auto; }
+.map-layer-control .map-layer-count-note { color: var(--map-dim); font-size: 9px; }
+.map-overlay-toggle > span { flex: 1; min-width: 0; }
+.map-layer-name { display: flex; align-items: center; gap: 6px; }
+.map-layer-name i { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.map-layer-name b { margin-left: auto; color: var(--map-muted); font-variant-numeric: tabular-nums; }
+.map-overlay-toggle small { display: block; margin-top: 3px; font-size: 9px; color: var(--map-dim); line-height: 1.45; }
+.map-overlay-toggle:has(input:disabled) { opacity: .5; }
+@media (prefers-reduced-motion: reduce) { .map-overlay-high_signal { animation: none; } }
