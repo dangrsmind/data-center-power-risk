@@ -495,7 +495,8 @@ ProjectCandidates and ImportedCandidateLinks; no audit records or existing candi
 are updated. Links plus deterministic candidate keys guard reruns. Exact duplicates are
 blocked; possible duplicates require explicit opt-in and retain warnings. Invalid or
 supporting rows are excluded. Name/location and usable dataset or geographic identity
-are required. Missing public source URLs remain warnings for review candidates only.
+are required. Missing primary public source URLs now block candidate backfill under
+the source-quality gate below.
 
 Candidates preserve original audit provenance, import/run IDs, citation/license, parsed
 coordinates in metadata, and baseline_dataset_import labeling alongside the existing
@@ -538,3 +539,29 @@ Review these details and reconcile large/small windows before any confirmation. 
 snapshot and flags are required; read-only prefix replay costs grow with offset. No
 schema changes, audit mutations, final Projects/Evidence, verification, admission or
 promotion are introduced. See the runbook for the offset-25 reconciliation commands.
+
+### Conservative baseline backfill source gates
+
+Backfill now requires an allowed primary source category and a project-specific
+build/expansion candidate type in addition to identity, location and duplicate checks.
+Offline URL/domain/path hints classify official operator, credible news, government,
+advocacy/watchdog, social/group, broad report/index and unknown sources. Only the first
+three can pass; no network or content verification runs. Domain lists are deliberately
+small and explicit. Source reputation labels are heuristic review hints, not verified facts.
+
+Candidate types distinguish specific builds/expansions, operating/colocation pages,
+programmatic solicitations/policies, broad market/report references and ambiguity.
+Only specific build/expansion signals in the primary URL or explicit row fields pass.
+An operating page alone, a Facebook group or a broad report cannot create a candidate.
+A policy or multi-site solicitation cannot establish a specific project merely because
+a dataset assigns it a facility name. Secondary sources stay in the audit for review;
+they do not silently replace the primary URL or supply unrelated signals through a
+concatenated evidence-text field.
+
+Dry-run details expose category booleans and blocking reasons for every row. New mutually
+exclusive weak-source and ambiguous-type counters explain otherwise-eligible rows.
+Blocked rows retain prefix duplicate context, keeping paginated decisions stable. The
+same gates apply to the confirm path and cannot be overridden by duplicate opt-in.
+Review row details before confirmation. No final Project/Evidence, verification,
+admission, promotion, discovery, source fetching or local database mutation is part
+of this gate implementation or its manual validation.

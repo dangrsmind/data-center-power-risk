@@ -12,6 +12,7 @@ from app.models.imported_dataset import ImportedCandidateLink, ImportedDatasetRo
 from app.models.project_candidate import ProjectCandidate
 from app.services.baseline_dataset_profiles import PROFILES, public_url, fingerprint
 from app.services.csv_candidate_dedupe import CsvCandidateDedupeService, DuplicateDecision, normalized_text
+from app.services.baseline_source_quality import classify_source_and_candidate
 from app.services.csv_dataset_importer import NormalizedCsvRow, build_project_candidate, clean_text
 
 
@@ -31,6 +32,8 @@ class BackfillSummary:
     rows_skipped_existing_candidate_duplicate: int = 0
     rows_skipped_missing_public_source_url: int = 0
     rows_skipped_invalid_or_supporting: int = 0
+    rows_skipped_weak_source_quality: int = 0
+    rows_skipped_ambiguous_candidate_type: int = 0
     would_create_candidates: int = 0
     created_candidates: int = 0
     created_candidate_ids: list[str] = field(default_factory=list)
@@ -105,7 +108,9 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
         n.update(latitude=coordinate(n.get('latitude'), 90), longitude=coordinate(n.get('longitude'), 180))
         urls = [u for u in (audit.source_urls_json or []) if isinstance(u, str) and public_url(u)
                 and u.rstrip('/') != (audit.dataset_source or '').rstrip('/')]
+        quality = classify_source_and_candidate(urls[0] if urls else None, n)
         detail = {
+            **quality,
             'audit_row_id': str(audit.id), 'source_name': PROFILES[dataset].display_name,
             'facility_name': n.get('name'), 'operator': n.get('operator'),
             'city': n.get('city'), 'state': n.get('state'),
@@ -190,6 +195,19 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
                 sorted({reason for m in decision.matches if m.status in {'likely_same_project', 'possible_duplicate'} for reason in m.reasons})
                 or (['same_normalized_name_and_state_or_country'] if identity_match is not None else ['audit duplicate flag'])), decision)
             continue
+        if not quality['source_quality_allows_candidate_creation'] or not quality['candidate_type_allows_candidate_creation']:
+            if not quality['source_quality_allows_candidate_creation']:
+                summary.rows_skipped_weak_source_quality += 1
+                classification = 'weak_source_quality'
+            else:
+                summary.rows_skipped_ambiguous_candidate_type += 1
+                classification = 'ambiguous_candidate_type'
+            classify(classification, quality['quality_gate_reason'], decision)
+            prior.append(n)
+            prior_ids.append(str(audit.id))
+            keys.add(key)
+            key_audit_ids[key] = str(audit.id)
+            continue
         warnings = list(audit.warnings_json or [])
         if not urls:
             warnings.append('missing_public_source_url: dataset provenance is not project evidence')
@@ -202,7 +220,7 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
             audit.raw_row_json if isinstance(audit.raw_row_json, dict) else {}, n, urls, warnings=warnings,
             duplicate_decision=DuplicateDecision('possible_duplicate' if possible else 'distinct',
                 audit.duplicate_cluster_key, decision.reasons, decision.matches))
-        classify('would_create_candidate', 'Eligible unverified review candidate' +
+        classify('would_create_candidate', quality['quality_gate_reason'] +
                  ('; possible duplicate explicitly included' if possible else '; no blocking duplicate signal') +
                  ('; public source URL missing' if not urls else ''), decision)
         if in_window:
