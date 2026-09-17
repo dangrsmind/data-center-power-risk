@@ -550,7 +550,58 @@ evidence; URL checks are syntactic and do not fetch or verify anything.
 Identical audited rows are skipped. Changed dataset IDs, shared URLs, normalized name
 plus state/country, and matching names with nearby coordinates flag review and suppress
 candidate creation; no automatic merges occur. Choose candidate creation on the first
-import: repeating an audit-only import does not backfill candidates. Ambiguous rows
+import: repeating an audit-only import does not backfill candidates; use the explicit backfill workflow below. Ambiguous rows
 remain audit-only for analyst resolution. Candidate review displays dataset, baseline
 import type, run UUID, citation/license, URLs and missing-source warnings. Candidates
 remain needs_review, unverified, not promoted and ineligible for auto-admission.
+
+## Backfill baseline review candidates
+
+First audit-import the local dataset using the workflow above. Then preview candidates
+from those persisted audit rows; no CSV reload or external fetch is involved. From
+`backend`, the recommended first demo uses FracTracker coordinates and a small limit:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset fractracker_us_data_centers --dry-run --only-mappable --limit 25
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset epoch_ai_data_centers --dry-run --limit 25
+```
+
+Review the JSON before a limited confirmation. For example, after reviewing the first
+command, repeat it with `--confirm` instead of `--dry-run`. Exactly one mode is required;
+no mode fails safely. Dry-run opens SQLite read-only and writes nothing. Confirmation
+creates only ProjectCandidates and imported_candidate_links in one transaction. It
+does not update audit rows, runs, existing candidates, or discovered-source status.
+No Projects, Evidence, claims, verification, auto-admission or promotions are created.
+Candidates remain `needs_review`, unverified, and not eligible for auto-admission.
+
+`--import-run-id UUID` filters an existing run. `--limit` counts examined rows including
+skips, in stable audit order; rerunning the same limited batch reports already-linked
+rows instead of silently advancing. Increase the limit or select another run to examine
+more rows. `--only-mappable` requires finite, in-range latitude and longitude. Epoch
+rows without coordinates remain suitable for review lists without that flag. Candidate
+coordinates are stored in metadata; this workflow does not add candidates to the final
+Project map layer or imply that a candidate has been promoted.
+
+Rows need a name, a location, and either an external dataset ID, name plus state/country,
+or name plus coordinates. Invalid and supporting audit rows are skipped. Existing links
+are the primary rerun guard, with deterministic candidate keys and existing dedupe checks
+as additional protection. Exact duplicates are always skipped. Possible/likely matches
+are skipped unless `--include-possible-duplicates` explicitly requests review candidates;
+the warning survives creation. No existing candidate is merged or modified.
+
+Missing public URLs are preserved as review warnings, not a candidate-level rejection:
+`rows_skipped_missing_public_source_url` is therefore zero. Public-source requirements
+for final projects remain unchanged. Original row, dataset, audit/run IDs, source URLs,
+citation and license metadata are retained. Epoch attribution and unknown FracTracker
+license terms remain as recorded during import. Analysts must review both provenance
+and project-specific evidence before later admission.
+
+JSON reports include checked/eligible/skipped counts, projected and actual candidate
+counts, link count, at most 100 created candidate IDs, warnings/errors and explicit zero
+Project/Evidence counts. Skip reasons are mutually exclusive, in validation order.
+`--report-output` is confirmed-only and refuses to overwrite a file; keep reports out of
+Git. Existing dedupe searches consider the latest 1,000 candidates/projects. Run backfill
+serially; concurrent jobs are not an entity-resolution mechanism. A duplicate key error
+rolls back the transaction. No confirmed local backfill is needed to test this feature.

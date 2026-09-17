@@ -1,0 +1,73 @@
+"""Explicit read-only preview or confirmed candidate backfill from existing audits."""
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
+from app.core.db import get_database_url
+from app.services.baseline_dataset_profiles import PROFILES
+from app.services.baseline_candidate_backfill import backfill_candidates
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Backfill unverified review candidates from existing baseline audits; no Projects/Evidence.")
+    parser.add_argument("--dataset", choices=PROFILES, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="Read-only preview; writes nothing. Start here.")
+    mode.add_argument("--confirm", action="store_true", help="Create review candidates and links only in an already migrated database.")
+    parser.add_argument("--only-mappable", action="store_true")
+    parser.add_argument("--include-possible-duplicates", action="store_true")
+    parser.add_argument("--import-run-id", help="Filter to an existing import run UUID.")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--report-output", type=Path, help="New JSON output file, confirmed imports only; never overwrites an existing file.")
+    args = parser.parse_args(argv)
+    if args.limit is not None and args.limit < 0:
+        parser.error("--limit must be non-negative")
+    if args.dry_run and args.report_output:
+        parser.error("--dry-run writes nothing; --report-output requires --confirm")
+    if args.report_output and args.report_output.exists():
+        parser.error("report output already exists; refusing to overwrite")
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    url = make_url(get_database_url())
+    # No create_all/DDL: even an accidental new SQLite database is disallowed.
+    if url.get_backend_name() == "sqlite":
+        path = Path(url.database or "").resolve()
+        if not path.is_file():
+            raise SystemExit("An existing migrated database is required; no database was created.")
+        uri = path.as_uri() + ("?mode=ro" if args.dry_run else "?mode=rw")
+        engine = create_engine("sqlite://", creator=lambda: sqlite3.connect(uri, uri=True))
+    else:
+        engine = create_engine(url)
+    try:
+        with Session(engine, autoflush=False) as db:
+            result = backfill_candidates(db, dataset=args.dataset, confirm=args.confirm,
+                import_run_id=args.import_run_id, limit=args.limit, only_mappable=args.only_mappable,
+                include_possible_duplicates=args.include_possible_duplicates).to_dict()
+            if args.confirm:
+                db.commit()
+        output = json.dumps(result, indent=2, sort_keys=True, allow_nan=False)
+        print(output)
+        if args.report_output:
+            with args.report_output.open("x", encoding="utf-8") as handle:
+                handle.write(output + "\n")
+        return 0
+    finally:
+        engine.dispose()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
