@@ -500,3 +500,57 @@ Concentric CSS rings follow Leaflet's marker transforms, add no geographic cover
 For local smoke, open Map layers on `/map`; toggle project markers off/on, confirm counts remain eligibility counts, and toggle rings independently. Verify list selection, popups, Fit view, dark fallback tiles/attribution, `/discovered-sources`, and `/constraint-dashboard`. Do not submit coordinate/review changes. Never commit keys, env files, runtime data, or local databases.
 
 **Engine evaluation:** The current Leaflet stack is sufficient for the next 1–2 demos with the current small project set. This is screen-space overlay styling, not vector basemap tiles or a spatial constraint analysis. MapLibre would enable a unified WebGL vector basemap and data-layer styling; deck.gl would add GPU-oriented rendering for large point sets and analytical overlays. Neither supplies missing evidence, verified geography, or a tile license. A migration introduces renderer lifecycle/React integration, selection/popup and attribution parity, WebGL/device testing, bundle/dependency cost, and provider/style/glyph/sprite configuration (including credential and offline considerations). Dense-marker performance still needs measurement; no clustering is claimed here. Recommend `maplibre-layer-parity-v0` as a later isolated spike with a licensed/key-optional style, measured dataset sizes, and parity tests before considering deck.gl. No engine migration is needed for this branch.
+
+## Baseline open-database imports
+
+Baseline imports seed analyst review; dataset rows are not final truth. The existing
+CSV audit system supports `epoch_ai_data_centers` and `fractracker_us_data_centers`.
+Keep local inputs in ignored `data/imports/manual_csv/epoch/` and
+`data/imports/manual_csv/fractracker/`. No download or scraping occurs.
+
+From `backend`, preview against an existing migrated database:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/import_baseline_open_databases.py \
+  --dataset epoch_ai_data_centers \
+  --input ../data/imports/manual_csv/epoch/data_centers.csv --dry-run --limit 20
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/import_baseline_open_databases.py \
+  --dataset fractracker_us_data_centers \
+  --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv --dry-run --limit 20
+```
+
+One of `--dry-run` or `--confirm` is mandatory. Dry-run writes nothing, including
+schema or reports; SQLite is opened read-only. Use this dedicated entrypoint for
+baseline datasets. Replace `--dry-run` with `--confirm` to write audit records only.
+To request eligible review candidates, preview with `--dry-run --create-candidates`,
+then use `--confirm --create-candidates` after inspecting the report. Remove the
+limit only after review. No Projects, Evidence, claims, verification, auto-admission,
+or promotions are created by baseline import.
+
+Optional flags: `--import-run-id` (new UUID), `--dataset-version`, `--source-url`
+(dataset landing page), `--citation`, `--license-note`, and `--report-output` (new
+JSON file, confirmed runs only). Metadata flags override row values and profile
+defaults. Never commit CSVs, env files, secrets, databases, or generated reports.
+
+Epoch timeline/chiller/cooling-tower files retain original fields but are audit-only.
+Epoch citation and CC BY 4.0 attribution defaults come from its supplied README;
+confirm terms for the export version. FracTracker's license remains explicitly
+unknown unless supplied; no redistribution license is inferred. Source columns,
+citation, license notes, original row, filename/line and run UUID are preserved.
+Missing country/location/date/capacity values are not invented.
+
+Reports include read/valid/invalid rows, projected/actual audit and candidate counts,
+exact skips, possible duplicates, missing identity/coordinates/public URLs, errors
+and warnings. Import-record counts refer to rows; each confirmation also creates a
+run record. Invalid rows remain auditable but cannot create candidates. Facility
+candidates need name and location plus existing CSV provenance eligibility. Missing
+coordinates or public URLs produce warnings. Dataset provenance is not project
+evidence; URL checks are syntactic and do not fetch or verify anything.
+
+Identical audited rows are skipped. Changed dataset IDs, shared URLs, normalized name
+plus state/country, and matching names with nearby coordinates flag review and suppress
+candidate creation; no automatic merges occur. Choose candidate creation on the first
+import: repeating an audit-only import does not backfill candidates. Ambiguous rows
+remain audit-only for analyst resolution. Candidate review displays dataset, baseline
+import type, run UUID, citation/license, URLs and missing-source warnings. Candidates
+remain needs_review, unverified, not promoted and ineligible for auto-admission.

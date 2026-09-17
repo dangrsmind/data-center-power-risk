@@ -1157,6 +1157,8 @@ function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onRev
                       </div>
                     </div>
                   )}
+                  {c.csv_provenance.import_kind && <div>Import type: {c.csv_provenance.import_kind}</div>}
+                  {c.csv_provenance.import_run_id && <div style={{ gridColumn: "1 / -1", overflowWrap: "anywhere" }}>Import run: {c.csv_provenance.import_run_id}</div>}
                   {c.csv_provenance.citation && (
                     <div style={{ gridColumn: "1 / -1" }}>
                       <span style={{ color: "#64748b" }}>Citation:</span>{" "}

@@ -53,6 +53,8 @@ ProjectCandidateSitingFrictionCategory = Literal[
 
 
 class ProjectCandidateCsvProvenance(BaseModel):
+    import_kind: str | None = None
+    import_run_id: str | None = None
     provenance: str | None = None
     dataset_name: str | None = None
     dataset_source: str | None = None

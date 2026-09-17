@@ -473,6 +473,8 @@ def csv_provenance_from_metadata(metadata: dict | list | None) -> ProjectCandida
     warnings = metadata.get("warnings") if isinstance(metadata.get("warnings"), list) else []
     source_urls = metadata.get("source_urls") if isinstance(metadata.get("source_urls"), list) else []
     return ProjectCandidateCsvProvenance(
+        import_kind=metadata.get("import_kind"),
+        import_run_id=metadata.get("import_run_id"),
         provenance="dataset_import",
         dataset_name=metadata.get("dataset_name") if isinstance(metadata.get("dataset_name"), str) else None,
         dataset_source=metadata.get("dataset_source") if isinstance(metadata.get("dataset_source"), str) else None,
