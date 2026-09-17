@@ -37,6 +37,10 @@ def main() -> None:
     if args.dedupe_only and args.create_candidates:
         raise SystemExit("--dedupe-only cannot be combined with --create-candidates")
 
+    from app.services.baseline_dataset_profiles import PROFILES
+    if args.dataset in PROFILES:
+        raise SystemExit("Use import_baseline_open_databases.py with --dry-run or --confirm for baseline profiles.")
+
     create_db_and_tables()
     with SessionLocal() as db:
         summary = CsvDatasetImporter(db).import_file(

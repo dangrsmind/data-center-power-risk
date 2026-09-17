@@ -452,3 +452,32 @@ Single and bulk PATCH preserve omitted fields. Explicit null or blank clears `re
 `reviewed_count` counts surfaced statuses other than `unreviewed`; `unreviewed_count` includes null and explicit unreviewed statuses. Counts never depend on `reviewed_at`. That field is the last effective review metadata update timestamp, stays unchanged on no-ops, and can remain populated after returning to unreviewed. Bulk `updated_count` reports matched rows processed, including unchanged rows; missing IDs are reported separately.
 
 Bulk triage changes source-review metadata only. It preserves provenance and creates no Projects, Evidence, ProjectCandidates, or claims. No search, URL fetch/validation, ingest, extraction, candidate generation, verification, auto-admission, or promotion occurs during review triage.
+
+## Baseline open databases
+
+`epoch_ai_data_centers` and `fractracker_us_data_centers` extend the existing
+CsvDatasetImporter and ImportedDatasetRun/ImportedDatasetRow/ImportedCandidateLink
+workflow. They seed review inputs, not final truth. Use the dedicated
+`backend/scripts/import_baseline_open_databases.py` with local ignored CSVs and an
+explicit `--dry-run` or `--confirm`. Preview first; confirmation writes audit records
+only unless `--create-candidates` is supplied. No live fetch, scraping, discovery
+mutation, final Projects/Evidence, claims, verification, admission or promotion occurs.
+
+Profiles declare filename patterns, common field aliases, identity/candidate rules
+and provenance requirements. Original rows, source file/line, dataset, import UUID,
+URLs, citation and license metadata survive normalization. Unknowns remain explicit.
+Epoch timeline/equipment files are audit-only. Epoch's supplied README provides its
+CC BY 4.0 attribution default; FracTracker usage terms remain unknown unless supplied.
+Analysts must assess terms for the particular export and project-specific evidence.
+
+Candidates retain `provenance=dataset_import` for existing verifier/admission guards,
+plus `import_kind=baseline_dataset_import`. They remain needs_review/unverified with
+auto-admission disabled. Existing candidates are never updated by this baseline path.
+Exact audited rows are skipped; changed IDs, shared URLs and matching names with
+state/country or nearby coordinates trigger review without merging. Repeating an
+audit-only import does not backfill candidates. Existing candidate/project duplicate
+search limits apply; this is not complete entity resolution. Dataset landing URLs
+are provenance, not project evidence. Analyst review remains required.
+
+See [the demo runbook](DEMO_RUNBOOK.md#baseline-open-database-imports) for commands,
+confirmation/optional candidate flags, metadata precedence, reports and known gaps.

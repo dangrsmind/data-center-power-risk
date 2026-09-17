@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import re
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,6 +120,31 @@ class CsvDatasetImportSummary:
         return asdict(self)
 
 
+@dataclass
+class BaselineImportSummary:
+    dataset: str
+    input: str
+    import_run_id: str
+    dry_run: bool
+    rows_read: int = 0
+    rows_valid: int = 0
+    rows_invalid: int = 0
+    would_create_import_records: int = 0
+    would_create_candidates: int = 0
+    created_import_records: int = 0
+    created_candidates: int = 0
+    duplicate_rows_skipped: int = 0
+    possible_duplicates_flagged: int = 0
+    rows_missing_identity: int = 0
+    rows_missing_coordinates: int = 0
+    rows_missing_public_source_url: int = 0
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 class CsvDatasetImporter:
     def __init__(self, db: Session | None = None):
         self.db = db
@@ -137,7 +163,18 @@ class CsvDatasetImporter:
         create_candidates: bool = False,
         dedupe_only: bool = False,
         dataset_version: str | None = None,
-    ) -> CsvDatasetImportSummary:
+        import_run_id: str | None = None,
+    ) -> CsvDatasetImportSummary | BaselineImportSummary:
+        from app.services.baseline_dataset_profiles import PROFILES
+        if dataset in PROFILES:
+            if dedupe_only and create_candidates:
+                raise ValueError("dedupe_only cannot be combined with create_candidates")
+            return self.import_baseline_file(
+                dataset=dataset, input_path=input_path, confirm=confirm, limit=limit,
+                encoding=encoding, source_url=source_url, license_note=license_note,
+                citation=citation, create_candidates=create_candidates,
+                dataset_version=dataset_version, import_run_id=import_run_id,
+            )
         path = Path(input_path)
         summary = CsvDatasetImportSummary(dataset=dataset, input=str(path))
         rows = self.read_csv(path, encoding=encoding, limit=limit)
@@ -276,6 +313,132 @@ class CsvDatasetImporter:
                 )
             summary.rows_imported += 1
 
+        run.summary_json = summary.to_dict()
+        self.db.flush()
+        return summary
+
+    def import_baseline_file(
+        self, *, dataset: str, input_path: str | Path, confirm: bool = False,
+        limit: int | None = None, encoding: str = "utf-8-sig", source_url: str | None = None,
+        license_note: str | None = None, citation: str | None = None,
+        create_candidates: bool = False, dataset_version: str | None = None,
+        import_run_id: str | None = None,
+    ) -> BaselineImportSummary:
+        from app.services.baseline_dataset_profiles import (
+            PROFILES, baseline_identity, filename_warning, normalize_baseline_row,
+        )
+        from app.services.csv_candidate_dedupe import close_coordinates, normalized_text
+
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be non-negative")
+        if confirm and self.db is None:
+            raise ValueError("confirmed import requires a database session")
+        run_id = uuid.UUID(import_run_id) if import_run_id else uuid.uuid4()
+        profile = PROFILES[dataset]
+        summary = BaselineImportSummary(dataset, str(input_path), str(run_id), not confirm)
+        summary.warnings.extend(filename_warning(dataset, str(input_path)))
+        if self.db is not None and self.db.get(ImportedDatasetRun, run_id) is not None:
+            raise ValueError("import_run_id already exists; use a new UUID")
+        # The same audit tables, candidate builder, and duplicate service are used.
+        existing = list(self.db.scalars(select(ImportedDatasetRow))) if self.db is not None else []
+        prior = [r.normalized_row_json for r in existing if isinstance(r.normalized_row_json, dict)]
+        dedupe = CsvCandidateDedupeService(self.db)
+        rows = self.read_csv(Path(input_path), encoding=encoding, limit=limit)
+        summary.rows_read = len(rows)
+        planned: list[tuple[NormalizedCsvRow, bool]] = []
+        for raw in rows:
+            malformed = None in raw or any(value is None for value in raw.values())
+            safe_raw = {key if key is not None else "__extra_columns": value for key, value in raw.items()}
+            row = normalize_baseline_row(dataset, safe_raw, source_file=str(input_path),
+                import_run_id=str(run_id), source_url=source_url, citation=citation, license_note=license_note)
+            if malformed:
+                row.errors.append("malformed_csv_row_width")
+            n = row.normalized
+            missing_identity = not baseline_identity(n)
+            summary.rows_missing_identity += int(missing_identity)
+            summary.rows_missing_coordinates += int(n.get("latitude") is None or n.get("longitude") is None)
+            summary.rows_missing_public_source_url += int(not row.source_urls)
+            summary.rows_invalid += int(bool(row.errors))
+            summary.rows_valid += int(not row.errors)
+            # Only byte-equivalent row content within dataset/type is auto-skipped.
+            # Same IDs with changed fields must retain a new audit row for review.
+            exact = any(p.get("row_fingerprint") == n["row_fingerprint"] for p in prior)
+            if exact:
+                summary.duplicate_rows_skipped += 1
+                summary.warnings.append(f"row {row.row_number}: exact_row_already_audited_or_in_input")
+                summary.errors.extend(f"row {row.row_number}: {error}" for error in row.errors)
+                continue
+            decision = dedupe.evaluate_row({"normalized": n})
+            reasons = list(decision.reasons) if decision.status in {"exact_duplicate", "likely_same_project", "possible_duplicate"} else []
+            for previous in prior:
+                same_id = (n.get("external_dataset_id") and n.get("dataset_name") == previous.get("dataset_name")
+                           and n.get("dataset_row_type") == previous.get("dataset_row_type")
+                           and n["external_dataset_id"] == previous.get("external_dataset_id"))
+                same_name = bool(normalized_text(n.get("name")) and normalized_text(n.get("name")) == normalized_text(previous.get("name")))
+                same_location = any(n.get(key) and normalized_text(n[key]) == normalized_text(previous.get(key)) for key in ("state", "country"))
+                nearby = close_coordinates(n.get("latitude"), n.get("longitude"), previous.get("latitude"), previous.get("longitude"))
+                if same_id:
+                    reasons.append("same_dataset_row_id_changed_content")
+                if same_name and (same_location or nearby):
+                    reasons.append("same_name_location_or_nearby_coordinates")
+                if set(row.source_urls) & set(previous.get("source_urls") or []):
+                    reasons.append("shared_source_url_requires_review")
+            possible = bool(reasons)
+            if possible:
+                summary.possible_duplicates_flagged += 1
+                row.warnings.append("possible_duplicate: no automatic candidate merge or creation")
+            row.duplicate_decision = DuplicateDecision(
+                "possible_duplicate" if possible else "insufficient_information" if missing_identity else "distinct",
+                decision.cluster_key, sorted(set(reasons)), decision.matches,
+            )
+            can_create = bool(create_candidates and not row.errors and not possible and candidate_eligibility(row).can_create)
+            summary.would_create_import_records += 1
+            summary.would_create_candidates += int(can_create)
+            summary.errors.extend(f"row {row.row_number}: {error}" for error in row.errors)
+            summary.warnings.extend(f"row {row.row_number}: {warning}" for warning in row.warnings)
+            planned.append((row, can_create))
+            prior.append(n)
+        if not confirm:
+            summary.warnings.append("dry_run_no_records_or_reports_written")
+            return summary
+
+        assert self.db is not None
+        run = ImportedDatasetRun(id=run_id, dataset_name=dataset, dataset_version=dataset_version,
+            dataset_source=source_url or profile.source_url, source_file=str(input_path),
+            retrieved_at=datetime.now(timezone.utc), license_note=license_note or profile.license_note,
+            citation=citation or profile.citation, dry_run=False)
+        self.db.add(run)
+        self.db.flush()
+        for row, can_create in planned:
+            audit = ImportedDatasetRow(run_id=run_id, dataset_name=dataset, dataset_version=dataset_version,
+                dataset_source=row.dataset_source, source_file=str(input_path), row_number=row.row_number,
+                raw_row_json=row.raw_row, normalized_row_json=row.to_persisted_normalized(),
+                source_urls_json=row.source_urls, duplicate_status=row.duplicate_decision.status,
+                duplicate_cluster_key=row.duplicate_decision.cluster_key,
+                warnings_json=row.warnings, errors_json=row.errors)
+            self.db.add(audit)
+            self.db.flush()
+            summary.created_import_records += 1
+            if can_create:
+                candidate = build_project_candidate(row, "baseline:" + row.normalized["row_fingerprint"])
+                candidate.lifecycle_state = "dataset_import_needs_review"
+                candidate.claim_count = 0
+                candidate.raw_metadata_json = {
+                    **candidate.raw_metadata_json,
+                    "import_kind": "baseline_dataset_import", "import_run_id": str(run_id),
+                    "dataset_display_name": profile.display_name,
+                    "normalized_row": row.to_persisted_normalized(),
+                    "imported_rows": [{"imported_row_id": str(audit.id), "import_run_id": str(run_id), "dataset_name": dataset}],
+                }
+                # Keep provenance=dataset_import for existing verifier/admission guards.
+                # Never update or reuse an existing candidate, including promoted ones.
+                self.db.add(candidate)
+                self.db.flush()
+                audit.linked_project_candidate_id = candidate.id
+                self.db.add(ImportedCandidateLink(imported_row_id=audit.id, linked_record_type="project_candidate",
+                    linked_record_id=candidate.id, duplicate_status="distinct",
+                    match_reasons_json=["baseline_dataset_import_needs_review"]))
+                summary.created_candidates += 1
         run.summary_json = summary.to_dict()
         self.db.flush()
         return summary

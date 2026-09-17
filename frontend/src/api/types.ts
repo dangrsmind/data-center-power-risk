@@ -537,6 +537,8 @@ export interface ProjectPredictionRunResponse {
 // ---------------------------------------------------------------------------
 
 export interface ProjectCandidateCsvProvenance {
+  import_kind?: string | null;
+  import_run_id?: string | null;
   provenance: string | null;
   dataset_name: string | null;
   dataset_source: string | null;
