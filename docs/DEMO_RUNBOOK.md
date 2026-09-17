@@ -645,3 +645,45 @@ Offset is an audit-row offset, not an eligible-candidate count or an automatic c
 review candidates; it never bypasses exact duplicate protection. Changing this flag
 changes eligibility intentionally. Missing-coordinate rows remain excluded with
 `--only-mappable`. Dry-runs remain write-free.
+
+### Reconcile paginated backfill previews before confirmation
+
+Do not run `--confirm` until the dry-run row details and counts have been reviewed.
+Offset alone is insufficient: duplicate context must also be independent of page size.
+The preview order is ascending `(created_at, run_id, source_file, row_number, id)`
+within the selected dataset/run. The audit ID breaks every remaining tie. This keeps
+existing import windows stable; no audit records are reordered or rewritten.
+
+The service now replays preceding audit rows as read-only duplicate context before
+reporting the requested offset/limit. Eligible preceding rows are treated as planned
+review inputs, even when unlinked, so splitting a window cannot erase their duplicate
+signals. Prefix rows contribute no output counts, row details, candidates or links.
+Consequently later pages may be gated by earlier, not-yet-confirmed rows. This is
+intentional conservative behavior; inspect the matched audit ID rather than bypassing
+it. Larger offsets require more read-only comparisons.
+
+From `backend`:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset fractracker_us_data_centers --dry-run --only-mappable \
+  --offset 25 --limit 25 --include-row-details
+```
+
+`--include-row-details` is dry-run-only: combining it with `--confirm` fails before
+opening the database. Each selected row includes its audit ID, available facility,
+operator, location, first public source URL, classification, reason, and matching
+candidate/project/audit IDs where known. Missing fields are null. No raw row or full
+metadata blob is included. Matching audit IDs may refer to earlier context rows;
+`existing_candidate_duplicate` also covers exact matches to planned audit rows, so
+use the match IDs to distinguish the cases. Missing public sources remain explicit
+review warnings rather than a final-project admission exemption.
+
+To reconcile, run the same command with `--limit 5` at offsets 25, 30, 35, 40 and 45.
+Sum checked/eligible/skipped/would-create/created counts; they must equal the limit-25
+report. Concatenate row_details in offset order; they must equal its row_details,
+including classifications and match IDs. Repeat against the same unchanged database,
+dataset/run filter and flags. Offset itself is not an additive counter. Concurrent
+imports or reviews change the comparison snapshot, so rerun all previews after them.
+Dry-run creates zero candidates, links, Projects or Evidence and invokes no external
+fetch, verification, admission or promotion. Runtime reports stay outside Git.

@@ -218,3 +218,65 @@ class BackfillTest(unittest.TestCase):
         self.assertEqual(self.backfill(limit=1, offset=2).rows_checked, 0)
         with self.assertRaises(ValueError):
             self.backfill(offset=-1)
+
+    def test_preview_pages_reconcile_with_full_prefix_context_and_details(self):
+        import hashlib
+        from datetime import datetime, timedelta
+        rows = [{'facility_name': hashlib.sha256(str(i).encode()).hexdigest()[:16],
+                 'lat': str(10 + i), 'long': '40', 'operator_name': f'Operator {i}',
+                 'info_source_1': f'https://example.org/facility/{i}'} for i in range(30)]
+        # Duplicate signals span page boundaries, including a row before offset.
+        rows[5]['lat'] = '10.001'
+        rows[12]['lat'] = '16.001'
+        rows[18]['info_source_1'] = rows[9]['info_source_1']
+        path = self.csv(list(reversed(rows)), 'fractracker.csv')
+        CsvDatasetImporter(self.db).import_file(dataset='fractracker_us_data_centers', input_path=path, confirm=True)
+        audits = list(self.db.scalars(select(ImportedDatasetRow).order_by(ImportedDatasetRow.row_number.desc())))
+        for i, audit in enumerate(audits):
+            # Physical insertion order differs from the documented preview order.
+            audit.created_at = datetime(2026, 1, 1) + timedelta(seconds=i)
+            audit.duplicate_status = 'distinct'
+        self.db.commit()
+        before = self.snapshot()
+        flags = dict(dataset='fractracker_us_data_centers', only_mappable=True, include_row_details=True)
+        whole = backfill_candidates(self.db, offset=5, limit=25, **flags).to_dict()
+        pieces = [backfill_candidates(self.db, offset=i, limit=5, **flags).to_dict() for i in range(5, 30, 5)]
+        count_fields = [k for k, v in whole.items() if isinstance(v, int) and not isinstance(v, bool) and k != 'offset']
+        for key in count_fields:
+            self.assertEqual(whole[key], sum(p[key] for p in pieces), key)
+        details = [row for p in pieces for row in p['row_details']]
+        self.assertEqual(whole['row_details'], details)
+        self.assertEqual([row['audit_row_id'] for row in details], [str(a.id) for a in audits[5:]])
+        self.assertEqual(whole, backfill_candidates(self.db, offset=5, limit=25, **flags).to_dict())
+        self.assertEqual(details[0]['classification'], 'possible_duplicate')
+        self.assertEqual(details[0]['matched_audit_row_id'], str(audits[0].id))
+        self.assertEqual(details[13]['classification'], 'existing_candidate_duplicate')
+        self.assertEqual(details[13]['matched_audit_row_id'], str(audits[9].id))
+        self.assertTrue(any(d['classification'] == 'would_create_candidate' for d in details))
+        self.assertTrue(all('raw_row' not in d and 'normalized_row' not in d for d in details))
+        self.assertEqual(self.snapshot(), before)
+        self.assert_only_import_tables()
+        for key in ('created_projects', 'created_evidence', 'created_candidates', 'created_candidate_links'):
+            self.assertEqual(whole[key], 0)
+        self.assertEqual(backfill_candidates(self.db, offset=100, limit=5, **flags).row_details, [])
+        self.assertEqual(backfill_candidates(self.db, offset=5, limit=0, **flags).row_details, [])
+
+    def test_details_rejected_before_confirm_can_write(self):
+        self.seed()
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'requires dry-run'):
+            self.backfill(confirm=True, include_row_details=True)
+        self.assertEqual(self.snapshot(), before)
+        args = [sys.executable, 'scripts/backfill_baseline_candidates.py', '--dataset',
+                'epoch_ai_data_centers', '--include-row-details']
+        env = {**os.environ, 'DATABASE_URL': f'sqlite:///{self.database}'}
+        raw_before = self.database.read_bytes()
+        result = subprocess.run(args + ['--confirm'], env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('--include-row-details requires --dry-run', result.stderr)
+        result = subprocess.run(args + ['--dry-run'], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        import json
+        self.assertEqual(json.loads(result.stdout)['row_details'][0]['classification'], 'would_create_candidate')
+        self.assertEqual(raw_before, self.database.read_bytes())
+        self.assertNotIn('row_details', self.backfill().to_dict())
