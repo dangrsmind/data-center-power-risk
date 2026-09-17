@@ -518,3 +518,23 @@ do not shift these windows. Use a fixed run filter for a stable import snapshot.
 Possible duplicate overrides remain explicit; exact duplicates remain blocked.
 No new schema or audit mutation is needed, and no Projects, Evidence, verification,
 auto-admission, or promotion are introduced. See the runbook for commands and caveats.
+
+### Page-size-independent baseline previews
+
+The prior fix retained linked rows inside a window, but duplicate context still reset
+at each offset. A 25-row window could therefore disagree with five 5-row windows even
+though SQL ordering was deterministic. Backfill now computes decisions from the same
+ordered prefix for every page, then reports only the selected rows. Preceding eligible
+or linked rows retain duplicate context without being created, counted or displayed.
+
+The exact ascending order remains `(created_at, run_id, source_file, row_number, id)`
+within the dataset/run filter. No page-size-dependent eligibility filtering changes the
+window. Reconciliation tests compare all counters and concatenated per-row decisions,
+using cross-page coordinate/URL matches and insertion order different from audit order.
+
+The dry-run-only `--include-row-details` exposes selected audit IDs, classifications,
+reasons and available match IDs through a small field whitelist, without raw metadata.
+Review these details and reconcile large/small windows before any confirmation. Same
+snapshot and flags are required; read-only prefix replay costs grow with offset. No
+schema changes, audit mutations, final Projects/Evidence, verification, admission or
+promotion are introduced. See the runbook for the offset-25 reconciliation commands.

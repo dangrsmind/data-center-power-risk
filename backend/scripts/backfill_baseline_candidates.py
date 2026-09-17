@@ -26,12 +26,15 @@ def parse_args(argv=None):
     mode.add_argument("--dry-run", action="store_true", help="Read-only preview; writes nothing. Start here.")
     mode.add_argument("--confirm", action="store_true", help="Create review candidates and links only in an already migrated database.")
     parser.add_argument("--only-mappable", action="store_true")
+    parser.add_argument("--include-row-details", action="store_true", help="Dry-run only: report selected audit rows, classifications and match IDs.")
     parser.add_argument("--include-possible-duplicates", action="store_true", help="CAUTION: allow ambiguous duplicate candidates for analyst review; exact duplicates stay blocked.")
     parser.add_argument("--import-run-id", help="Filter to an existing import run UUID.")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--offset", type=int, default=0, help="Skip this many audit rows in stable order, including linked/ineligible rows.")
     parser.add_argument("--report-output", type=Path, help="New JSON output file, confirmed imports only; never overwrites an existing file.")
     args = parser.parse_args(argv)
+    if args.include_row_details and not args.dry_run:
+        parser.error("--include-row-details requires --dry-run")
     if args.limit is not None and args.limit < 0:
         parser.error("--limit must be non-negative")
     if args.offset < 0:
@@ -59,7 +62,8 @@ def main(argv=None):
         with Session(engine, autoflush=False) as db:
             result = backfill_candidates(db, dataset=args.dataset, confirm=args.confirm,
                 import_run_id=args.import_run_id, limit=args.limit, offset=args.offset, only_mappable=args.only_mappable,
-                include_possible_duplicates=args.include_possible_duplicates).to_dict()
+                include_possible_duplicates=args.include_possible_duplicates,
+                include_row_details=args.include_row_details).to_dict()
             if args.confirm:
                 db.commit()
         output = json.dumps(result, indent=2, sort_keys=True, allow_nan=False)
