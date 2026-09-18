@@ -13,6 +13,7 @@ from app.models.project_candidate import ProjectCandidate
 from app.services.baseline_dataset_profiles import PROFILES, public_url, fingerprint
 from app.services.csv_candidate_dedupe import CsvCandidateDedupeService, DuplicateDecision, normalized_text
 from app.services.baseline_source_quality import classify_source_and_candidate
+from app.services.baseline_entity_taxonomy import classify_entity_taxonomy, empty_taxonomy_summary, count_taxonomy
 from app.services.csv_dataset_importer import NormalizedCsvRow, build_project_candidate, clean_text
 
 
@@ -43,10 +44,13 @@ class BackfillSummary:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
+    taxonomy_summary: dict | None = None
     row_details: list[dict] | None = None
 
     def to_dict(self):
         result = asdict(self)
+        if self.taxonomy_summary is None:
+            result.pop('taxonomy_summary')
         if self.row_details is None:
             result.pop('row_details')
         return result
@@ -75,6 +79,8 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
     run_id = uuid.UUID(import_run_id) if import_run_id else None
     summary = BackfillSummary(dataset, not confirm, str(run_id) if run_id else None, offset=offset)
     result = summary
+    if not confirm:
+        result.taxonomy_summary = empty_taxonomy_summary()
     if include_row_details:
         result.row_details = []
     query = select(ImportedDatasetRow).where(ImportedDatasetRow.dataset_name == dataset)
@@ -109,8 +115,12 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
         urls = [u for u in (audit.source_urls_json or []) if isinstance(u, str) and public_url(u)
                 and u.rstrip('/') != (audit.dataset_source or '').rstrip('/')]
         quality = classify_source_and_candidate(urls[0] if urls else None, n)
+        taxonomy = classify_entity_taxonomy(n, quality, urls, audit.raw_row_json) if not confirm else {}
+        if not confirm and in_window:
+            count_taxonomy(result.taxonomy_summary, taxonomy)
         detail = {
             **quality,
+            **taxonomy,
             'audit_row_id': str(audit.id), 'source_name': PROFILES[dataset].display_name,
             'facility_name': n.get('name'), 'operator': n.get('operator'),
             'city': n.get('city'), 'state': n.get('state'),

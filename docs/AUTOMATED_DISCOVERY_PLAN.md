@@ -565,3 +565,27 @@ same gates apply to the confirm path and cannot be overridden by duplicate opt-i
 Review row details before confirmation. No final Project/Evidence, verification,
 admission, promotion, discovery, source fetching or local database mutation is part
 of this gate implementation or its manual validation.
+
+### Baseline entity/lifecycle taxonomy: descriptive preview layer
+
+Useful intelligence extends beyond new-build candidates. Baseline previews now classify
+entity type, lifecycle stage, candidate purpose and constraint-domain mentions, including
+existing facilities/campuses, standalone power/grid/cooling assets, equipment supply
+signals, policy/permitting cases and supporting context. Unknowns stay explicit. No
+migration or persistent model/API fields are added: the ProjectCandidate model remains
+a review candidate, not a general infrastructure graph node.
+
+This is a descriptive layer after source classification, with no influence on source
+quality, duplicate decisions, eligibility, verification, admission or promotion. An
+operating official facility can have facility_baseline purpose while remaining blocked
+from build-candidate creation. Social and broad sources remain context; a programmatic
+solicitation is a policy/permitting signal. Concrete proposal articles can retain
+build_review purpose without bypassing any existing gate.
+
+Only stored fields and URL paths are inspected. Secondary URL paths may identify topics,
+not change primary-source quality or the entity's lifecycle. Domain tags identify mentions,
+including hypothetical/negative language, not verified dependencies or risk conclusions.
+No external requests or geocoding occur. The nested taxonomy summary counts selected
+rows only and reconciles across pages; prefix comparison rows are excluded. Runbook
+vocabularies and examples define this first conservative iteration. Persistence and
+relationship creation remain future work requiring an appropriate graph model and review.
