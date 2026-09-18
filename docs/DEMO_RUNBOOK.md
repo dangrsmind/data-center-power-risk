@@ -692,8 +692,9 @@ fetch, verification, admission or promotion. Runtime reports stay outside Git.
 
 Review `--dry-run --include-row-details` before any confirmed backfill. A usable name,
 location and lack of duplicates are no longer sufficient. Baseline backfill now also
-requires both `source_quality_allows_candidate_creation` and
-`candidate_type_allows_candidate_creation`. This applies to the existing confirm path
+requires `source_quality_allows_candidate_creation`,
+`candidate_type_allows_candidate_creation` and
+`source_row_alignment_allows_candidate_creation`. This applies to the existing confirm path
 as well as its preview; `--include-possible-duplicates` cannot bypass these gates.
 
 Classification is offline, using the primary public URL's hostname/path and explicit
@@ -746,7 +747,7 @@ The baseline preview can describe useful intelligence even when a row cannot cre
 build candidate. `--include-row-details` now adds `entity_type`, `lifecycle_stage`,
 `candidate_purpose` and a sorted, deduplicated `constraint_domains` list. No migration,
 model/API change or durable taxonomy field is added in this version. The existing
-source-quality, identity, duplicate and mappability gates remain the sole creation rules.
+source-quality, source-row alignment, identity, duplicate and mappability gates control creation.
 A `build_review` purpose is a review role, not permission to create or promote a record.
 Entity and purpose are independent: an existing facility can carry a build-review role
 when its primary source describes a proposal or expansion. This does not verify an event.
@@ -806,3 +807,35 @@ broad report remain supporting context; Davis-Monthan is a policy/permitting sig
 Guadalupe Quarry remains the only build-review would-create row in the reviewed window.
 Review this output before any later workflow; taxonomy itself creates no graph nodes,
 Projects, Evidence, candidates, verification, admission or promotions.
+
+### Primary-source row alignment
+
+Backfill also requires affirmative offline alignment between the audit row and its
+primary source. Row details expose `source_row_alignment`,
+`source_row_alignment_allows_candidate_creation` and `source_row_alignment_reasons`.
+Categories are `aligned`, `weakly_aligned`, `geography_mismatch`,
+`facility_or_operator_mismatch`, `broad_transaction_or_platform_article`,
+`cancelled_or_rejected_project`, `insufficient_source_row_alignment` and `unknown`.
+Only the first two allow creation, subject to all existing gates and duplicate checks.
+`rows_skipped_source_row_alignment` counts rows reaching and failing this gate;
+rows blocked earlier still show their alignment details.
+
+This reads stored primary URL paths and explicitly bound primary titles/subject metadata.
+Generic article titles need a matching source URL or a single-source audit row. Secondary
+sources never rescue the primary source. Full US state names and contextual abbreviations
+are recognized; city hints use the existing audit corpus, independently of page limits.
+This is a bounded heuristic, not geocoding or content verification. Unrecognized geography
+and token overlap still require analyst review. A matching state plus a build signal may
+be weakly aligned, allowing a nearby-metro description such as Guadalupe Quarry.
+
+Explicit conflicting geography blocks unless the row city or state also appears in the
+source. Broad transactions block unless a build/expansion or identifiable site conversion
+is supported at the row location; Buena Vista's Californian biomass-site conversion is
+such an exception. Cancellation/withdrawal signals block and set preview lifecycle to
+`cancelled`, purpose `supporting_context`; rejection/lack of approval sets lifecycle to
+`unknown`, purpose `permitting_or_policy_signal`. These overrides avoid treating rejected
+plans as active builds without inventing a final cancellation.
+
+Blocked rows remain visible and retain duplicate context across pagination. Alignment
+cannot relax source-quality gates and has no CLI bypass. Validate with dry-run row details
+only; this change requires no confirmed local backfill, network requests or DB mutation.

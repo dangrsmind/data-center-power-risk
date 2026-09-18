@@ -13,6 +13,7 @@ from app.models.project_candidate import ProjectCandidate
 from app.services.baseline_dataset_profiles import PROFILES, public_url, fingerprint
 from app.services.csv_candidate_dedupe import CsvCandidateDedupeService, DuplicateDecision, normalized_text
 from app.services.baseline_source_quality import classify_source_and_candidate
+from app.services.baseline_source_row_alignment import classify_source_row_alignment, rejected_taxonomy
 from app.services.baseline_entity_taxonomy import classify_entity_taxonomy, empty_taxonomy_summary, count_taxonomy
 from app.services.csv_dataset_importer import NormalizedCsvRow, build_project_candidate, clean_text
 
@@ -33,6 +34,7 @@ class BackfillSummary:
     rows_skipped_existing_candidate_duplicate: int = 0
     rows_skipped_missing_public_source_url: int = 0
     rows_skipped_invalid_or_supporting: int = 0
+    rows_skipped_source_row_alignment: int = 0
     rows_skipped_weak_source_quality: int = 0
     rows_skipped_ambiguous_candidate_type: int = 0
     would_create_candidates: int = 0
@@ -100,6 +102,10 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
                          if link.linked_record_type == 'project_candidate' and link.linked_record_id}
     candidate_ids = {key: str(id_) for key, id_ in db.execute(select(ProjectCandidate.candidate_key, ProjectCandidate.id))}
     keys = set(candidate_ids)
+    # Full audit corpus, not the current page: city recognition cannot vary
+    # with offset/limit. Only stored city names are used; no geocoding.
+    known_cities = {n.get('city') for n in db.scalars(select(ImportedDatasetRow.normalized_row_json))
+                    if isinstance(n, dict) and isinstance(n.get('city'), str)}
     dedupe = CsvCandidateDedupeService(db)
     planned = []
     prior = []
@@ -115,12 +121,16 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
         urls = [u for u in (audit.source_urls_json or []) if isinstance(u, str) and public_url(u)
                 and u.rstrip('/') != (audit.dataset_source or '').rstrip('/')]
         quality = classify_source_and_candidate(urls[0] if urls else None, n)
+        alignment = classify_source_row_alignment(n, urls, audit.raw_row_json, known_cities)
         taxonomy = classify_entity_taxonomy(n, quality, urls, audit.raw_row_json) if not confirm else {}
+        if not confirm and alignment['source_row_alignment'] == 'cancelled_or_rejected_project':
+            taxonomy.update(rejected_taxonomy(n, urls, audit.raw_row_json))
         if not confirm and in_window:
             count_taxonomy(result.taxonomy_summary, taxonomy)
         detail = {
             **quality,
             **taxonomy,
+            **alignment,
             'audit_row_id': str(audit.id), 'source_name': PROFILES[dataset].display_name,
             'facility_name': n.get('name'), 'operator': n.get('operator'),
             'city': n.get('city'), 'state': n.get('state'),
@@ -213,6 +223,14 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
                 summary.rows_skipped_ambiguous_candidate_type += 1
                 classification = 'ambiguous_candidate_type'
             classify(classification, quality['quality_gate_reason'], decision)
+            prior.append(n)
+            prior_ids.append(str(audit.id))
+            keys.add(key)
+            key_audit_ids[key] = str(audit.id)
+            continue
+        if not alignment['source_row_alignment_allows_candidate_creation']:
+            summary.rows_skipped_source_row_alignment += 1
+            classify(alignment['source_row_alignment'], '; '.join(alignment['source_row_alignment_reasons']), decision)
             prior.append(n)
             prior_ids.append(str(audit.id))
             keys.add(key)

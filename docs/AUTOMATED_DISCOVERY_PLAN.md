@@ -543,7 +543,8 @@ promotion are introduced. See the runbook for the offset-25 reconciliation comma
 ### Conservative baseline backfill source gates
 
 Backfill now requires an allowed primary source category and a project-specific
-build/expansion candidate type in addition to identity, location and duplicate checks.
+build/expansion candidate type plus affirmative primary-source row alignment, in addition
+to identity, location and duplicate checks.
 Offline URL/domain/path hints classify official operator, credible news, government,
 advocacy/watchdog, social/group, broad report/index and unknown sources. Only the first
 three can pass; no network or content verification runs. Domain lists are deliberately
@@ -589,3 +590,23 @@ No external requests or geocoding occur. The nested taxonomy summary counts sele
 rows only and reconciles across pages; prefix comparison rows are excluded. Runbook
 vocabularies and examples define this first conservative iteration. Persistence and
 relationship creation remain future work requiring an appropriate graph model and review.
+
+### Primary-source alignment before baseline creation
+
+An offline alignment gate now compares stored row identity/geography with the primary
+URL path and bound title/subject metadata. It rejects geography conflicts, unmatched
+explicit subjects, broad platform/portfolio acquisitions without a location-supported
+build or conversion, and cancelled/rejected plans. Distinctive identity or city matches
+with build signals may be aligned; a matching state and build signal can be weakly aligned.
+Unknown or insufficient signals block. These are review hints, never fetched verification.
+Secondary URLs cannot rescue a conflicting primary source. City recognition uses existing
+audit cities across the full corpus so page windows do not change the vocabulary.
+
+Every preview detail carries alignment category, eligibility and reasons. The
+`rows_skipped_source_row_alignment` counter counts otherwise-eligible alignment failures;
+blocked rows retain duplicate context. Cancellation/rejection overrides descriptive
+lifecycle/purpose to cancelled/supporting context or unknown/permitting-policy signal.
+All source-quality and duplicate gates still apply to preview and confirmed planning.
+See DEMO_RUNBOOK.md for categories, limitations and the site-conversion exception.
+Validation uses isolated test databases and read-only local previews, never confirmed
+local backfill or external calls.

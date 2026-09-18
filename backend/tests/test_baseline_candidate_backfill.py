@@ -18,6 +18,7 @@ class BackfillTest(unittest.TestCase):
     def sample(self, **extra):
         return fixtures.BaselineImportTest.sample(self, **{
             'status': 'Proposed',
+            'primary_source_title': str(extra.get('Name', 'Example campus')) + ' proposed data center',
             'Selected Sources': 'https://www.datacenterdynamics.com/en/news/proposed-example-campus/',
             **extra,
         })
@@ -162,6 +163,7 @@ class BackfillTest(unittest.TestCase):
     def test_25_row_window_preserves_linked_duplicate_context(self):
         import hashlib
         rows = [{'facility_name': hashlib.sha256(str(i).encode()).hexdigest()[:16],
+                 'primary_source_title': hashlib.sha256(str(i).encode()).hexdigest()[:16] + ' proposed data center',
                  'lat': str(10 + i), 'long': '40', 'info_source_1': f'https://www.datacenterdynamics.com/en/news/proposed-site-{i}'}
                 for i in range(25)]
         # Fifteen distinct rows, two shared-URL exact duplicates, three nearby
@@ -227,6 +229,7 @@ class BackfillTest(unittest.TestCase):
         import hashlib
         from datetime import datetime, timedelta
         rows = [{'facility_name': hashlib.sha256(str(i).encode()).hexdigest()[:16],
+                 'primary_source_title': hashlib.sha256(str(i).encode()).hexdigest()[:16] + ' proposed data center',
                  'lat': str(10 + i), 'long': '40', 'operator_name': f'Operator {i}',
                  'info_source_1': f'https://www.datacenterdynamics.com/en/news/proposed-facility-{i}'} for i in range(30)]
         # Duplicate signals span page boundaries, including a row before offset.
