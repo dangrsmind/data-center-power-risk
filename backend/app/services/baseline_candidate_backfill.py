@@ -24,6 +24,10 @@ class BackfillSummary:
     dry_run: bool
     import_run_id: str | None = None
     offset: int = 0
+    audit_row_id_filter_count: int = 0
+    max_create_candidates: int | None = None
+    would_create_candidates_within_cap: bool = True
+    confirm_safety_ready: bool = False
     rows_checked: int = 0
     rows_eligible: int = 0
     rows_skipped_already_linked: int = 0
@@ -69,7 +73,8 @@ def coordinate(value, bound):
 def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
                         limit: int | None = None, offset: int = 0, import_run_id: str | None = None,
                         only_mappable: bool = False, include_possible_duplicates: bool = False,
-                        include_row_details: bool = False):
+                        include_row_details: bool = False, audit_row_ids=None,
+                        max_create_candidates: int | None = None):
     if include_row_details and confirm:
         raise ValueError('include_row_details requires dry-run mode')
     if dataset not in PROFILES:
@@ -78,8 +83,15 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
         raise ValueError('limit must be non-negative')
     if offset < 0:
         raise ValueError('offset must be non-negative')
+    allowed_ids = {uuid.UUID(str(value)) for value in (audit_row_ids or [])}
+    if max_create_candidates is not None and (type(max_create_candidates) is not int or max_create_candidates <= 0):
+        raise ValueError('max_create_candidates must be a positive integer')
+    if confirm and (not allowed_ids or max_create_candidates is None):
+        raise ValueError('confirm requires both audit_row_ids and max_create_candidates; created_candidates=0')
     run_id = uuid.UUID(import_run_id) if import_run_id else None
     summary = BackfillSummary(dataset, not confirm, str(run_id) if run_id else None, offset=offset)
+    summary.audit_row_id_filter_count = len(allowed_ids)
+    summary.max_create_candidates = max_create_candidates
     result = summary
     if not confirm:
         result.taxonomy_summary = empty_taxonomy_summary()
@@ -96,6 +108,13 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
     if limit is not None:
         query = query.limit(offset + limit if limit else 0)
     audits = list(db.scalars(query))
+    missing_ids = allowed_ids - {audit.id for audit in audits[offset:]}
+    if missing_ids:
+        raise ValueError("Allowlisted audit rows are outside the dataset/run/window or do not exist: " +
+                         ", ".join(sorted(map(str, missing_ids))) + "; created_candidates=0")
+    if allowed_ids:
+        # Later rows cannot affect earlier greedy duplicate decisions.
+        audits = audits[:max(i for i, audit in enumerate(audits) if audit.id in allowed_ids) + 1]
     links = list(db.scalars(select(ImportedCandidateLink).order_by(ImportedCandidateLink.id)))
     linked = {link.imported_row_id for link in links}
     linked_candidates = {link.imported_row_id: str(link.linked_record_id) for link in links
@@ -112,7 +131,7 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
     prior_ids = []
     key_audit_ids = {}
     for index, audit in enumerate(audits):
-        in_window = index >= offset
+        in_window = index >= offset and (not allowed_ids or audit.id in allowed_ids)
         # Context rows can affect decisions, but never counts, details or writes.
         summary = result if in_window else BackfillSummary(dataset, not confirm)
         summary.rows_checked += 1
@@ -259,8 +278,12 @@ def backfill_candidates(db: Session, *, dataset: str, confirm: bool = False,
         key_audit_ids[key] = str(audit.id)
     summary = result
     summary.rows_eligible = summary.would_create_candidates = len(planned)
+    summary.would_create_candidates_within_cap = (max_create_candidates is None or len(planned) <= max_create_candidates)
+    summary.confirm_safety_ready = bool(allowed_ids) and max_create_candidates is not None and summary.would_create_candidates_within_cap
     if not confirm:
         return summary
+    if not summary.would_create_candidates_within_cap:
+        raise ValueError(f"Eligible candidate count {len(planned)} exceeds max_create_candidates={max_create_candidates}; created_candidates=0; nothing written")
     for audit, row, key in planned:
         candidate = build_project_candidate(row, key)
         candidate.claim_count = 0

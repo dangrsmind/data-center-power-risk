@@ -487,7 +487,8 @@ confirmation/optional candidate flags, metadata precedence, reports and known ga
 Audit-only import can now be followed by `backfill_baseline_candidates.py`: preview
 first, review the report, then confirm a small batch. The recommended demo starts with
 `--dataset fractracker_us_data_centers --only-mappable --limit 25 --dry-run`.
-Replace the mode with `--confirm` only after review. Epoch rows lacking coordinates can
+After review, preview explicit audit UUIDs with a creation cap. Confirmation requires
+both `--audit-row-id` and `--max-create-candidates`; see the bounded workflow below. Epoch rows lacking coordinates can
 seed review lists without `--only-mappable`. Optional run filtering scopes the audit input.
 
 Backfill reuses the existing safe candidate builder and dedupe logic. It inserts only
@@ -610,3 +611,19 @@ All source-quality and duplicate gates still apply to preview and confirmed plan
 See DEMO_RUNBOOK.md for categories, limitations and the site-conversion exception.
 Validation uses isolated test databases and read-only local previews, never confirmed
 local backfill or external calls.
+
+### Bounded baseline backfill confirmation
+
+Confirmed backfill requires both a repeated `--audit-row-id UUID` allowlist and a
+positive `--max-create-candidates N` cap. Plan the complete eligible selection before
+writing; cap overflow fails with zero creations rather than truncating. The same checks
+apply at the service boundary. Allowlisting preserves all source-quality, type,
+alignment and duplicate gates, including unselected audit comparison context.
+Unknown/out-of-window IDs fail explicitly. Preview counts/details describe only selected
+rows and expose unique filter count, cap, within-cap status and confirmation readiness.
+
+Workflow: sweep with row details, manually review eligible rows, preview exact UUIDs
+with a cap, then obtain authorization for any subsequent confirmation. A confirmed
+command drops the preview-only row-details flag. See DEMO_RUNBOOK.md for the one-row
+Guadalupe example. Local validation remains dry-run-only; confirmed-path regression
+tests use disposable isolated databases. No discovery or external requests are required.

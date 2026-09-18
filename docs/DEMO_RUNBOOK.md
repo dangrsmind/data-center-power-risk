@@ -568,8 +568,8 @@ DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candi
   --dataset epoch_ai_data_centers --dry-run --limit 25
 ```
 
-Review the JSON before a limited confirmation. For example, after reviewing the first
-command, repeat it with `--confirm` instead of `--dry-run`. Exactly one mode is required;
+Review the JSON, then preview an explicit audit-row allowlist with a positive creation
+cap using the safe workflow below. Confirmation requires both safeguards. Exactly one mode is required;
 no mode fails safely. Dry-run opens SQLite read-only and writes nothing. Confirmation
 creates only ProjectCandidates and imported_candidate_links in one transaction. It
 does not update audit rows, runs, existing candidates, or discovered-source status.
@@ -627,9 +627,9 @@ DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candi
   --dataset fractracker_us_data_centers --dry-run --only-mappable --offset 0 --limit 25
 ```
 
-After reviewing that report, use the same command with `--confirm` instead of
-`--dry-run` for a limited first confirmation. Repeat the original dry-run command
-to check idempotency. Confirmations during hardening tests use temporary databases
+After reviewing that report, select reviewed audit UUIDs and preview them with
+`--audit-row-id` and `--max-create-candidates` as described below. Both safeguards
+are required for confirmation. Repeat the same allowlist dry-run to check idempotency. Confirmations during hardening tests use temporary databases
 only; do not run this confirmation against local.db during hardening development.
 
 To intentionally preview the next window:
@@ -839,3 +839,42 @@ plans as active builds without inventing a final cancellation.
 Blocked rows remain visible and retain duplicate context across pagination. Alignment
 cannot relax source-quality gates and has no CLI bypass. Validate with dry-run row details
 only; this change requires no confirmed local backfill, network requests or DB mutation.
+
+### Safe allowlist confirmation workflow
+
+A. Run a dry-run sweep with `--include-row-details`.
+B. Manually inspect the `would_create_candidate` rows, source quality, taxonomy,
+alignment and duplicate reasons.
+C. Preview exactly the reviewed row using its audit UUID and a positive cap:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset fractracker_us_data_centers --dry-run --only-mappable \
+  --audit-row-id 75847487-397c-48df-8929-069ee44261af \
+  --max-create-candidates 1 --include-row-details
+```
+
+D. Only after reviewing that allowlist preview, a separately authorized confirmed run
+may replace `--dry-run` with `--confirm` and **remove `--include-row-details`** (preview
+only). Keep the same dataset, allowlist, cap and other selection flags. No confirmed
+local backfill is part of this implementation's validation.
+
+Repeat `--audit-row-id UUID` to select multiple reviewed audit rows; repeated identical
+UUIDs count once. Both a nonempty allowlist and `--max-create-candidates N` are mandatory
+for confirmation, in both CLI and service. N must be a positive integer. All existing
+gates still apply; allowlisting never forces a blocked row to create a candidate.
+
+The allowlist intersects the existing dataset/run/offset/limit window. Unknown UUIDs
+or IDs outside that scope fail explicitly, preventing a silently incomplete selection.
+Other audit rows remain duplicate-comparison context, but are excluded from reported
+row counts, details, taxonomy counts and planned writes. Window offsets still refer to
+the original audit order, not to the allowlist.
+
+The full eligible selection is planned before writes. Exceeding the cap fails with
+`created_candidates=0`; it never silently truncates. Dry-run reports the full count even
+when over cap. New summary fields are `audit_row_id_filter_count` (unique IDs),
+`max_create_candidates` (null when absent), `would_create_candidates_within_cap` (true
+when no cap or within cap), and `confirm_safety_ready` (both safeguards present and
+within cap). Readiness is a guardrail result, not analyst approval or verification.
+Confirmation creates only review candidates and audit links in the existing transaction;
+Projects, Evidence, verification, admission and promotion remain outside this workflow.

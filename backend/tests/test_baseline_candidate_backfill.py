@@ -31,6 +31,13 @@ class BackfillTest(unittest.TestCase):
         return self.db.scalar(select(ImportedDatasetRow))
 
     def backfill(self, **kw):
+        if kw.get('confirm'):
+            query = select(ImportedDatasetRow).order_by(ImportedDatasetRow.created_at, ImportedDatasetRow.run_id,
+                ImportedDatasetRow.source_file, ImportedDatasetRow.row_number, ImportedDatasetRow.id).offset(kw.get('offset', 0))
+            if kw.get('limit') is not None:
+                query = query.limit(kw['limit'])
+            kw.setdefault('audit_row_ids', [str(row.id) for row in self.db.scalars(query)])
+            kw.setdefault('max_create_candidates', 100)
         return backfill_candidates(self.db, dataset='epoch_ai_data_centers', **kw)
 
     def snapshot(self):
@@ -178,7 +185,9 @@ class BackfillTest(unittest.TestCase):
         for index, audit in enumerate(audits):
             audit.duplicate_status = 'possible_duplicate' if index >= 20 else 'distinct'
         self.db.commit()
-        flags = dict(dataset='fractracker_us_data_centers', only_mappable=True, limit=25)
+        flags = dict(dataset='fractracker_us_data_centers', only_mappable=True, limit=25,
+                     audit_row_ids=[str(row.id) for row in self.db.scalars(select(ImportedDatasetRow))],
+                     max_create_candidates=25)
         before = self.snapshot()
         preview = backfill_candidates(self.db, **flags)
         self.assertEqual(self.snapshot(), before)
