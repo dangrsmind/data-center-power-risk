@@ -17,7 +17,8 @@ class SourceQualityTest(unittest.TestCase):
         self.db.add(run)
         self.db.flush()
         row = ImportedDatasetRow(run_id=run.id, dataset_name=run.dataset_name, source_file=run.source_file,
-            row_number=2, duplicate_status='distinct', raw_row_json={'original': 'preserved', 'source_url': url},
+            row_number=2, duplicate_status='distinct', raw_row_json={'original': 'preserved', 'source_url': url,
+                          'primary_source_title': str(fields.get('name', 'Example campus')) + ' proposed data center'},
             normalized_row_json={'name': 'Example campus', 'dataset_row_type': 'data_center',
                                  'latitude': 39, 'longitude': -77, **fields},
             source_urls_json=[url] if url else [], warnings_json=[], errors_json=[])
