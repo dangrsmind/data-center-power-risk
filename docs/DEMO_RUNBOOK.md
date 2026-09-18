@@ -739,3 +739,70 @@ Davis-Monthan's primary article describes a multi-base solicitation. The Guadalu
 proposal article can remain eligible subject to duplicate and analyst checks. Additional
 links on some blocked rows may be useful for later review. This change does not modify
 the separate CSV audit importer, final-project verifier, admission or promotion rules.
+
+### Entity, lifecycle and intelligence-purpose taxonomy (preview only)
+
+The baseline preview can describe useful intelligence even when a row cannot create a
+build candidate. `--include-row-details` now adds `entity_type`, `lifecycle_stage`,
+`candidate_purpose` and a sorted, deduplicated `constraint_domains` list. No migration,
+model/API change or durable taxonomy field is added in this version. The existing
+source-quality, identity, duplicate and mappability gates remain the sole creation rules.
+A `build_review` purpose is a review role, not permission to create or promote a record.
+Entity and purpose are independent: an existing facility can carry a build-review role
+when its primary source describes a proposal or expansion. This does not verify an event.
+
+Entity types: `data_center_project`, `data_center_facility`, `data_center_campus`,
+`power_generation_asset`, `grid_interconnection_asset`, `cooling_water_asset`,
+`equipment_supply_chain_signal`, `policy_permitting_case`, `supporting_context`, `unknown`.
+
+Lifecycle stages: `existing_operational`, `under_construction`, `proposed`,
+`planned_expansion`, `speculative_or_unverified`, `cancelled`, `retired`, `unknown`.
+Explicit row stage takes precedence; absent stages can use explicit name/primary-URL
+language. Approved/permitted alone does not imply construction. Context reports, policy
+signals and supply reports retain unknown asset lifecycle rather than inheriting a
+facility stage from the dataset. These are unverified text classifications.
+
+Purposes: `build_review`, `facility_baseline`, `infrastructure_context`,
+`supply_chain_signal`, `permitting_or_policy_signal`, `supporting_context`, `unknown`.
+Social sources remain supporting context. Broad reports are supporting context or, with
+explicit equipment/supply language, supply-chain signals. Programmatic solicitations
+are policy/permitting signals. Official operating facility pages can be facility baselines
+without becoming build-review candidates. Names explicitly identifying standalone assets
+can be infrastructure context; a data center mentioning generators remains a data center.
+
+Constraint domains: `grid_capacity`, `onsite_power`, `gas_turbine_supply`,
+`transformer_supply`, `backup_generation`, `fuel_supply`, `air_emissions`, `water_cooling`,
+`land_use_zoning`, `community_opposition`, `legal_regulatory`, `cost_financing`, `schedule_delay`.
+These tags mean a topic is mentioned, not that a dependency, shortage, capacity problem
+or adverse risk has been verified. They may include negative or hypothetical mentions.
+Water/cooling includes dry/air cooling as a cooling topic, without asserting water use.
+No capacity, location, date or technology is invented from a city, operator brand or
+hostname. General turbines are not automatically labeled gas turbines.
+
+Taxonomy uses explicit normalized fields, whitelisted original equipment/power/cooling/
+context fields, and stored URL paths. Secondary URL paths can contribute topical tags;
+only the primary URL contributes entity/lifecycle hints. They never replace the primary
+source or relax source-quality gates. Raw blobs, secrets, URL queries and unrelated raw
+columns are not included in the output. No sources are fetched.
+
+Every dry-run includes `taxonomy_summary` with `entity_type_counts`,
+`lifecycle_stage_counts`, `candidate_purpose_counts`, and `constraint_domain_counts`.
+Counts cover exactly the selected audit window, including skipped and linked rows, not
+its preceding duplicate context. The first three totals equal rows_checked; domain
+counts can exceed it because a row may mention multiple domains. Zero categories are
+omitted. Summing smaller windows reconciles with a larger window on the same snapshot.
+Existing top-level counters retain their meanings. Confirm output/persistence is unchanged.
+
+Use the existing safe preview command:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/backfill_baseline_candidates.py \
+  --dataset fractracker_us_data_centers --dry-run --only-mappable \
+  --offset 25 --limit 25 --include-row-details
+```
+
+PHX1 should read as an operational facility baseline. Facebook-primary rows and Tract's
+broad report remain supporting context; Davis-Monthan is a policy/permitting signal.
+Guadalupe Quarry remains the only build-review would-create row in the reviewed window.
+Review this output before any later workflow; taxonomy itself creates no graph nodes,
+Projects, Evidence, candidates, verification, admission or promotions.
