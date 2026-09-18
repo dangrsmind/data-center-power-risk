@@ -596,6 +596,8 @@ export type ProjectCandidateSitingFrictionCategory =
   | "unknown";
 
 export interface ProjectCandidate {
+  latitude?: number | null;
+  longitude?: number | null;
   id: string;
   candidate_name: string;
   developer: string | null;

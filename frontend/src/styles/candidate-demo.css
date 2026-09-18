@@ -1,0 +1,5 @@
+.candidate-demo-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; color: #fbbf24; }
+.candidate-demo-toolbar button, .candidate-demo-toolbar select { padding: 7px 12px; border-radius: 6px; border: 1px solid #475569; background: #171c26; color: #cbd5e1; font-size: 12px; }
+.candidate-demo-toolbar button { cursor: pointer; }
+.candidate-demo-toolbar button[aria-pressed="true"] { color: #fbbf24; border-color: #b45309; background: #78350f44; }
+.candidate-demo-toolbar button:focus-visible, .candidate-demo-toolbar select:focus-visible { outline: 2px solid #fbbf24; outline-offset: 3px; }

@@ -245,8 +245,11 @@ class ProjectCandidateGenerator:
         review_decision: str | None = None,
         has_review_decision: bool | None = None,
         limit: int = 100,
+        newest_first: bool = False,
     ) -> list[ProjectCandidate]:
         query = select(ProjectCandidate).order_by(ProjectCandidate.triage_score.desc().nullslast(), ProjectCandidate.created_at.desc())
+        if newest_first:
+            query = query.order_by(None).order_by(ProjectCandidate.created_at.desc(), ProjectCandidate.id.asc())
         if status:
             query = query.where(ProjectCandidate.status == status)
         if state:

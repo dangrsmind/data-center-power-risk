@@ -175,3 +175,8 @@
 .map-overlay-toggle small { display: block; margin-top: 3px; font-size: 9px; color: var(--map-dim); line-height: 1.45; }
 .map-overlay-toggle:has(input:disabled) { opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .map-overlay-high_signal { animation: none; } }
+
+/* Review candidates are separate from final project circles. */
+.map-candidate-diamond { display: block; width: 16px; height: 16px; margin: 2px; background: #f59e0b; border: 2px solid #ffedd5; transform: rotate(45deg); box-shadow: 0 0 0 3px #7c2d1266; }
+.candidate-marker-icon:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }
+.candidate-label { color: #fbbf24; font-size: 11px; font-weight: 700; }

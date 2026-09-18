@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
+import math
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -92,6 +93,7 @@ def get_project_candidate_constraint_summary(
 
 @router.get("", response_model=ProjectCandidateListResponse, response_model_exclude_none=True)
 def list_project_candidates(
+    sort: Literal["triage", "newest"] = "triage",
     status: str | None = None,
     state: str | None = None,
     triage_tier: str | None = None,
@@ -122,6 +124,7 @@ def list_project_candidates(
         has_review_decision=has_review_decision,
         min_triage_score=min_triage_score,
         limit=limit,
+        newest_first=sort == "newest",
     )
     items = [project_candidate_response(candidate) for candidate in candidates]
     if energy_strategy:
@@ -195,8 +198,28 @@ def normalize_top_candidate_limit(value: object) -> int:
     return 10
 
 
+def candidate_coordinates(metadata):
+    """Read existing coordinate pairs only; never geocode or expose raw metadata."""
+    if not isinstance(metadata, dict):
+        return None, None
+    for record in (metadata, metadata.get('normalized_row')):
+        if not isinstance(record, dict):
+            continue
+        values = [record.get('latitude'), record.get('longitude')]
+        if any(isinstance(v, bool) or not isinstance(v, (str, int, float)) for v in values):
+            continue
+        try:
+            lat, lon = map(float, values)
+        except (ValueError, TypeError, OverflowError):
+            continue
+        if math.isfinite(lat) and math.isfinite(lon) and abs(lat) <= 90 and abs(lon) <= 180:
+            return lat, lon
+    return None, None
+
+
 def project_candidate_response(candidate) -> ProjectCandidateResponse:
     payload = ProjectCandidateResponse.model_validate(candidate)
+    payload.latitude, payload.longitude = candidate_coordinates(candidate.raw_metadata_json)
     payload.csv_provenance = csv_provenance_from_metadata(candidate.raw_metadata_json)
     classification = energy_strategy_from_metadata(candidate.raw_metadata_json)
     if classification is None:

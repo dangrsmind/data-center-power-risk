@@ -1,6 +1,7 @@
+import { isBaselineCandidate } from "../config/candidatePresentation";
 import { useEffect, useState, useCallback } from "react";
 import type { ConstraintSummaryResponse, ConstraintSummaryItem } from "../api/types";
-import { getConstraintSummary } from "../api/adapter";
+import { getProjectCandidates, getConstraintSummary } from "../api/adapter";
 
 function fmtLabel(s: string | null | undefined): string {
   if (!s) return "Unknown";
@@ -339,6 +340,26 @@ function TopCandidateRow({ item }: { item: ConstraintSummaryItem }) {
   );
 }
 
+function CandidateReviewSummary() {
+  const [counts, setCounts] = useState<number[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getProjectCandidates({ sort: "newest", limit: 500 }).then(({ items }) => {
+      if (!cancelled) setCounts([items.filter(c => c.status === "needs_review").length,
+        items.filter(c => isBaselineCandidate(c) && c.lifecycle_state === "dataset_import_needs_review").length,
+        items.filter(c => !c.promoted_project_id && c.status !== "promoted").length]);
+    }).catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, []);
+  return <div style={{ marginBottom: 16, padding: 16, background: "#1c2028", border: "1px solid #f59e0b55", borderRadius: 8 }}>
+    <strong style={{ color: "#fbbf24" }}>ProjectCandidate review inventory</strong>
+    <p>{failed ? "Candidate inventory unavailable" : counts ? `${counts[0]} needs_review · ${counts[1]} dataset_import_needs_review · ${counts[2]} not promoted` : "Loading candidate inventory…"}</p>
+    <small>Latest up to 500 candidates · independent of dashboard filters · not final Projects. </small>
+    <a href="/project-candidates">Review candidates ↗</a>
+  </div>;
+}
+
 export function ConstraintDashboardPage() {
   const [data, setData] = useState<ConstraintSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -399,6 +420,7 @@ export function ConstraintDashboardPage() {
         </p>
       </div>
 
+      <CandidateReviewSummary />
       {/* Filter bar */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const, alignItems: "center", marginBottom: 16 }}>
         <FilterSelect value={filterStatus}   onChange={setFilterStatus}   options={STATUS_OPTIONS}   placeholder="All statuses" />

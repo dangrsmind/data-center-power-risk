@@ -53,3 +53,18 @@ test('risk colors never imply approval from a low or unknown risk tier', () => {
   for (const tier of ['medium', 'moderate', 'elevated']) assert.equal(tierColor(tier), 'var(--map-amber)');
   for (const tier of [null, 'low', 'unknown']) assert.equal(tierColor(tier), 'var(--map-slate)');
 });
+
+const candidateSource = fs.readFileSync(path.join(__dirname, '../src/config/candidatePresentation.ts'), 'utf8');
+const candidateHelpers = {};
+new Function('exports', ts.transpileModule(candidateSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(candidateHelpers);
+test('candidate display keeps review status, provenance and coordinates separate from Projects', () => {
+  const c = {status:'needs_review', promoted_project_id:null, lifecycle_state:'dataset_import_needs_review', latitude:0, longitude:0};
+  assert(candidateHelpers.isBaselineCandidate(c));
+  assert(candidateHelpers.isReviewCandidate(c));
+  assert(candidateHelpers.hasCandidateCoordinates(c));
+  assert(!candidateHelpers.isReviewCandidate({...c, promoted_project_id:'project-id'}));
+  assert(!candidateHelpers.isReviewCandidate({...c, status:'promoted'}));
+  for (const latitude of [null,undefined,'0',NaN,Infinity,91,true]) assert(!candidateHelpers.hasCandidateCoordinates({...c,latitude}));
+  assert.equal(candidateHelpers.safeSourceUrl('javascript:alert(1)'), undefined);
+  assert.equal(candidateHelpers.safeSourceUrl('https://example.org/source'), 'https://example.org/source');
+});

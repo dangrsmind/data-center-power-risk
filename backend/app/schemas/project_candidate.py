@@ -71,6 +71,8 @@ class ProjectCandidateCsvProvenance(BaseModel):
 
 
 class ProjectCandidateResponse(BaseModel):
+    latitude: float | None = None
+    longitude: float | None = None
     id: uuid.UUID
     candidate_name: str
     developer: str | None
