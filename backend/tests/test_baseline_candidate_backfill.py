@@ -15,7 +15,12 @@ class BackfillTest(unittest.TestCase):
     setUp = fixtures.BaselineImportTest.setUp
     tearDown = fixtures.BaselineImportTest.tearDown
     csv = fixtures.BaselineImportTest.csv
-    sample = fixtures.BaselineImportTest.sample
+    def sample(self, **extra):
+        return fixtures.BaselineImportTest.sample(self, **{
+            'status': 'Proposed',
+            'Selected Sources': 'https://www.datacenterdynamics.com/en/news/proposed-example-campus/',
+            **extra,
+        })
     run_import = fixtures.BaselineImportTest.run_import
     assert_only_import_tables = fixtures.BaselineImportTest.assert_only_import_tables
 
@@ -95,15 +100,14 @@ class BackfillTest(unittest.TestCase):
     def test_fractracker_mappable_and_missing_source(self):
         path = self.csv([{'facility_name': 'Tracker', 'lat': '39.5', 'long': '-77.5', 'operator_name': 'Operator'}], 'fractracker.csv')
         CsvDatasetImporter(self.db).import_file(dataset='fractracker_us_data_centers', input_path=path, confirm=True)
-        result = backfill_candidates(self.db, dataset='fractracker_us_data_centers', confirm=True, only_mappable=True)
-        self.assertEqual(result.created_candidates, 1)
-        self.assertEqual(result.rows_skipped_missing_public_source_url, 0)
-        self.assertTrue(result.warnings)
-        candidate = self.db.scalar(select(ProjectCandidate))
-        self.assertEqual(candidate.developer, 'Operator')
-        self.assertEqual(candidate.raw_metadata_json['latitude'], 39.5)
-        self.assertEqual(candidate.raw_metadata_json['longitude'], -77.5)
-        self.assertIsNone(candidate.primary_source_url)
+        before = self.snapshot()
+        result = backfill_candidates(self.db, dataset='fractracker_us_data_centers', only_mappable=True, include_row_details=True)
+        self.assertEqual(result.created_candidates, 0)
+        self.assertEqual(result.rows_skipped_weak_source_quality, 1)
+        self.assertEqual(result.row_details[0]['source_quality'], 'unknown')
+        self.assertEqual(result.row_details[0]['latitude'], 39.5)
+        self.assertEqual(result.row_details[0]['longitude'], -77.5)
+        self.assertEqual(self.snapshot(), before)
 
     def test_exact_candidate_duplicate_never_overridden(self):
         self.seed()
@@ -158,7 +162,7 @@ class BackfillTest(unittest.TestCase):
     def test_25_row_window_preserves_linked_duplicate_context(self):
         import hashlib
         rows = [{'facility_name': hashlib.sha256(str(i).encode()).hexdigest()[:16],
-                 'lat': str(10 + i), 'long': '40', 'info_source_1': f'https://example.org/site/{i}'}
+                 'lat': str(10 + i), 'long': '40', 'info_source_1': f'https://www.datacenterdynamics.com/en/news/proposed-site-{i}'}
                 for i in range(25)]
         # Fifteen distinct rows, two shared-URL exact duplicates, three nearby
         # rows detected only against full audit coordinates, five flagged rows.
@@ -203,7 +207,7 @@ class BackfillTest(unittest.TestCase):
         self.assertEqual(override.rows_skipped_existing_candidate_duplicate, 2)
 
     def test_explicit_offset_advances_audit_window(self):
-        self.run_import([self.sample(Name='First'), self.sample(Name='Next', **{'Selected Sources': 'https://another.org/site'})], confirm=True)
+        self.run_import([self.sample(Name='First'), self.sample(Name='Next', **{'Selected Sources': 'https://www.datacenterknowledge.com/news/proposed-next-campus'})], confirm=True)
         # Distinct input location to avoid intentional ambiguity from sample names.
         audits = list(self.db.scalars(select(ImportedDatasetRow).order_by(ImportedDatasetRow.row_number)))
         audits[1].duplicate_status = 'distinct'
@@ -224,7 +228,7 @@ class BackfillTest(unittest.TestCase):
         from datetime import datetime, timedelta
         rows = [{'facility_name': hashlib.sha256(str(i).encode()).hexdigest()[:16],
                  'lat': str(10 + i), 'long': '40', 'operator_name': f'Operator {i}',
-                 'info_source_1': f'https://example.org/facility/{i}'} for i in range(30)]
+                 'info_source_1': f'https://www.datacenterdynamics.com/en/news/proposed-facility-{i}'} for i in range(30)]
         # Duplicate signals span page boundaries, including a row before offset.
         rows[5]['lat'] = '10.001'
         rows[12]['lat'] = '16.001'

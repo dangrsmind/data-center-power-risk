@@ -591,9 +591,9 @@ as additional protection. Exact duplicates are always skipped. Possible/likely m
 are skipped unless `--include-possible-duplicates` explicitly requests review candidates;
 the warning survives creation. No existing candidate is merged or modified.
 
-Missing public URLs are preserved as review warnings, not a candidate-level rejection:
-`rows_skipped_missing_public_source_url` is therefore zero. Public-source requirements
-for final projects remain unchanged. Original row, dataset, audit/run IDs, source URLs,
+Missing primary public URLs now block backfill under `rows_skipped_weak_source_quality`
+(the legacy `rows_skipped_missing_public_source_url` counter remains zero). Public-source
+requirements for final projects remain unchanged. Original row, dataset, audit/run IDs, source URLs,
 citation and license metadata are retained. Epoch attribution and unknown FracTracker
 license terms remain as recorded during import. Analysts must review both provenance
 and project-specific evidence before later admission.
@@ -676,8 +676,8 @@ operator, location, first public source URL, classification, reason, and matchin
 candidate/project/audit IDs where known. Missing fields are null. No raw row or full
 metadata blob is included. Matching audit IDs may refer to earlier context rows;
 `existing_candidate_duplicate` also covers exact matches to planned audit rows, so
-use the match IDs to distinguish the cases. Missing public sources remain explicit
-review warnings rather than a final-project admission exemption.
+use the match IDs to distinguish the cases. Missing primary public sources now block
+backfill through the source-quality gate described below.
 
 To reconcile, run the same command with `--limit 5` at offsets 25, 30, 35, 40 and 45.
 Sum checked/eligible/skipped/would-create/created counts; they must equal the limit-25
@@ -687,3 +687,55 @@ dataset/run filter and flags. Offset itself is not an additive counter. Concurre
 imports or reviews change the comparison snapshot, so rerun all previews after them.
 Dry-run creates zero candidates, links, Projects or Evidence and invokes no external
 fetch, verification, admission or promotion. Runtime reports stay outside Git.
+
+### Source-quality and candidate-type gates
+
+Review `--dry-run --include-row-details` before any confirmed backfill. A usable name,
+location and lack of duplicates are no longer sufficient. Baseline backfill now also
+requires both `source_quality_allows_candidate_creation` and
+`candidate_type_allows_candidate_creation`. This applies to the existing confirm path
+as well as its preview; `--include-possible-duplicates` cannot bypass these gates.
+
+Classification is offline, using the primary public URL's hostname/path and explicit
+name, stage and notes fields. No fetching, content verification or invented facts are
+involved. A small explicit domain list recognizes operator and news sources; unknown
+hosts remain blocked. These are review hints, not proof of credibility or admission.
+
+Source categories:
+
+- `official_project_or_operator`, `credible_news_article`, `government_or_regulatory`:
+  may pass source quality if the URL is not a landing page/index.
+- `social_media_or_group`: blocked; social/group/forum pages cannot establish a candidate.
+- `broad_report_or_index`: blocked; broad reports and indexes are supporting context.
+- `advocacy_or_watchdog_report`: blocked as a direct candidate creation source.
+- `unknown`: blocked, including missing URLs and unrecognized domains.
+
+Candidate types:
+
+- `project_specific_build_or_expansion`: requires an explicit build, expansion,
+  construction or proposal signal in the primary URL or selected row fields.
+- `operating_facility_or_colocation_page`: blocked without an explicit build/expansion signal.
+- `programmatic_solicitation_or_policy`: blocked; a program covering multiple sites
+  does not establish a particular project, even if the dataset labels it Proposed.
+- `broad_market_or_report_reference` and `ambiguous`: blocked.
+
+The existing first public URL remains the primary source. Secondary links are retained
+in the audit but never silently promoted to replace a weak primary. Analysts should
+review such alternatives separately. Evidence-text blobs containing other URLs are
+not mined for build signals. This deliberately favors false negatives over weak
+candidate creation; there is no CLI source-quality override.
+
+Row details show both categories, both booleans and `quality_gate_reason`, even when an
+earlier identity/link/duplicate check supplies the final classification. Rows otherwise
+eligible are counted as `rows_skipped_weak_source_quality` or
+`rows_skipped_ambiguous_candidate_type` when blocked. Counters remain mutually exclusive.
+Blocked rows remain visible and retain duplicate context, so tightening source gates
+cannot silently make neighboring ambiguous rows eligible. Pagination reconciliation
+and read-only behavior remain unchanged.
+
+For the reviewed offset-25 FracTracker window, the two Facebook-primary rows are blocked;
+Expedient PHX1 is an operating facility reference; the Tract primary URL is a broad report;
+Davis-Monthan's primary article describes a multi-base solicitation. The Guadalupe Quarry
+proposal article can remain eligible subject to duplicate and analyst checks. Additional
+links on some blocked rows may be useful for later review. This change does not modify
+the separate CSV audit importer, final-project verifier, admission or promotion rules.
