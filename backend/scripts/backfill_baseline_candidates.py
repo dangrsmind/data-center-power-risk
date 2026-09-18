@@ -5,6 +5,7 @@ import argparse
 import json
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -25,6 +26,8 @@ def parse_args(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Read-only preview; writes nothing. Start here.")
     mode.add_argument("--confirm", action="store_true", help="Create review candidates and links only in an already migrated database.")
+    parser.add_argument("--audit-row-id", type=uuid.UUID, action="append", default=[], help="Reviewed audit row UUID; repeat for multiple rows. Required with --confirm.")
+    parser.add_argument("--max-create-candidates", type=int, help="Positive hard cap; fails rather than truncates. Required with --confirm.")
     parser.add_argument("--only-mappable", action="store_true")
     parser.add_argument("--include-row-details", action="store_true", help="Dry-run only: report selected audit rows, classifications and match IDs.")
     parser.add_argument("--include-possible-duplicates", action="store_true", help="CAUTION: allow ambiguous duplicate candidates for analyst review; exact duplicates stay blocked.")
@@ -35,6 +38,10 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.include_row_details and not args.dry_run:
         parser.error("--include-row-details requires --dry-run")
+    if args.max_create_candidates is not None and args.max_create_candidates <= 0:
+        parser.error("--max-create-candidates must be a positive integer")
+    if args.confirm and (not args.audit_row_id or args.max_create_candidates is None):
+        parser.error("--confirm requires both --audit-row-id and --max-create-candidates")
     if args.limit is not None and args.limit < 0:
         parser.error("--limit must be non-negative")
     if args.offset < 0:
@@ -63,7 +70,8 @@ def main(argv=None):
             result = backfill_candidates(db, dataset=args.dataset, confirm=args.confirm,
                 import_run_id=args.import_run_id, limit=args.limit, offset=args.offset, only_mappable=args.only_mappable,
                 include_possible_duplicates=args.include_possible_duplicates,
-                include_row_details=args.include_row_details).to_dict()
+                include_row_details=args.include_row_details, audit_row_ids=args.audit_row_id,
+                max_create_candidates=args.max_create_candidates).to_dict()
             if args.confirm:
                 db.commit()
         output = json.dumps(result, indent=2, sort_keys=True, allow_nan=False)
@@ -72,6 +80,9 @@ def main(argv=None):
             with args.report_output.open("x", encoding="utf-8") as handle:
                 handle.write(output + "\n")
         return 0
+    except ValueError as exc:
+        print(f"Backfill refused: {exc}", file=sys.stderr)
+        return 2
     finally:
         engine.dispose()
 
