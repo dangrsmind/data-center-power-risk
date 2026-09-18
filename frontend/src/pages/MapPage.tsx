@@ -6,8 +6,9 @@ import "leaflet/dist/leaflet.css";
 import "../styles/map-console.css";
 import { getBasemapConfig } from "../config/basemap";
 import { MAP_LAYERS, classifyMapRecord, defaultMapLayers, mapLayerCounts, visibleMapRecords, type MapLayerId, formatLoad, humanize, isMappable, markerRadius, tierColor } from "../config/mapPresentation";
-import type { ProjectDetail, ProjectListItem, ProjectRiskSignalData } from "../api/types";
-import { getProjects, getProjectRiskSignal, getProject } from "../api/adapter";
+import { hasCandidateCoordinates, isReviewCandidate, isBaselineCandidate, safeSourceUrl } from "../config/candidatePresentation";
+import type { ProjectCandidate, ProjectDetail, ProjectListItem, ProjectRiskSignalData } from "../api/types";
+import { getProjectCandidates, getProjects, getProjectRiskSignal, getProject } from "../api/adapter";
 import { ProjectCoordinateEditor } from "../components/coordinates/ProjectCoordinateEditor";
 import { MapPrediction } from "../components/map/MapPrediction";
 
@@ -39,7 +40,7 @@ function Field({ label, children, color }: { label: string; children: React.Reac
   return <div className="map-field"><dt>{label}</dt><dd style={{ color }}>{children}</dd></div>;
 }
 function MapBehavior({ selected, focusToken, points, fitToken, onReady, pickMode, onPick }: {
-  selected: ProjectListItem | null; focusToken: number; points: ProjectListItem[]; fitToken: number;
+  selected: ProjectListItem | null; focusToken: number; points: { latitude?: number | null; longitude?: number | null }[]; fitToken: number;
   onReady: () => void; pickMode: boolean; onPick: (lat: number, lng: number) => void;
 }) {
   const map = useMap();
@@ -62,6 +63,9 @@ function MapBehavior({ selected, focusToken, points, fitToken, onReady, pickMode
 }
 
 export function MapPage() {
+  const [candidates, setCandidates] = useState<ProjectCandidate[]>([]);
+  const [candidateError, setCandidateError] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(true);
   const [items, setItems] = useState<MapProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +110,19 @@ export function MapPage() {
     return () => { cancelled = true; };
   }, [reload]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setCandidateError(false);
+    getProjectCandidates({ status: "needs_review", sort: "newest", limit: 500 })
+      .then(result => { if (!cancelled) setCandidates(result.items.filter(isReviewCandidate)); })
+      .catch(() => { if (!cancelled) setCandidateError(true); });
+    return () => { cancelled = true; };
+  }, [reload]);
+  const candidateMatches = candidates.filter(c => hasCandidateCoordinates(c)
+    && (state === "all" || c.state === state)
+    && [c.candidate_name, c.city, c.state, c.developer].join(" ").toLowerCase().includes(query.trim().toLowerCase()));
+  const candidatePoints = showCandidates ? candidateMatches : [];
+
   // Optional layer: no remote boundary request until the analyst enables it.
   useEffect(() => {
     if (!showStates || boundaries) return;
@@ -118,7 +135,7 @@ export function MapPage() {
     return () => controller.abort();
   }, [showStates, boundaries]);
 
-  const states = useMemo(() => [...new Set(items.map(item => item.project.state).filter(Boolean))].sort(), [items]);
+  const states = useMemo(() => [...new Set([...items.map(item => item.project.state), ...candidates.map(c => c.state)].filter((s): s is string => !!s))].sort(), [items, candidates]);
   const filtered = useMemo(() => items.filter(item => {
     const p = item.project;
     const text = `${p.project_name} ${p.developer ?? ""} ${p.county ?? ""} ${p.state}`.toLowerCase();
@@ -168,6 +185,7 @@ export function MapPage() {
           </div>
           {activeFilters && <button className="map-text-button" onClick={clearFilters}>Reset filters</button>}
         </div>
+        <div style={{ padding: "10px 14px", color: "#fbbf24", fontSize: 12 }}>{candidatePoints.length} review candidates mapped · <Link to="/project-candidates">Candidate review ↗</Link></div>
         <div className="map-list-heading"><span>PROJECT REGISTER</span><span>{onMap.length} mapped</span></div>
         <div className="map-project-list">
           {loading && <div className="map-list-state" role="status">Loading project register…</div>}
@@ -188,26 +206,39 @@ export function MapPage() {
         <MapContainer center={[38.5, -96.5]} zoom={4} className={`map-canvas ${basemap.fallback ? "map-fallback" : ""}`} zoomControl>
           <TileLayer url={basemap.url} attribution={basemap.attribution} maxZoom={basemap.maxZoom} />
           {showStates && boundaries && <GeoJSON data={boundaries} style={{ color: "#7d90a5", weight: 1, fillOpacity: 0, opacity: 0.6 }} />}
-          <MapBehavior selected={selected && layers.projects && isMappable(selected.project, showApproximate) ? selected.project : null} focusToken={focusToken} points={onMap.map(item => item.project)} fitToken={fitToken} onReady={() => setMapReady(true)} pickMode={pickMode} onPick={(latitude, longitude) => setPicked({ latitude, longitude })} />
+          <MapBehavior selected={selected && layers.projects && isMappable(selected.project, showApproximate) ? selected.project : null} focusToken={focusToken} points={[...onMap.map(item => item.project), ...candidatePoints]} fitToken={fitToken} onReady={() => setMapReady(true)} pickMode={pickMode} onPick={(latitude, longitude) => setPicked({ latitude, longitude })} />
           {picked && <CircleMarker center={[picked.latitude, picked.longitude]} radius={8} pathOptions={{ color: "var(--map-cyan)" }} />}
           {mapReady && onMap.map(item => <Marker key={item.project.project_id} position={[Number(item.project.latitude), Number(item.project.longitude)]} icon={projectIcon(item, colorMode, item.project.project_id === selectedId, layers)} title={item.project.project_name} alt={item.project.project_name} zIndexOffset={selectedId === item.project.project_id ? 1000 : 0} eventHandlers={{ click: () => selectItem(item), keydown: event => { if (event.originalEvent.key === "Enter") selectItem(item); } }}>
             <Popup className="map-console-popup" minWidth={220} maxWidth={280}><div className="map-popup-content"><span className="map-eyebrow">{humanize(tier(item, colorMode))} {colorMode === "model" ? "model risk" : "evidence signal"}</span><strong>{item.project.project_name}</strong><p>{[item.project.county, item.project.state].filter(Boolean).join(", ")} · {formatLoad(item.project.modeled_primary_load_mw)} MW modeled</p><Link to={`/projects/${item.project.project_id}`}>Open project details ↗</Link></div></Popup>
           </Marker>)}
+          {mapReady && candidatePoints.map(c => <Marker key={`candidate-${c.id}`} position={[c.latitude!, c.longitude!]} title={`Candidate: ${c.candidate_name}`} alt={`Candidate: ${c.candidate_name}`} icon={L.divIcon({ className: "candidate-marker-icon", html: '<span class="map-candidate-diamond"></span>', iconSize: [20, 20], iconAnchor: [10, 10] })}>
+            <Popup className="map-console-popup" minWidth={240}><div className="map-popup-content">
+              <span className="candidate-label">Candidate · Needs review · Not promoted</span>
+              <strong>{c.candidate_name}</strong><p>{[c.city, c.state].filter(Boolean).join(", ")}</p>
+              <p>ProjectCandidate / {c.status} / not promoted</p>
+              {isBaselineCandidate(c) && <p>Dataset import</p>}
+              <p>Lifecycle: {c.lifecycle_state ?? "Unknown"}<br/>Confidence: {Math.round(c.confidence * 100)}% · unverified location</p>
+              {safeSourceUrl(c.primary_source_url) && <a href={safeSourceUrl(c.primary_source_url)} target="_blank" rel="noopener noreferrer" style={{ overflowWrap: "anywhere" }}>{c.primary_source_url}</a>}
+              <Link to="/project-candidates">Open candidate review ↗</Link>
+            </div></Popup>
+          </Marker>)}
         </MapContainer>
-        {(loading || error || !onMap.length) && <div className={`map-state-card ${error ? "has-error" : ""}`} role={error ? "alert" : "status"}>
+        {(loading || error || (!onMap.length && !candidatePoints.length)) && <div className={`map-state-card ${error ? "has-error" : ""}`} role={error ? "alert" : "status"}>
           <span className="map-eyebrow">{error ? "DATA CONNECTION" : loading ? "LOADING INTELLIGENCE" : "NO MAPPABLE RECORDS"}</span>
           <h2>{error ? "Map available. Project data unavailable." : loading ? "Building your spatial view…" : "No projects to plot in this view."}</h2>
           <p>{error ?? (loading ? "Loading projects and their existing evidence signals." : "Enable project markers, adjust filters, or include approximate coordinates. Hidden records remain in the project register.")}</p>
           {error ? <button onClick={() => setReload(value => value + 1)}>Retry project data</button> : !loading && activeFilters ? <button onClick={clearFilters}>Reset filters</button> : null}
         </div>}
         <details className="map-layer-control"><summary>Map layers</summary>
+          <label className="map-overlay-toggle"><input type="checkbox" aria-label="Needs review candidates" checked={showCandidates} onChange={e => setShowCandidates(e.target.checked)}/><span><span className="candidate-label">◇ Needs review candidates · {candidateMatches.length}</span><small>Amber diamonds · not promoted · search/geography only. Up to 500 latest review candidates.</small></span></label>
+          {candidateError && <p role="status">Candidate layer unavailable. <button onClick={() => setReload(v => v + 1)}>Retry</button></p>}
           <p className="map-layer-count-note">Eligible in this view · counts can overlap</p>
           {MAP_LAYERS.map(layer => <label className="map-overlay-toggle" key={layer.id} title={layer.description}>
             <input type="checkbox" aria-label={layer.label} checked={layers[layer.id]} disabled={layer.id !== "projects" && !layers.projects} onChange={event => setLayers(current => ({ ...current, [layer.id]: event.target.checked }))}/>
             <span><span className="map-layer-name"><i style={{ background: layer.color }}/>{layer.label}<b aria-label={`${layerCounts[layer.id]} eligible records`}>{layerCounts[layer.id]}</b></span><small>{layer.description}</small></span>
           </label>)}
           <label><input type="checkbox" checked={showApproximate} onChange={e => setShowApproximate(e.target.checked)}/>Include approximate locations</label><label><input type="checkbox" checked={showStates} onChange={e => setShowStates(e.target.checked)}/>State boundaries</label>{showStates && <p>{geoError ? "Boundary layer unavailable. Project markers remain usable." : !boundaries ? "Loading boundaries…" : "State boundaries visible"}</p>}</details>
-        <div className="map-legend" aria-label="Map legend"><span>{colorMode === "evidence" ? "SIGNAL" : "RISK"}</span><i style={{ background: "var(--map-hot)" }}/>High<i style={{ background: "var(--map-amber)" }}/>{colorMode === "evidence" ? "Moderate" : "Elevated / medium"}<i style={{ background: "var(--map-slate)" }}/>Low / unknown <span className="map-legend-size">Size = modeled MW</span></div>
+        <div className="map-legend" aria-label="Map legend"><span>{colorMode === "evidence" ? "SIGNAL" : "RISK"}</span><i style={{ background: "var(--map-hot)" }}/>High<i style={{ background: "var(--map-amber)" }}/>{colorMode === "evidence" ? "Moderate" : "Elevated / medium"}<i style={{ background: "var(--map-slate)" }}/>Low / unknown <span className="map-legend-size">Size = modeled MW</span><span className="candidate-label">◇ Candidate · needs review · not promoted</span></div>
       </div>
       {selected && <aside className="map-inspector" aria-label="Selected project details">
         <div className="map-panel-heading"><h2>Project intelligence</h2><button onClick={() => setSelectedId(null)} aria-label="Close project details">×</button></div>

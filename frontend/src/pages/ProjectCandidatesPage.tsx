@@ -1,3 +1,5 @@
+import "../styles/candidate-demo.css";
+import { isBaselineCandidate, safeSourceUrl } from "../config/candidatePresentation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import type {
   ProjectCandidate,
@@ -1369,7 +1371,10 @@ function DetailsPanel({ c, onReviewDecisionSaved }: { c: ProjectCandidate; onRev
               </div>
             )}
 
-            {c.utility && (
+            <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 5 }}>{!c.promoted_project_id && c.status !== "promoted" ? "Candidate — not promoted" : "Candidate — promoted"}</div>
+          {c.csv_provenance && <div style={{ color: "#fbbf24", fontSize: 10 }}>Dataset import</div>}
+          {safeSourceUrl(c.primary_source_url) && <a href={safeSourceUrl(c.primary_source_url)} target="_blank" rel="noopener noreferrer" style={{ display: "block", color: "#94a3b8", fontSize: 10, overflowWrap: "anywhere" }}>{c.primary_source_url}</a>}
+          {c.utility && (
               <div>
                 <div style={sectionLabel}>Utility</div>
                 <div style={{ color: "#cbd5e1" }}>{c.utility}</div>
@@ -1485,6 +1490,9 @@ function CandidateRow({
           } as React.CSSProperties}>
             {c.candidate_name}
           </div>
+          <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 5 }}>{!c.promoted_project_id && c.status !== "promoted" ? "Candidate — not promoted" : "Candidate — promoted"}</div>
+          {c.csv_provenance && <div style={{ color: "#fbbf24", fontSize: 10 }}>Dataset import</div>}
+          {safeSourceUrl(c.primary_source_url) && <a href={safeSourceUrl(c.primary_source_url)} target="_blank" rel="noopener noreferrer" style={{ display: "block", color: "#94a3b8", fontSize: 10, overflowWrap: "anywhere" }}>{c.primary_source_url}</a>}
           {c.utility && (
             <div style={{
               fontSize: 10, color: "#64748b", marginTop: 2,
@@ -1742,6 +1750,8 @@ export function ProjectCandidatesPage() {
   const [filterState, setFilterState] = useState("");
   const [filterTriage, setFilterTriage] = useState("");
   const [filterConf, setFilterConf] = useState("");
+  const [filterBaseline, setFilterBaseline] = useState(false);
+  const [sort, setSort] = useState<"newest" | "triage">("newest");
   const [filterCsvOnly, setFilterCsvOnly] = useState(false);
   const [filterDataset, setFilterDataset] = useState("");
   const [filterDupeStatus, setFilterDupeStatus] = useState("");
@@ -1757,11 +1767,11 @@ export function ProjectCandidatesPage() {
   const fetchCandidates = useCallback(() => {
     setLoading(true);
     setError(null);
-    getProjectCandidates({ limit: 500 })
+    getProjectCandidates({ limit: 500, sort })
       .then(resp => setCandidates(resp.items))
       .catch(err => setError(String(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [sort]);
 
   useEffect(() => { fetchCandidates(); }, [fetchCandidates]);
 
@@ -1867,6 +1877,7 @@ export function ProjectCandidatesPage() {
       if (filterState && c.state !== filterState) return false;
       if (filterTriage && c.triage_tier !== filterTriage) return false;
       if (confMin !== null && c.confidence < confMin) return false;
+      if (filterBaseline && !isBaselineCandidate(c)) return false;
       if (filterCsvOnly && !c.csv_provenance) return false;
       if (filterDataset && c.csv_provenance?.dataset_name !== filterDataset) return false;
       if (filterDupeStatus && c.csv_provenance?.duplicate_status !== filterDupeStatus) return false;
@@ -1896,7 +1907,7 @@ export function ProjectCandidatesPage() {
       }
       return true;
     });
-  }, [candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
+  }, [filterBaseline, candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
       filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification,
       filterReviewDecision, filterHasReviewDecision, filterEnergyStrategy, filterSitingFriction]);
 
@@ -1910,10 +1921,11 @@ export function ProjectCandidatesPage() {
   const webCount = useMemo(() => candidates.filter(c => !c.csv_provenance).length, [candidates]);
   const reviewDecisionCount = useMemo(() => candidates.filter(c => !!c.review_decision).length, [candidates]);
 
-  const hasFilters = !!(searchText || filterStatus || filterState || filterTriage || filterConf ||
+  const hasFilters = !!(filterBaseline || searchText || filterStatus || filterState || filterTriage || filterConf ||
     filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification ||
     filterReviewDecision || filterHasReviewDecision || filterEnergyStrategy || filterSitingFriction);
   const clearFilters = () => {
+    setFilterBaseline(false);
     setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
     setFilterCsvOnly(false); setFilterDataset(""); setFilterDupeStatus(""); setFilterRecommendedAction(""); setFilterVerification("");
     setFilterReviewDecision(""); setFilterHasReviewDecision(""); setFilterEnergyStrategy(""); setFilterSitingFriction("");
@@ -2001,6 +2013,13 @@ export function ProjectCandidatesPage() {
           </div>
         )}
 
+        <div className="candidate-demo-toolbar">
+          <button aria-pressed={filterBaseline} onClick={() => setFilterBaseline(v => !v)}>Baseline imports</button>
+          <button aria-pressed={filterStatus === "needs_review"} onClick={() => setFilterStatus(v => v === "needs_review" ? "" : "needs_review")}>Needs review</button>
+          <label>Sort <select aria-label="Candidate sort" value={sort} onChange={e => setSort(e.target.value as "newest" | "triage")}><option value="newest">Newest created</option><option value="triage">Triage priority</option></select></label>
+          <a href="/map" style={{ color: "#fbbf24" }}>View candidate map ↗</a>
+          <small>Up to 500 candidates · review items are not final Projects</small>
+        </div>
         {/* Filters */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const, alignItems: "center" }}>
           <input

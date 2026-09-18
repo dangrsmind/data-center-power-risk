@@ -640,6 +640,7 @@ export async function acceptClaim(
 // ---------------------------------------------------------------------------
 
 export async function getProjectCandidates(params?: {
+  sort?: "triage" | "newest";
   status?: string;
   state?: string;
   triage_tier?: string;
@@ -656,6 +657,7 @@ export async function getProjectCandidates(params?: {
     return { items: [] };
   }
   const qs = new URLSearchParams();
+  if (params?.sort) qs.set("sort", params.sort);
   if (params?.status) qs.set("status", params.status);
   if (params?.state) qs.set("state", params.state);
   if (params?.triage_tier) qs.set("triage_tier", params.triage_tier);

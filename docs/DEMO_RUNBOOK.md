@@ -878,3 +878,58 @@ when no cap or within cap), and `confirm_safety_ready` (both safeguards present 
 within cap). Readiness is a guardrail result, not analyst approval or verification.
 Confirmation creates only review candidates and audit links in the existing transaction;
 Projects, Evidence, verification, admission and promotion remain outside this workflow.
+
+## Baseline candidate map demo
+
+The four reviewed pilot imports are **ProjectCandidates, not final Projects**:
+HostDime (Maitland, FL), Global AI (Windsor, CO), Buena Vista Biomass Power site
+(Ione, CA), and Guadalupe Quarry Redevelopment (Brisbane, CA). They remain
+`needs_review` / `dataset_import_needs_review`, confidence 0.45, unverified and
+not promoted. Displaying them performs no backfill, verification, auto-admit or promotion.
+
+Start the existing migrated local database in read-only mode for this demo:
+
+```sh
+cd backend
+source .venv/bin/activate
+DATABASE_URL="sqlite:///file:$(pwd)/local.db?mode=ro&uri=true" \
+  uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
+
+```sh
+cd frontend
+VITE_USE_MOCK=false VITE_API_BASE_URL=http://127.0.0.1:8000 \
+  VITE_CARTO_BASEMAP_API_KEY= npm run dev -- --host 127.0.0.1 --port 8001
+```
+
+- Open `/project-candidates`. Newest-created sorting is the default; choose
+  **Baseline imports** and **Needs review** to find the pilots without exact search.
+  Existing dataset, status, geography and other filters remain available, along with
+  **Triage priority** sorting. Rows show dataset-import and not-promoted labels,
+  city/state and a primary-source link. No need to open source links for the demo.
+- Open `/map`. **Needs review candidates** is enabled by default under **Map layers**.
+  Amber diamonds represent unpromoted review candidates; project circles remain separate.
+  Use **Fit view**, or search a short name such as Global AI. Candidate popups show
+  name, city/state, lifecycle, status, confidence, primary URL and a candidate-review link.
+  Candidate markers use only existing stored coordinates; locations are not verified.
+  Search/geography apply to candidates; model-load/risk/signal filters apply to Projects.
+- Open `/constraint-dashboard` for the additional ProjectCandidate review inventory:
+  needs-review, dataset-import-needs-review and not-promoted counts. These describe the
+  latest up to 500 candidates and are independent of dashboard filters. The candidate
+  list and map also load at most 500 records; these are not exhaustive national totals.
+
+The API adds nullable validated latitude/longitude display fields, accepting only finite,
+in-range stored coordinate pairs (top-level metadata, then normalized row). No database
+columns or records are added. Raw metadata remains redacted. Optional `sort=newest`
+applies before the API limit; the existing default API triage order is unchanged.
+
+Without a CARTO key, the existing OpenStreetMap fallback and notice remain. Normal
+basemap rendering requests external tiles. For no-network smoke, block external browser
+requests: candidate/project overlays and controls still work, but tiles are blank.
+State boundaries and external source links should remain unopened in that smoke.
+The implementation smoke used ports 8126/8127 to avoid existing local servers, a
+read-only SQLite connection, `BACKEND_CORS_ORIGINS=http://127.0.0.1:8127`,
+and blocked all external and non-GET/HEAD requests. It found all four pilots and
+19 mapped review candidates, with no mutation requests or database checksum change.
