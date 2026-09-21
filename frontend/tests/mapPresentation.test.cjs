@@ -68,3 +68,14 @@ test('candidate display keeps review status, provenance and coordinates separate
   assert.equal(candidateHelpers.safeSourceUrl('javascript:alert(1)'), undefined);
   assert.equal(candidateHelpers.safeSourceUrl('https://example.org/source'), 'https://example.org/source');
 });
+
+test('promotion moves a located record from review diamonds to project markers', () => {
+  const candidate = {status:'needs_review', promoted_project_id:null, latitude:28.6146, longitude:-81.3857};
+  assert(candidateHelpers.isReviewCandidate(candidate));
+  assert(!candidateHelpers.isReviewCandidate({...candidate,status:'promoted',promoted_project_id:'project'}));
+  assert(!candidateHelpers.isReviewCandidate({...candidate,promoted_project_id:'project'}));
+  const promoted = record({latitude:candidate.latitude,longitude:candidate.longitude,
+    coordinate_status:'unverified',coordinate_precision:'source_row',coordinate_confidence:0.45});
+  assert.equal(visibleMapRecords([promoted],true,defaultMapLayers()).length,1);
+  assert.equal(classifyMapRecord(promoted).verified,false);
+});

@@ -12,6 +12,8 @@ from app.core.enums import ClaimEntityType, LifecycleState, ReviewerStatus, Sour
 from app.models.evidence import Evidence, FieldProvenance
 from app.models.project import Project
 from app.models.project_candidate import ProjectCandidate
+from app.models.imported_dataset import ImportedCandidateLink, ImportedDatasetRow
+from app.services.candidate_coordinates import candidate_coordinates
 
 
 PROMOTION_REVIEWER = "project_candidate_promotion"
@@ -93,6 +95,7 @@ class ProjectCandidatePromotionService:
         project = existing_project
         if project is None:
             project = build_project(candidate)
+            self._preserve_coordinates(project, candidate)
             self.db.add(project)
             self.db.flush()
             summary.project_created = True
@@ -124,6 +127,38 @@ class ProjectCandidatePromotionService:
         summary.warnings.extend(mapping_warnings(candidate))
         self.db.flush()
         return summary
+
+    def _preserve_coordinates(self, project: Project, candidate: ProjectCandidate) -> None:
+        lat, lon = candidate_coordinates(candidate.raw_metadata_json)
+        metadata = candidate.raw_metadata_json if isinstance(candidate.raw_metadata_json, dict) else {}
+        source = ('baseline_imported_dataset_row' if metadata.get('provenance') == 'dataset_import'
+                  else 'candidate_metadata')
+        notes = 'Preserved from candidate metadata during explicit promotion; not verified.'
+        if lat is None:
+            rows = self.db.scalars(select(ImportedDatasetRow)
+                .join(ImportedCandidateLink, ImportedCandidateLink.imported_row_id == ImportedDatasetRow.id)
+                .where(ImportedCandidateLink.linked_record_type == 'project_candidate',
+                       ImportedCandidateLink.linked_record_id == candidate.id)
+                .order_by(ImportedDatasetRow.created_at, ImportedDatasetRow.id))
+            for row in rows:
+                lat, lon = candidate_coordinates(row.normalized_row_json)
+                if lat is not None:
+                    source = 'baseline_imported_dataset_row'
+                    notes = f'Preserved from imported audit row {row.id} during explicit promotion; not verified.'
+                    break
+        if lat is None:
+            return
+        project.latitude, project.longitude = lat, lon
+        project.coordinate_status = 'unverified'
+        project.coordinate_precision = 'source_row'
+        project.coordinate_source = source
+        project.coordinate_source_url = candidate.primary_source_url
+        confidence = candidate.confidence
+        project.coordinate_confidence = (float(confidence) if isinstance(confidence, (int, float))
+            and not isinstance(confidence, bool) and 0 <= confidence <= 1 else 0.45)
+        project.coordinate_notes = notes
+        project.coordinate_updated_at = datetime.now(timezone.utc)
+        # Do not set coordinate_verified_at: promotion does not verify location.
 
     def _find_existing_project(self, candidate: ProjectCandidate) -> Project | None:
         if candidate.promoted_project_id:

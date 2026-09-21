@@ -19,6 +19,7 @@ export type LifecycleState =
 export type RiskTier = "high" | "elevated" | "medium" | "moderate" | "low" | "unknown";
 export type CoordinateStatus = "missing" | "unverified" | "verified" | "needs_review";
 export type CoordinatePrecision =
+  | "source_row"
   | "exact_site"
   | "parcel"
   | "campus"
@@ -28,6 +29,8 @@ export type CoordinatePrecision =
   | "approximate"
   | "unknown";
 export type CoordinateSource =
+  | "baseline_imported_dataset_row"
+  | "candidate_metadata"
   | "manual_review"
   | "project_announcement"
   | "utility_filing"
