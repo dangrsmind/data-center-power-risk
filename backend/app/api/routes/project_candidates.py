@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-import math
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -11,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.services.candidate_coordinates import candidate_coordinates
 from app.models.project_candidate import ProjectCandidate
 from app.schemas.project_candidate import (
     ProjectCandidateConstraintSummaryCsvProvenance,
@@ -196,25 +196,6 @@ def normalize_top_candidate_limit(value: object) -> int:
     if isinstance(value, int):
         return max(0, min(value, 50))
     return 10
-
-
-def candidate_coordinates(metadata):
-    """Read existing coordinate pairs only; never geocode or expose raw metadata."""
-    if not isinstance(metadata, dict):
-        return None, None
-    for record in (metadata, metadata.get('normalized_row')):
-        if not isinstance(record, dict):
-            continue
-        values = [record.get('latitude'), record.get('longitude')]
-        if any(isinstance(v, bool) or not isinstance(v, (str, int, float)) for v in values):
-            continue
-        try:
-            lat, lon = map(float, values)
-        except (ValueError, TypeError, OverflowError):
-            continue
-        if math.isfinite(lat) and math.isfinite(lon) and abs(lat) <= 90 and abs(lon) <= 180:
-            return lat, lon
-    return None, None
 
 
 def project_candidate_response(candidate) -> ProjectCandidateResponse:

@@ -933,3 +933,27 @@ The implementation smoke used ports 8126/8127 to avoid existing local servers, a
 read-only SQLite connection, `BACKEND_CORS_ORIGINS=http://127.0.0.1:8127`,
 and blocked all external and non-GET/HEAD requests. It found all four pilots and
 19 mapped review candidates, with no mutation requests or database checksum change.
+
+### Coordinate preservation during explicit promotion
+
+Future candidate promotions preserve a validated coordinate pair on newly created
+Projects. The resolver first uses the same candidate metadata fields as the candidate
+API (top-level latitude/longitude, then normalized row). If unavailable or invalid,
+it checks imported audit rows linked to that candidate by `imported_candidate_links`
+with `linked_record_type=project_candidate`, in stable creation-time/ID order, taking
+the first valid pair. Coordinates are never combined across sources or geocoded.
+Booleans, nonnumeric values, nonfinite values and out-of-range pairs are ignored;
+missing coordinates do not block an otherwise valid promotion.
+
+Copied coordinates are `unverified`, precision `source_row`, with source
+`baseline_imported_dataset_row` (or `candidate_metadata` for a non-dataset candidate),
+the candidate primary URL, candidate confidence when valid (otherwise 0.45), source
+notes and the current update timestamp. No coordinate verification timestamp is set.
+Existing Projects and already-promoted records are not silently repaired or overwritten.
+The usual explicit promotion guards and associated Evidence behavior are unchanged.
+
+Current demo: HostDime and Buena Vista were previously promoted and manually repaired.
+They appear as Project circles. Global AI and Guadalupe Quarry remain amber review
+candidate diamonds. Promoted status or a promoted Project ID excludes a record from
+the review-candidate layer. This code change performs no local promotion or repair;
+regression promotions run only against disposable test databases.
