@@ -957,3 +957,159 @@ They appear as Project circles. Global AI and Guadalupe Quarry remain amber revi
 candidate diamonds. Promoted status or a promoted Project ID excludes a record from
 the review-candidate layer. This code change performs no local promotion or repair;
 regression promotions run only against disposable test databases.
+
+## Automated local open-dataset ingestion
+
+**Manual review is not required for every record.** Automation handles strict,
+explainable high-confidence cases; humans audit decisions, review exceptions and
+sample outputs. `scripts/ingest_open_datasets.py` is a separate opt-in workflow.
+Existing import/backfill/promotion commands retain their guards. No fetching, extraction,
+Evidence creation, verification, auto-admission or candidate promotion runs here.
+
+### Registry and decisions
+
+`app/services/open_dataset_registry.py` defines a versioned policy per dataset: public
+canonical URL when known, licensing/attribution, source type, entity/geographic scopes,
+cadence, adapter, required fields, coordinate policy, enabled decision lanes and thresholds.
+Epoch supports `data_centers*.csv`, `data_center_timelines*.csv`, `data_center_chillers*.csv`
+and `data_center_cooling_towers*.csv`. FracTracker supports `fractracker*.csv`. Repeat
+`--input` to supply related local files; no URL inputs or automatic downloads are supported.
+
+Epoch's local README supplies CC BY 4.0 attribution terms. FracTracker's canonical dataset
+URL and license remain unknown in the supplied export; the registry records nulls rather
+than inventing them. FracTracker automatic Project creation is disabled until an explicit
+registry revision establishes an appropriate policy. Row-level public sources can still
+support candidates/context/audit exceptions. Lack of both row and dataset public provenance
+means rejection with **no durable row**. Registry permission alone never bypasses row gates.
+
+| Decision | Behavior |
+| --- | --- |
+| `auto_create_project` | Strict high-confidence active build; new unverified Project plus audit and link |
+| `create_project_candidate` | Plausible aligned build passing existing quality gates; needs_review candidate plus audit and link |
+| `create_context_record_only` | Existing facility, timeline, equipment, power/grid/cooling or policy context; audit row only |
+| `skip_duplicate` | Existing representation/source-row hash; no new row and no uncertain merge |
+| `exception_review` | Conflicts, ambiguous duplicates, identity/location/source/lifecycle gaps; audit row only |
+| `reject_or_ignore` | Missing provenance, empty or cancelled/rejected/retired input; no new row |
+
+Source trust, identity, location, coordinate, lifecycle, source-specificity, duplicate-risk
+and conflict scores are reported individually. Overall confidence is the weighted sum
+(0.20 trust + 0.20 identity + 0.15 location + 0.15 coordinates + 0.15 lifecycle + 0.15 source
+specificity), minus 0.30 duplicate risk and 0.30 conflict, clamped to [0,1]. These scores
+are reproducible policy heuristics, **not calibrated probabilities or fetched verification**.
+Default thresholds are 0.85 for Projects and 0.60 for candidates, configurable in the registry.
+
+Automatic Projects additionally require: policy permission, public provenance, identity,
+a recognized US state, a valid coordinate pair, explicit active lifecycle, existing source
+quality/type gates, full (not weak) primary-source alignment, a direct operator/government
+primary source, and no duplicate/conflict/blocking-warning signal. Credible news may support
+a candidate, but alone does not satisfy this version's automatic Project gate. An explicit
+conflicting primary-source state is an exception even if a city name matches. Missing or
+invalid coordinates never produce automatic Projects. Useful context can retain coordinate
+warnings; unknown active-project lifecycle goes to exceptions. International records outside
+the current Project state model can remain candidates/context rather than gaining invented states.
+
+The existing Project lifecycle enum represents evidence maturity, so automated Projects use
+`candidate_unverified`; the source lifecycle and inferred entity type are retained in the
+decision metadata. Coordinates use `unverified` / `source_row`, dataset ID as source,
+primary URL, confidence and update timestamp. No verification timestamp is set.
+
+### Preview, audit, then bound the write
+
+From `backend` against an existing migrated database:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/ingest_open_datasets.py \
+  --dataset fractracker_us_data_centers \
+  --input ../data/imports/manual_csv/fractracker/fractracker_db_output_v2.csv \
+  --dry-run --limit 100 --include-row-details \
+  --report-output /tmp/fractracker-auto-ingest-preview.json
+
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/ingest_open_datasets.py \
+  --dataset epoch_ai_data_centers \
+  --input ../data/imports/manual_csv/epoch/data_centers.csv \
+  --input ../data/imports/manual_csv/epoch/data_center_timelines.csv \
+  --input ../data/imports/manual_csv/epoch/data_center_chillers.csv \
+  --input ../data/imports/manual_csv/epoch/data_center_cooling_towers.csv --dry-run
+```
+
+Omitting the mode defaults to dry-run. SQLite opens read-only; an explicitly requested
+report file is the only dry-run write, and existing files are never overwritten. Reports
+include file hashes, policy/engine version, input limit, validation/coordinate counts, every
+lane count, confidence distribution, bounded duplicate-cluster examples, warnings and top
+five examples per lane. `--include-row-details` includes every decision. `--limit` is an
+explicit input window, never silent creation-cap truncation.
+
+After reviewing the report and taking a backup, an intentional confirmed command can be:
+
+```sh
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/ingest_open_datasets.py \
+  --dataset epoch_ai_data_centers \
+  --input ../data/imports/manual_csv/epoch/data_centers.csv \
+  --confirm --max-create-projects 25 --max-create-candidates 100 --max-write-rows 1000
+```
+
+All three caps are mandatory and nonnegative. Zero is useful for an idempotent/no-write
+check. The entire input is planned before writes. `max-write-rows` counts **all inserted
+DB rows**: one run, each durable audit row, each new Project/candidate and each link.
+A one-Project import therefore needs a row cap of four. Any cap overflow fails before
+insertion; no partial selection/truncation occurs. A DB failure rolls back the whole run.
+Only runs, imported audit rows, import links, Projects and ProjectCandidates can be written.
+Evidence, claims, discovered sources, verification/admission and promotions are never written.
+
+### Idempotency, audit and sampling
+
+Source row hashes survive renamed files. Duplicate checks also use source IDs, URLs,
+name/location and coordinate proximity against **all** existing audit rows, candidates and
+Projects, plus preceding input rows. Strong duplicates are skipped; uncertain matches become
+exceptions. Context rows use exact row hashes, so equipment at a site's coordinates is not
+silently collapsed into the facility. Confirmed invocations of this pipeline serialize using
+SQLite's write lock or a PostgreSQL transaction advisory lock. Do not run unrelated legacy
+writers concurrently; they do not participate in this pipeline's locking protocol.
+
+One in-memory duplicate snapshot avoids per-row DB queries and the old 1,000-record cutoff.
+Exact/coordinate lookups use indexes; legacy fuzzy rules still compare shared state/domain
+buckets. This v0 plans in memory, and dense buckets can require quadratic comparisons.
+Benchmark a bounded preview before a very large import; no unlimited-scale claim is made.
+City regex caching preserves the existing alignment semantics without repeated compilation.
+
+Every created object links to its audit row and stores file/line, source-row ID/hash,
+normalized identity/location keys, source URL, decision/reasons, score components, policy
+snapshot and engine version. Inspect `normalized_row_json.automated_ingestion` on audit
+rows and `automated_ingestion` in entity metadata. Run summary metadata includes rejected
+and skipped counts/examples; retain the full JSON report when every rejected/skipped row
+must be audited, since rejected and duplicate inputs do not get new audit rows.
+
+For QA, sample across each lane, confidence bands, datasets and geography; prioritize all
+conflicts and values near thresholds. Inspect source identity/location and duplicate matches,
+and compare input file hashes on reruns. A high-score sample failure calls for policy
+revision and a new preview, not silent relabeling. Human review is an exception/QA role,
+not a mandatory per-Project step.
+
+For local rollback, stop API/import writers first and use SQLite's backup facility before
+confirmation (including any WAL contents):
+
+```sh
+sqlite3 local.db ".backup '/tmp/local-before-open-ingest.db'"
+```
+
+To restore, keep writers stopped, preserve the current DB and any WAL/SHM files together
+for diagnosis, and restore the backup as `local.db` in a clean database location. Restart
+only after checking integrity and record counts. Restoration discards changes made since
+the backup, so never apply it over another person's newer work. Keep backups, reports,
+raw CSVs and secrets out of Git. Synthetic fixtures belong in disposable test databases,
+never the local demo DB.
+
+### Validation snapshot for this implementation
+
+The six-row synthetic fixture produced one of each decision lane. In a disposable DB,
+caps of 1 Project / 1 candidate / 9 total rows produced exactly those writes. A repeat
+with all caps zero wrote nothing. Tests enforce foreign keys and simulate a late database
+failure to verify full rollback. The reader hashes and parses the same byte snapshot.
+
+Against the existing local DB, the first 100 FracTracker rows produced 97 duplicate skips
+and 3 no-provenance rejections, with zero planned writes. The reviewed window was confirmed
+with all three caps zero and wrote nothing; the local DB checksum stayed unchanged.
+All four local Epoch files were previewed: 1,042 records, 56 duplicate skips and 986
+context records, no Projects/candidates. That context import was **not confirmed**.
+No live source requests, Evidence creation, verification, admission or promotion ran.
+These are snapshot-specific outcomes, not fixed expectations for later datasets.

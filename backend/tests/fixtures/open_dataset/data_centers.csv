@@ -1,0 +1,7 @@
+Name,Country,city,state,latitude,longitude,status,Selected Sources
+Synthetic Alpha Campus,US,Denver,CO,39,-105,Proposed,https://www.equinix.com/news/synthetic-alpha-campus-proposed-in-denver-colorado
+Synthetic Bravo Build,US,Austin,TX,,,Proposed,https://www.datacenterdynamics.com/en/news/synthetic-bravo-build-proposed-in-austin-texas
+Synthetic Charlie Facility,US,Portland,OR,45,-122,Operating,https://www.equinix.com/facilities/portland
+Synthetic Delta Campus,US,Richmond,VA,37,-77,Proposed,https://www.equinix.com/news/synthetic-delta-campus-proposed-in-colorado
+Synthetic Echo Campus,US,Boise,ID,43,-116,Cancelled,https://www.equinix.com/news/synthetic-echo-campus-cancelled-in-idaho
+Synthetic Alpha Campus,US,Denver,CO,39,-105,Proposed,https://www.equinix.com/news/synthetic-alpha-campus-proposed-in-denver-colorado
