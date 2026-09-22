@@ -11,6 +11,8 @@ import { DiscoveredSourceClaimsPage } from "./pages/DiscoveredSourceClaimsPage";
 import { ProjectCandidatesPage } from "./pages/ProjectCandidatesPage";
 import { ConstraintDashboardPage } from "./pages/ConstraintDashboardPage";
 
+import { ImportedContextPage } from "./pages/ImportedContextPage";
+
 export function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -25,6 +27,7 @@ export function App() {
           <Route path="/discovered-sources" element={<DiscoveredSourcesPage />} />
           <Route path="/discovered-source-claims" element={<DiscoveredSourceClaimsPage />} />
           <Route path="/project-candidates" element={<ProjectCandidatesPage />} />
+          <Route path="/imported-context" element={<ImportedContextPage />} />
           <Route path="/constraint-dashboard" element={<ConstraintDashboardPage />} />
         </Routes>
       </Layout>

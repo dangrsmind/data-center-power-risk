@@ -1,3 +1,4 @@
+import { ImportedContextDashboard } from "./ImportedContextPage";
 import { isBaselineCandidate } from "../config/candidatePresentation";
 import { useEffect, useState, useCallback } from "react";
 import type { ConstraintSummaryResponse, ConstraintSummaryItem } from "../api/types";
@@ -421,6 +422,7 @@ export function ConstraintDashboardPage() {
       </div>
 
       <CandidateReviewSummary />
+      <ImportedContextDashboard />
       {/* Filter bar */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const, alignItems: "center", marginBottom: 16 }}>
         <FilterSelect value={filterStatus}   onChange={setFilterStatus}   options={STATUS_OPTIONS}   placeholder="All statuses" />
