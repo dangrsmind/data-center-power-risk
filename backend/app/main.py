@@ -17,6 +17,7 @@ from app.api.routes import (
     projects_router,
     queue_router,
 )
+from app.api.routes.imported_context import router as imported_context_router
 from app.core.config import get_backend_cors_origins
 from app.core.db import DATABASE_URL, create_db_and_tables
 
@@ -40,6 +41,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(imported_context_router)
 app.include_router(projects_router)
 app.include_router(automation_router)
 app.include_router(candidates_router)

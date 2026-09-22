@@ -1113,3 +1113,60 @@ All four local Epoch files were previewed: 1,042 records, 56 duplicate skips and
 context records, no Projects/candidates. That context import was **not confirmed**.
 No live source requests, Evidence creation, verification, admission or promotion ran.
 These are snapshot-specific outcomes, not fixed expectations for later datasets.
+
+## Imported Context review surface
+
+Open `/imported-context` (the **Imported Context** navigation item) to browse
+`imported_dataset_rows`. These are read-only context / imported audit rows, **not
+Projects**. A linked candidate is shown separately; neither viewing a row nor
+following a source link verifies, admits, or promotes it. Some historic audit rows
+may already link to candidates, so the page does not claim all records are unpromoted.
+
+Select an Epoch dataset in **Dataset**, then choose `data_center_cooling_towers.csv`,
+`data_center_chillers.csv`, or `data_center_timelines.csv` in **Source file**.
+Search covers raw JSON, normalized JSON, and source URLs (case-insensitive literal
+substring search). Combine it with duplicate status, warnings/errors present or
+absent, and linked-candidate filters. Clear filters to return to the full inventory.
+Rows sort newest first with an ID tie-breaker; the UI pages in batches of 50.
+Click a row's name to inspect metadata, parsed source data, warnings, errors, and
+any linked candidate summary. Source links open only HTTP(S) URLs.
+
+The Constraint Dashboard has an independent Imported Context summary: total rows,
+Epoch rows, rows imported in the last seven days, warnings/errors, and linked
+candidates. Summary counts cover all rows, independent of table/dashboard filters.
+Epoch counts use dataset names containing “epoch”, not a search through all JSON.
+
+Read-only endpoints:
+
+- `GET /imported-context`: `limit` (1–200, default 50), `offset`, `dataset_name`
+  (exact), `source_file` (contains), `duplicate_status` (exact), `q`,
+  `has_candidate`, `has_warnings`, `has_errors` (optional booleans).
+- `GET /imported-context/summary`: dataset, file-basename and duplicate counts,
+  warning/error/link counts, seven-day row count, five recent rows, ten top files.
+- `GET /imported-context/{row_id}`: full metadata and parsed JSON plus linked candidate.
+
+The list filters/counts/paginates in SQL and omits raw/normalized JSON until detail
+is requested. This makes large context ingests auditable without converting
+context into Projects. JSON substring search still scans matching data; this v0
+has no full-text index. No POST/PATCH/PUT/DELETE handlers are provided.
+
+The previously confirmed equipment/timeline context ingest created audit/context
+rows only, not Projects, Evidence, or promotions. This review feature runs no
+ingestion, backfill, discovery, extraction, verification, admission, or promotion.
+Do not rerun confirmed ingestion merely to populate the page.
+
+For local smoke against an existing database, enforce SQLite read-only mode:
+
+```bash
+# From backend; use your actual absolute local.db path.
+DATABASE_URL='sqlite:///file:/absolute/path/backend/local.db?mode=ro&uri=true' \
+  BACKEND_CORS_ORIGINS=http://localhost:8001 \
+  .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+# From frontend in a second terminal:
+VITE_USE_MOCK=false VITE_API_BASE_URL=http://localhost:8000 \
+  npm run dev -- --host 127.0.0.1 --port 8001
+```
+
+Imported Context always reads the API, including when other pages use mock mode;
+an unavailable API is reported rather than replaced with invented imports.
+Run its rendering checks from `frontend` with `npm run test:context`.

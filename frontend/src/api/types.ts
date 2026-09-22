@@ -871,3 +871,24 @@ export interface DiscoveredSourceReviewSummaryResponse {
   top_review_queue_examples: DiscoveredSourceReviewItem[];
   applied_filters: Record<string, unknown>;
 }
+
+export interface ImportedContextRow {
+  id: string; run_id: string; dataset_name: string; dataset_version: string | null;
+  dataset_source: string | null; source_file: string; source_file_basename: string;
+  row_number: number; display_name: string; record_type: string;
+  duplicate_status: string; duplicate_cluster_key: string | null;
+  linked_project_candidate_id: string | null; source_urls_json: string[] | null;
+  warnings_json: unknown[] | null; errors_json: unknown[] | null;
+  created_at: string; updated_at: string;
+}
+export interface ImportedContextDetail extends ImportedContextRow {
+  raw_row_json: unknown; normalized_row_json: unknown;
+  linked_candidate: { id: string; candidate_name: string; status: string } | null;
+}
+export interface ImportedContextList { items: ImportedContextRow[]; total: number; limit: number; offset: number }
+export interface ImportedContextSummary {
+  total: number; counts_by_dataset_name: Record<string, number>; counts_by_source_file: Record<string, number>;
+  counts_by_duplicate_status: Record<string, number>; rows_with_warnings: number; rows_with_errors: number;
+  linked_candidate_count: number; recent_row_count: number; recent_window_days: number;
+  recent_rows: ImportedContextRow[]; top_source_files: { source_file: string; count: number }[];
+}

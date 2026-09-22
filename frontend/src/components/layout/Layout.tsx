@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 
 const NAV = [
+  { path: "/imported-context", label: "Imported Context", icon: "▧" },
   { path: "/",         label: "Projects", icon: "▤" },
   { path: "/map",      label: "Map",      icon: "◎" },
   { path: "/coordinates", label: "Coordinates", icon: "⌖" },

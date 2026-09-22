@@ -1,0 +1,20 @@
+.context-page { flex:1; overflow:auto; padding:24px; background:#15181e; color:#dce3ed }
+.context-page h1 { margin-top:0 }.context-page p,.context-panel p { color:#94a3b8 }
+.context-cards { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0 }
+.context-cards>div { background:#20252d; border:1px solid #334155; padding:14px; border-radius:8px; min-width:130px }
+.context-cards strong { display:block; font-size:24px; color:#67e8f9; margin-top:8px }
+.context-cards small,.context-table small { display:block; color:#94a3b8 }
+.context-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:20px 0 }
+.context-filters label { display:flex; flex-direction:column; gap:6px; font-size:12px }
+.context-filters input,.context-filters select,.context-page button { background:#252b35; color:#e2e8f0; border:1px solid #475569; padding:8px; border-radius:4px }
+.context-filters select { max-width:260px }.context-filters input { min-width:260px }
+.context-page button { cursor:pointer }.context-page button:disabled { opacity:.4; cursor:default }
+.context-table-wrap { overflow:auto }.context-table { width:100%; border-collapse:collapse; font-size:12px }
+.context-table th,.context-table td { text-align:left; padding:12px 8px; border-bottom:1px solid #334155; vertical-align:top }
+.context-table th { color:#94a3b8 }.context-table td small { margin-top:8px }
+.context-page a,.context-panel a { color:#67e8f9 }.context-badge { display:inline-block; color:#67e8f9; background:#164e6333; padding:3px 6px; border-radius:4px; margin:2px 0 }
+.context-badge.neutral { color:#cbd5e1; background:#334155 }.context-badge.warning { color:#fbbf24; background:#78350f33 }.context-badge.error { color:#fca5a5; background:#7f1d1d33 }
+.context-linked { display:block; color:#6ee7b7!important }.context-pagination { display:flex; gap:15px; align-items:center; margin:18px 0 }
+.context-panel { background:#1c2028; border:1px solid #164e63; border-radius:8px; padding:16px; margin:16px 0 }.context-panel pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px }
+
+.context-cards .warning strong { color:#fbbf24 }.context-cards .error strong { color:#fca5a5 }

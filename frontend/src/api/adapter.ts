@@ -1211,3 +1211,14 @@ export async function getProjectRiskSignal(id: string): Promise<ProjectRiskSigna
   }
   return fetchJson<ProjectRiskSignalData>(`/projects/${id}/risk-signal`);
 }
+
+// Audit inventory always uses the read-only API; no fabricated imported records in mock mode.
+export function getImportedContext(params: Record<string, string>) {
+  return fetchJson<import('./types').ImportedContextList>(`/imported-context?${new URLSearchParams(params)}`);
+}
+export function getImportedContextSummary() {
+  return fetchJson<import('./types').ImportedContextSummary>('/imported-context/summary');
+}
+export function getImportedContextDetail(id: string) {
+  return fetchJson<import('./types').ImportedContextDetail>(`/imported-context/${encodeURIComponent(id)}`);
+}
