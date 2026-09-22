@@ -1,5 +1,6 @@
 """Offline primary-source alignment hints; never fetched content verification."""
 import re
+from functools import lru_cache
 from urllib.parse import unquote, urlsplit
 
 from app.services.csv_dataset_importer import STATE_BY_NAME
@@ -48,6 +49,11 @@ def primary_source_text(url, normalized, raw_row, urls):
     return ' '.join(pieces), raw
 
 
+@lru_cache(maxsize=16384)
+def city_location_pattern(city):
+    return re.compile(r'\b(?:in|near|at) ' + re.escape(city) + r'\b')
+
+
 def classify_source_row_alignment(normalized, urls, raw_row=None, known_cities=()):
     url = urls[0] if urls else None
     text, raw = primary_source_text(url, normalized, raw_row, urls)
@@ -81,7 +87,7 @@ def classify_source_row_alignment(normalized, urls, raw_row=None, known_cities=(
     city_match = contains(text, city)
     state_match = bool(state and state in source_states)
     source_cities = {words(c) for c in known_cities if words(c) and
-                     re.search(r'\b(?:in|near|at) ' + re.escape(words(c)) + r'\b', text)}
+                     city_location_pattern(words(c)).search(text)}
     other_cities = source_cities - {city}
     # Matching row state or city explicitly in source provides the requested
     # conservative exception (e.g. Brisbane / near San Francisco, California).
