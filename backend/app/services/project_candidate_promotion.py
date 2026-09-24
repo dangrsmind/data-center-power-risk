@@ -95,7 +95,7 @@ class ProjectCandidatePromotionService:
         project = existing_project
         if project is None:
             project = build_project(candidate)
-            self._preserve_coordinates(project, candidate)
+            self.preserve_coordinates(project, candidate)
             self.db.add(project)
             self.db.flush()
             summary.project_created = True
@@ -128,7 +128,7 @@ class ProjectCandidatePromotionService:
         self.db.flush()
         return summary
 
-    def _preserve_coordinates(self, project: Project, candidate: ProjectCandidate) -> None:
+    def preserve_coordinates(self, project: Project, candidate: ProjectCandidate) -> None:
         lat, lon = candidate_coordinates(candidate.raw_metadata_json)
         metadata = candidate.raw_metadata_json if isinstance(candidate.raw_metadata_json, dict) else {}
         source = ('baseline_imported_dataset_row' if metadata.get('provenance') == 'dataset_import'
