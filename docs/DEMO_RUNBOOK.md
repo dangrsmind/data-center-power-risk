@@ -1170,3 +1170,99 @@ VITE_USE_MOCK=false VITE_API_BASE_URL=http://localhost:8000 \
 Imported Context always reads the API, including when other pages use mock mode;
 an unavailable API is reported rather than replaced with invented imports.
 Run its rendering checks from `frontend` with `npm run test:context`.
+
+## Automated candidate promotion (v0)
+
+This CLI evaluates **existing ProjectCandidates** without fetching, ingesting,
+extracting, verifying, or admitting records. It defaults to read-only dry-run.
+It creates no Evidence or FieldProvenance records and does not use the manual
+promotion service's Evidence creation path. No frontend changes are required:
+promoted candidates leave the review map layer and Projects retain coordinates.
+
+From `backend`, preview a bounded window first:
+
+```bash
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/auto_promote_candidates.py \
+  --dry-run --include-row-details --limit 50
+```
+
+Optional selectors: `--dataset epoch_ai_data_centers`, `--source equinix.com`
+(case-insensitive primary URL substring), and repeated `--candidate-id UUID`.
+Filters are combined before the explicit `--limit`; ordering is oldest creation
+first, then candidate ID. Missing allowlist IDs fail instead of being silently
+ignored. Reports give counts and up to five examples per decision; row details
+include IDs, all gate results, reasons, blocking warnings, and policy snapshots.
+Decision counts are mutually exclusive; each row lists all failed gates, even when
+its primary skip reason is missing coordinates or low confidence.
+An optional `--report-output /tmp/promotion-preview.json` creates a new JSON file
+and refuses to overwrite an existing report.
+
+### Gates and policy
+
+Every gate must pass, even if a previous verifier or preview said eligible:
+
+- Candidate is `needs_review` or `candidate`, not already promoted/linked, with
+  a resolved name and recognized US state. Existing analyst holds/rejections and
+  stored verification conflicts are respected.
+- Confidence is at least **0.80** by default. `--min-confidence` accepts a finite
+  value from 0 to 1; lowering it never bypasses the other gates.
+- A stored, finite, in-range coordinate pair must survive the shared promotion
+  preservation path. Conflicting stored coordinate pairs require review.
+- A project-specific public primary URL must be a recognized operator or
+  government/regulatory source. News alone, social posts, broad/index pages,
+  missing URLs, and unknown source domains are insufficient.
+- Recomputed source-row alignment must be fully `aligned`, including every
+  linked audit row. Weak alignment, identity/geography conflicts, and conflicting
+  source states block automation. These are offline hints, not fetched-content
+  verification.
+- Explicit proposed, under-construction, or planned-expansion data-center
+  lifecycle is required. Equipment, timelines, infrastructure, operating-facility
+  context, cancelled/retired, speculative and unknown records stay in review.
+- Imported candidates require linked audit provenance from a confirmed matching
+  import run, without errors, with the candidate's primary URL among row sources.
+- The v0 promotion dataset allowlist contains **Epoch AI only**, additionally
+  requiring its registry automatic-Project policy. FracTracker and unknown datasets
+  remain blocked. Non-dataset candidates use the recognized primary-source policy.
+- Existing Projects, duplicate flags/links, and conflicts between selected
+  candidates block promotion. Duplicate checks include all Projects, without the
+  legacy 1,000-record cutoff. Ambiguous matches are never silently merged.
+- Stored warnings block promotion, except the generic dataset-import review
+  reminder. Skipped/exception candidates are not modified.
+
+### Confirm only after reviewing the dry-run
+
+Back up the database first, stop other pipeline writers, and reuse the reviewed
+filters/allowlist. Example for one reviewed candidate:
+
+```bash
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/auto_promote_candidates.py \
+  --confirm --candidate-id REPLACE_WITH_REVIEWED_UUID --max-promote 1 \
+  --include-row-details
+```
+
+`--confirm` requires a nonnegative `--max-promote`. The complete selected window
+is replanned under the write lock; if its eligible count exceeds the cap, the
+entire operation fails **before any write**. The cap never silently truncates
+results. SQLite uses `BEGIN IMMEDIATE`; PostgreSQL locks the relevant tables and
+shares the automated-ingestion advisory lock. SQLite/PostgreSQL are the supported
+confirmed-mode databases. The service requires a clean, fresh transaction.
+
+Confirmed promotion inserts Projects and updates only their source candidates
+(`status=promoted`, `promoted_project_id`, audit metadata). The coordinate pair
+is copied through the existing preservation path, with its source URL,
+`source_row` precision, candidate confidence and a new update timestamp.
+Coordinates remain **unverified** and do not gain a verification timestamp. New Projects start `candidate_unverified`;
+source lifecycle and original candidate provenance remain in metadata.
+Versioned per-record audit metadata records decisions, thresholds, batch ID,
+counts, cap, policy snapshots, linked audit row IDs, and promotion time.
+Existing Projects are never overwritten. Repeated runs skip linked/promoted
+candidates and create no duplicate Projects. Any write failure rolls back the
+whole batch. There is no automatic reverse-promotion operation: rollback after
+commit requires restoring the reviewed backup with the application stopped.
+
+Decision fields (`promotion_eligible`, `promotion_decision`, `promotion_reasons`,
+`blocking_warnings`) are currently CLI/report-only. A future read-only API/UI
+preview can reuse the planner; this v0 adds no API mutation controls. Planning
+loads the candidate/audit inventory and compares selected candidates with all
+Projects; large inventories may need indexing/batching in a later version.
+Never commit reports, backups, local databases, source bulk files, or secrets.
