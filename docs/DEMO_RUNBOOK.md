@@ -1266,3 +1266,83 @@ preview can reuse the planner; this v0 adds no API mutation controls. Planning
 loads the candidate/audit inventory and compares selected candidates with all
 Projects; large inventories may need indexing/batching in a later version.
 Never commit reports, backups, local databases, source bulk files, or secrets.
+
+### Reading auto-promotion dry-run diagnostics
+
+To inspect the full current demo candidate inventory, run from `backend`:
+
+```bash
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/auto_promote_candidates.py \
+  --dry-run --include-row-details --limit 200 > /tmp/auto_promote_candidates_preview.json
+```
+
+Each `row_details` entry includes candidate ID/name/status, confidence, effective
+latitude/longitude from the existing preservation path, existing promoted Project
+ID, candidate and source lifecycle states, primary source URL, source quality and
+alignment, verification status, and available dataset/import/source provenance.
+Missing coordinates and unavailable provenance fields remain JSON `null`; they
+are not guessed. The report describes the candidate state at planning time.
+
+Use these fields when auditing a row:
+
+- `promotion_decision`: `would_promote`, `skip_already_promoted`,
+  `skip_missing_coordinates`, `skip_low_confidence`, `skip_weak_source`,
+  `skip_duplicate_risk`, or `exception_review`.
+- `primary_blocker`: stable gate identifier such as `coordinates`, `confidence`,
+  `dataset_policy`, or `review_decision`; `none` for an eligible candidate.
+- `blocker_category`: one mutually exclusive primary category per row. Eligible
+  candidates use `none`; already-promoted rows use `already_promoted`.
+- `decision_reasons`: nonempty human-readable reasons, with the primary reason
+  first. `blocking_reasons` retains every failed-gate reason for blocked candidates.
+  Eligible and already-promoted rows have no actionable blocking reasons.
+- `decision`, `status`, and `reasons`: aliases of `promotion_decision`,
+  `candidate_status`, and `decision_reasons` for simple report readers. Existing
+  `promotion_reasons`, `blocking_warnings`, and detailed gate results remain
+  available for compatibility; prefer the new diagnostic fields for display.
+
+Decision precedence and eligibility gates are unchanged: already promoted first,
+then missing coordinates, low confidence, weak source, duplicate risk, and other
+review exceptions. A missing-coordinate candidate may also have low confidence;
+that secondary failure appears in its reasons but is not counted as a second
+primary blocker. An already-promoted candidate can lack coordinates without
+being counted in `would_skip_missing_coordinates`.
+
+Grouped diagnostics cover exactly the selected window, even without
+`--include-row-details`:
+
+- `decisions_by_type` maps the explicit row decision values to counts.
+- `blockers_by_category` counts primary categories, including `none` and
+  `already_promoted`, so its values sum to `candidates_checked`.
+- `candidates_by_status` and `candidates_by_lifecycle_state` describe the stored
+  candidate state; missing lifecycle is grouped under `unknown`.
+- `candidates_by_coordinate_availability` reports `available` versus
+  `missing_or_invalid` independently of decision precedence.
+- `top_blocker_examples` contains up to five diagnostic rows per primary category,
+  excluding `none`. Existing `top_examples` retains its legacy keys (including
+  `promote`) but now contains the same enriched rows.
+
+All grouped totals reconcile to `candidates_checked`. The existing
+`would_skip_missing_coordinates` count equals the number of rows with decision
+`skip_missing_coordinates` and category `missing_coordinates`; analogous
+reconciliation applies to low confidence and the other skip decisions.
+`would_promote` equals `decisions_by_type.would_promote`. The reporting-only
+translation from internal `promote` to `would_promote` does not alter promotion
+eligibility, caps, persisted audit metadata, or write behavior.
+
+Example inspection (no database access):
+
+```bash
+python3 - <<'PY'
+import json
+with open('/tmp/auto_promote_candidates_preview.json') as handle:
+    report = json.load(handle)
+for row in report['row_details'][:10]:
+    print(row['candidate_name'], row['candidate_status'], row['promotion_decision'],
+          row['blocker_category'], row['decision_reasons'])
+assert sum(report['decisions_by_type'].values()) == report['candidates_checked']
+assert sum(r['promotion_decision'] == 'skip_missing_coordinates'
+           for r in report['row_details']) == report['would_skip_missing_coordinates']
+PY
+```
+
+Reports belong in ignored/runtime locations such as `/tmp`, never in commits.

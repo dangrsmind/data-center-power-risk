@@ -11,6 +11,7 @@ from app.core.enums import LifecycleState
 from app.models.imported_dataset import ImportedCandidateLink, ImportedDatasetRow, ImportedDatasetRun
 from app.models.project import Project
 from app.models.project_candidate import ProjectCandidate
+from app.services.auto_promotion_diagnostics import diagnostic_row, grouped_diagnostics
 from app.services.baseline_dataset_profiles import public_url
 from app.services.baseline_entity_taxonomy import classify_entity_taxonomy, lifecycle, words
 from app.services.baseline_source_quality import classify_source_and_candidate
@@ -283,13 +284,19 @@ def auto_promote_candidates(db, *, confirm=False, max_promote=None, min_confiden
                             matches.append(match)
                 decisions.append(evaluate(candidate, linked, runs, project, n, matches, min_confidence, cities))
             counts = Counter(d['promotion_decision'] for d in decisions)
+            diagnostics = [diagnostic_row(candidate, linked, project, normalized, decision)
+                           for (candidate, linked, project, normalized), decision in zip(plans, decisions)]
             report = {'dry_run': not confirm, 'engine_version': VERSION, 'candidates_checked': len(plans),
                       'candidates_matching_filters': matched_count, 'limit': limit, 'min_confidence': min_confidence,
                       'filters': {'dataset': dataset, 'source': source, 'candidate_ids': sorted(str(v) for v in requested)},
                       **{'would_' + key: counts[key] for key in DECISIONS}, 'promoted': 0,
-                      'evidence_created': 0, 'top_examples': {key: [d for d in decisions if d['promotion_decision'] == key][:5] for key in DECISIONS}}
+                      'evidence_created': 0,
+                      **grouped_diagnostics(diagnostics),
+                      'top_examples': {key: [row for row in diagnostics
+                          if row['promotion_decision'] == ('would_promote' if key == 'promote' else key)][:5]
+                          for key in DECISIONS}}
             if include_row_details:
-                report['row_details'] = decisions
+                report['row_details'] = diagnostics
             if confirm and counts['promote'] > max_promote:
                 raise ValueError(f"Eligible count {counts['promote']} exceeds --max-promote {max_promote}; nothing written")
             if confirm:
