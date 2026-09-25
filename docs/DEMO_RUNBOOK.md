@@ -1346,3 +1346,62 @@ PY
 ```
 
 Reports belong in ignored/runtime locations such as `/tmp`, never in commits.
+
+### Candidate resolution backlog (dry-run only)
+
+From `backend`, run:
+
+```bash
+DATABASE_URL=sqlite:///local.db .venv/bin/python scripts/resolve_candidate_backlog.py \
+  --dry-run --include-row-details --limit 200 > /tmp/candidate_resolution_backlog.json
+```
+
+This CLI only reads an existing database. SQLite is opened with `mode=ro`;
+PostgreSQL uses a read-only repeatable-read transaction. There is no confirm
+option. Recommendations are report labels, never executed actions.
+
+Auto-promotion diagnostics identify the first failed promotion gate. Resolution
+diagnostics examine identity, warnings, source alignment, context and lifecycle
+as well, so a missing coordinate does not conceal an unresolved project identity.
+
+| Resolution class | Meaning / recommended action |
+| --- | --- |
+| `promotable_now` | All existing promotion gates pass; `auto_promote_candidate` is only a recommendation. |
+| `resolvable_missing_coordinates` | Real identity and every other promotion gate pass; `resolve_coordinates`, then rerun all gates. |
+| `resolvable_missing_identity` | Useful strong provenance and active lifecycle support identity research; `resolve_identity_from_source`. |
+| `unresolved_placeholder` | Synthetic name or missing identity/state/project-specific support; `suppress_from_promotion`. |
+| `context_only_or_supporting` | Policy, timeline, equipment, infrastructure or operating-facility context; `keep_as_context`. |
+| `low_confidence` | Below the configured threshold and not clearly resolvable; `suppress_from_promotion`. |
+| `already_promoted` | Already linked/promoted; `already_promoted_no_action`. |
+| `exception_review` | Duplicate risk, conflicting fields, review holds or other ambiguous blockers; `manual_exception_review`. |
+
+Already-promoted records take precedence, followed by synthetic placeholders,
+conflicts/review holds, explicit context, other placeholder warnings, duplicate
+risk, and the remaining eligibility/repair classifications. Duplicate risk uses
+`exception_review` with `primary_resolution_blocker=duplicate_risk` when no earlier
+classification applies; the independent `duplicate_risk_count` includes overlaps.
+
+“Unresolved Virginia SCC candidate …” and similar broad SCC search placeholders
+do not establish a real project identity. Finding coordinates does not resolve
+missing project-specific claims, source-row alignment, or lifecycle. Such
+placeholders remain suppressed even when coordinates are available. This report
+does not modify the existing promotion service or its gates.
+
+Each row includes the resolution class, primary blocker, human-readable reasons,
+recommended action, original promotion gate results, stored and derived warnings,
+location, source quality/alignment, taxonomy, and available dataset provenance.
+Stored candidate `lifecycle_state` describes evidence maturity; `lifecycle_stage`,
+`source_lifecycle_state`, and `taxonomy` describe project lifecycle evidence.
+
+Class/action/status/lifecycle/state counts each sum to `candidates_checked` and
+cover exactly the selected creation-time/ID window. They are available without
+`--include-row-details`. `counts_by_warning` counts each warning once per candidate;
+warnings overlap, so that total need not equal the candidate count.
+`top_examples_by_class` includes up to five rows per class.
+
+`could_become_promotable_after_coordinate_resolution` counts only the coordinate-only
+class. Newly resolved coordinates can expose conflicts or duplicates, so rerun
+all gates before any future promotion.
+`should_be_suppressed_or_excluded_from_promotion` counts placeholders, context,
+low-confidence and exception rows; this is a reporting count, not a persisted
+suppression action. Keep the JSON in `/tmp`, outside commits.
