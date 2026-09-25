@@ -1405,3 +1405,23 @@ all gates before any future promotion.
 `should_be_suppressed_or_excluded_from_promotion` counts placeholders, context,
 low-confidence and exception rows; this is a reporting count, not a persisted
 suppression action. Keep the JSON in `/tmp`, outside commits.
+
+### Candidate classification in the UI
+
+Project Candidates defaults to **Reviewable candidates**: promotable now,
+resolvable missing coordinates, and resolvable missing identity. The resolution
+filter also exposes every class and **All stored records**. Placeholder, context,
+low-confidence, exception and already-promoted rows are excluded from the default
+view without deleting or changing them. Row labels show classification and the
+suggested next action; hover over the classification for reasons.
+
+The dashboard inventory counts all resolution classes. Its constraint metrics and
+priority list use only the reviewable subset, so stored needs_review status alone
+does not imply a real reviewable project. Candidate list filters/counts describe
+the latest up to 500 records; dashboard resolution inventory covers the entire
+backlog. A classification load failure shows an error rather than treating
+unclassified records as reviewable.
+
+GET /project-candidates/resolution-report reuses the read-only backlog classifier.
+GET /project-candidates/constraint-summary?resolution_scope=reviewable filters
+before aggregation. Neither endpoint persists classification or performs promotion.

@@ -1,3 +1,4 @@
+import { RESOLUTION_CLASSES, matchesResolution, resolutionLabel } from "../config/candidateResolution";
 import "../styles/candidate-demo.css";
 import { isBaselineCandidate, safeSourceUrl } from "../config/candidatePresentation";
 import { useEffect, useState, useMemo, useCallback } from "react";
@@ -8,7 +9,7 @@ import type {
   ProjectCandidateReviewDecision,
   ProjectCandidateSitingFrictionCategory,
 } from "../api/types";
-import { getProjectCandidates, promoteProjectCandidate, updateProjectCandidateReviewDecision } from "../api/adapter";
+import { getCandidateResolutionReport, getProjectCandidates, promoteProjectCandidate, updateProjectCandidateReviewDecision } from "../api/adapter";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1490,6 +1491,10 @@ function CandidateRow({
           } as React.CSSProperties}>
             {c.candidate_name}
           </div>
+            <div style={{ color: "#fbbf24", fontSize: 12 }} title={c.resolution?.resolution_reasons.join("\n")}>
+              {resolutionLabel(c.resolution?.resolution_class ?? "classification unavailable")}
+              {c.resolution && <div>{resolutionLabel(c.resolution.recommended_next_action)}</div>}
+            </div>
           <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 5 }}>{!c.promoted_project_id && c.status !== "promoted" ? "Candidate — not promoted" : "Candidate — promoted"}</div>
           {c.csv_provenance && <div style={{ color: "#fbbf24", fontSize: 10 }}>Dataset import</div>}
           {safeSourceUrl(c.primary_source_url) && <a href={safeSourceUrl(c.primary_source_url)} target="_blank" rel="noopener noreferrer" style={{ display: "block", color: "#94a3b8", fontSize: 10, overflowWrap: "anywhere" }}>{c.primary_source_url}</a>}
@@ -1745,6 +1750,7 @@ export function ProjectCandidatesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [filterResolution, setFilterResolution] = useState("reviewable");
   const [searchText, setSearchText] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterState, setFilterState] = useState("");
@@ -1767,8 +1773,11 @@ export function ProjectCandidatesPage() {
   const fetchCandidates = useCallback(() => {
     setLoading(true);
     setError(null);
-    getProjectCandidates({ limit: 500, sort })
-      .then(resp => setCandidates(resp.items))
+    Promise.all([getProjectCandidates({ limit: 500, sort }), getCandidateResolutionReport()])
+      .then(([resp, report]) => {
+        const rows = new Map(report.row_details.map(row => [row.candidate_id, row]));
+        setCandidates(resp.items.map(c => ({ ...c, resolution: rows.get(c.id) })));
+      })
       .catch(err => setError(String(err)))
       .finally(() => setLoading(false));
   }, [sort]);
@@ -1779,9 +1788,9 @@ export function ProjectCandidatesPage() {
     fetchCandidates();
   }, [fetchCandidates]);
 
-  const handleReviewDecisionSaved = useCallback((updated: ProjectCandidate) => {
-    setCandidates(items => items.map(item => item.id === updated.id ? updated : item));
-  }, []);
+  const handleReviewDecisionSaved = useCallback((_updated: ProjectCandidate) => {
+    fetchCandidates();
+  }, [fetchCandidates]);
 
   const statusOptions = useMemo(() => {
     const s = [...new Set(candidates.map(c => c.status))].sort();
@@ -1873,6 +1882,7 @@ export function ProjectCandidatesPage() {
     const needle = searchText.toLowerCase();
     const confMin = filterConf ? parseFloat(filterConf) : null;
     return candidates.filter(c => {
+      if (!matchesResolution(c.resolution?.resolution_class, filterResolution)) return false;
       if (filterStatus && c.status !== filterStatus) return false;
       if (filterState && c.state !== filterState) return false;
       if (filterTriage && c.triage_tier !== filterTriage) return false;
@@ -1907,7 +1917,7 @@ export function ProjectCandidatesPage() {
       }
       return true;
     });
-  }, [filterBaseline, candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
+  }, [filterResolution, filterBaseline, candidates, searchText, filterStatus, filterState, filterTriage, filterConf,
       filterCsvOnly, filterDataset, filterDupeStatus, filterRecommendedAction, filterVerification,
       filterReviewDecision, filterHasReviewDecision, filterEnergyStrategy, filterSitingFriction]);
 
@@ -1921,10 +1931,11 @@ export function ProjectCandidatesPage() {
   const webCount = useMemo(() => candidates.filter(c => !c.csv_provenance).length, [candidates]);
   const reviewDecisionCount = useMemo(() => candidates.filter(c => !!c.review_decision).length, [candidates]);
 
-  const hasFilters = !!(filterBaseline || searchText || filterStatus || filterState || filterTriage || filterConf ||
+  const hasFilters = !!(filterResolution !== "reviewable" || filterBaseline || searchText || filterStatus || filterState || filterTriage || filterConf ||
     filterCsvOnly || filterDataset || filterDupeStatus || filterRecommendedAction || filterVerification ||
     filterReviewDecision || filterHasReviewDecision || filterEnergyStrategy || filterSitingFriction);
   const clearFilters = () => {
+    setFilterResolution("reviewable");
     setFilterBaseline(false);
     setSearchText(""); setFilterStatus(""); setFilterState(""); setFilterTriage(""); setFilterConf("");
     setFilterCsvOnly(false); setFilterDataset(""); setFilterDupeStatus(""); setFilterRecommendedAction(""); setFilterVerification("");
@@ -1956,6 +1967,14 @@ export function ProjectCandidatesPage() {
           )}
         </div>
 
+        <p style={{ color: "#94a3b8" }}>Default view includes promotable and resolvable candidates only. Placeholders, context, low-confidence, exceptions and already-promoted records remain available through the classification filter. Counts below describe stored records, not confirmed projects (latest up to 500).</p>
+        <label>Resolution classification{" "}
+          <select aria-label="Resolution classification" value={filterResolution} onChange={e => setFilterResolution(e.target.value)}>
+            <option value="reviewable">Reviewable candidates</option>
+            <option value="all">All stored records</option>
+            {RESOLUTION_CLASSES.map(value => <option key={value} value={value}>{resolutionLabel(value)} ({candidates.filter(c => c.resolution?.resolution_class === value).length})</option>)}
+          </select>
+        </label>
         {/* Notice banners */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const, marginBottom: 12 }}>
           {[

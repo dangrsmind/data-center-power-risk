@@ -41,6 +41,16 @@ from app.services.project_candidate_verifier import ProjectCandidateVerifier
 
 
 router = APIRouter(prefix="/project-candidates", tags=["project-candidates"])
+from app.services.candidate_resolution import resolve_candidate_backlog
+
+REVIEWABLE_CLASSES = {'promotable_now', 'resolvable_missing_coordinates', 'resolvable_missing_identity'}
+
+
+@router.get("/resolution-report")
+def candidate_resolution_report(db: Session = Depends(get_db)):
+    return resolve_candidate_backlog(db, include_row_details=True)
+
+
 ALLOWED_REVIEW_DECISIONS = {
     "needs_source",
     "needs_location",
@@ -55,6 +65,7 @@ ALLOWED_REVIEW_DECISIONS = {
 
 @router.get("/constraint-summary", response_model=ProjectCandidateConstraintSummaryResponse, response_model_exclude_none=True)
 def get_project_candidate_constraint_summary(
+    resolution_scope: Literal["all", "reviewable"] = "all",
     status: str | None = None,
     verification_status: str | None = None,
     triage_tier: str | None = None,
@@ -77,6 +88,11 @@ def get_project_candidate_constraint_summary(
     limit_top_candidates = normalize_top_candidate_limit(limit_top_candidates)
 
     candidates = list(db.scalars(select(ProjectCandidate)))
+    if resolution_scope == "reviewable":
+        report = resolve_candidate_backlog(db, include_row_details=True)
+        ids = {row['candidate_id'] for row in report['row_details']
+               if row['resolution_class'] in REVIEWABLE_CLASSES}
+        candidates = [candidate for candidate in candidates if str(candidate.id) in ids]
     summary_records = [constraint_summary_record(candidate) for candidate in candidates]
     summary_records = filter_constraint_summary_records(
         summary_records,
