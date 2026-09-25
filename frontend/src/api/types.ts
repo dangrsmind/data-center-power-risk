@@ -599,6 +599,7 @@ export type ProjectCandidateSitingFrictionCategory =
   | "unknown";
 
 export interface ProjectCandidate {
+  resolution?: CandidateResolution;
   latitude?: number | null;
   longitude?: number | null;
   id: string;
@@ -891,4 +892,18 @@ export interface ImportedContextSummary {
   counts_by_duplicate_status: Record<string, number>; rows_with_warnings: number; rows_with_errors: number;
   linked_candidate_count: number; recent_row_count: number; recent_window_days: number;
   recent_rows: ImportedContextRow[]; top_source_files: { source_file: string; count: number }[];
+}
+
+
+export interface CandidateResolution {
+  candidate_id: string;
+  resolution_class: string;
+  primary_resolution_blocker: string;
+  resolution_reasons: string[];
+  recommended_next_action: string;
+}
+export interface CandidateResolutionReport {
+  candidates_checked: number;
+  counts_by_resolution_class: Record<string, number>;
+  row_details: CandidateResolution[];
 }

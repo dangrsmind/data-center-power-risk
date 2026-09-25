@@ -1,8 +1,7 @@
 import { ImportedContextDashboard } from "./ImportedContextPage";
-import { isBaselineCandidate } from "../config/candidatePresentation";
 import { useEffect, useState, useCallback } from "react";
 import type { ConstraintSummaryResponse, ConstraintSummaryItem } from "../api/types";
-import { getProjectCandidates, getConstraintSummary } from "../api/adapter";
+import { getCandidateResolutionReport, getConstraintSummary } from "../api/adapter";
 
 function fmtLabel(s: string | null | undefined): string {
   if (!s) return "Unknown";
@@ -342,22 +341,21 @@ function TopCandidateRow({ item }: { item: ConstraintSummaryItem }) {
 }
 
 function CandidateReviewSummary() {
-  const [counts, setCounts] = useState<number[] | null>(null);
+  const [report, setReport] = useState<import("../api/types").CandidateResolutionReport | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    getProjectCandidates({ sort: "newest", limit: 500 }).then(({ items }) => {
-      if (!cancelled) setCounts([items.filter(c => c.status === "needs_review").length,
-        items.filter(c => isBaselineCandidate(c) && c.lifecycle_state === "dataset_import_needs_review").length,
-        items.filter(c => !c.promoted_project_id && c.status !== "promoted").length]);
-    }).catch(() => { if (!cancelled) setFailed(true); });
+    getCandidateResolutionReport().then(result => { if (!cancelled) setReport(result); })
+      .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
   }, []);
-  return <div style={{ marginBottom: 16, padding: 16, background: "#1c2028", border: "1px solid #f59e0b55", borderRadius: 8 }}>
-    <strong style={{ color: "#fbbf24" }}>ProjectCandidate review inventory</strong>
-    <p>{failed ? "Candidate inventory unavailable" : counts ? `${counts[0]} needs_review · ${counts[1]} dataset_import_needs_review · ${counts[2]} not promoted` : "Loading candidate inventory…"}</p>
-    <small>Latest up to 500 candidates · independent of dashboard filters · not final Projects. </small>
-    <a href="/project-candidates">Review candidates ↗</a>
+  return <div style={{ marginBottom: 16, padding: 16, background: "#1c2028", borderRadius: 8 }}>
+    <strong>Candidate resolution inventory</strong>
+    <p>{failed ? "Classification unavailable" : report ? `${report.candidates_checked} stored records · not confirmed projects` : "Loading classifications…"}</p>
+    {report && Object.entries(report.counts_by_resolution_class).map(([key, count]) =>
+      <span key={key} style={{ display: "inline-block", marginRight: 16 }}>{key.replace(/_/g, " ")}: {count}</span>)}
+    <p>Dashboard metrics below cover promotable and resolvable candidates only. Placeholders, context, low-confidence, exceptions and promoted records are excluded.</p>
+    <a href="/project-candidates">Browse candidates and excluded records ↗</a>
   </div>;
 }
 
@@ -377,6 +375,7 @@ export function ConstraintDashboardPage() {
     setError(null);
     try {
       const result = await getConstraintSummary({
+        resolution_scope: "reviewable",
         ...(filterStatus   ? { status: filterStatus }                      : {}),
         ...(filterTriage   ? { triage_tier: filterTriage }                 : {}),
         ...(filterDecision ? { review_decision: filterDecision }           : {}),

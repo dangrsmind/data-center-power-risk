@@ -715,6 +715,7 @@ export async function promoteProjectCandidate(
 }
 
 export async function getConstraintSummary(params?: {
+  resolution_scope?: "all" | "reviewable";
   status?: string;
   verification_status?: string;
   triage_tier?: string;
@@ -730,6 +731,7 @@ export async function getConstraintSummary(params?: {
   }
   const qs = new URLSearchParams();
   setNonEmptyParam(qs, "status", params?.status);
+  setNonEmptyParam(qs, "resolution_scope", params?.resolution_scope);
   setNonEmptyParam(qs, "verification_status", params?.verification_status);
   setNonEmptyParam(qs, "triage_tier", params?.triage_tier);
   setNonEmptyParam(qs, "review_decision", params?.review_decision);
@@ -1221,4 +1223,10 @@ export function getImportedContextSummary() {
 }
 export function getImportedContextDetail(id: string) {
   return fetchJson<import('./types').ImportedContextDetail>(`/imported-context/${encodeURIComponent(id)}`);
+}
+
+
+export async function getCandidateResolutionReport(): Promise<import("./types").CandidateResolutionReport> {
+  if (USE_MOCK) return { candidates_checked: 0, counts_by_resolution_class: {}, row_details: [] };
+  return fetchJson<import("./types").CandidateResolutionReport>("/project-candidates/resolution-report");
 }
